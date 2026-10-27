@@ -969,7 +969,7 @@ export const VideoItem: React.FC<{
     height: '100%',
     width: '100%',
     playerVars: {
-      autoplay: 0,
+      autoplay: 1,
       enablejsapi: 1,
       origin: currentOrigin,
       widget_referrer: currentOrigin,
@@ -1028,8 +1028,13 @@ export const VideoItem: React.FC<{
                       host="https://www.youtube.com"
                       onReady={handleYtReady}
                       onStateChange={handleYtStateChange}
-                      onError={(event) => setYoutubeError(event.data)}
-                      className="w-full h-full" 
+                      onError={(event) => {
+                        setYoutubeError(event.data);
+                        if (onSkip) {
+                          setTimeout(() => onSkip(), 800);
+                        }
+                      }} 
+                      className="w-full h-full"
                       iframeClassName="w-full h-full object-cover pointer-events-none" 
                     />
                   </div>

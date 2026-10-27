@@ -17,7 +17,7 @@ for (const query of queries) {
   for (const [index, apiKey] of apiKeys.entries()) {
     const params = new URLSearchParams({
       part: 'snippet', maxResults: '25', q: query, type: 'video',
-      videoDuration: 'short', videoEmbeddable: 'true', safeSearch: 'moderate', key: apiKey
+      videoDuration: 'short', videoEmbeddable: 'true', videoSyndicated: 'true', safeSearch: 'moderate', key: apiKey
     });
     const response = await fetch(`https://www.googleapis.com/youtube/v3/search?${params}`);
     if (!response.ok) {

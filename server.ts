@@ -223,6 +223,8 @@ Return ONLY a valid JSON array of these objects. No markdown formatting, no extr
           q: searchQuery, 
           type: 'video', 
           videoDuration: 'short',
+          videoEmbeddable: 'true',
+          videoSyndicated: 'true',
           relevanceLanguage: 'en',
           key: apiKey
         });
