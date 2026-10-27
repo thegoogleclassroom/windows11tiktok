@@ -15,7 +15,7 @@ const getFallbackKey = () => {
 
 const getApiKey = () => {
   try {
-    const envVal = (import.meta as any)?.env?.VITE_FIREBASE_API_KEY;
+    const envVal = (import.meta as any)?.env?.VITE_FIREBASE_API_KEY || (import.meta as any)?.env?.VITE_FIREBASE;
     if (typeof envVal === 'string' && envVal.trim().length > 0) {
       return envVal.trim();
     }

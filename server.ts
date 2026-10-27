@@ -6,9 +6,10 @@ import { GoogleGenAI } from "@google/genai";
 
 let aiClient: GoogleGenAI | null = null;
 function getAiClient(): GoogleGenAI | null {
-  if (!aiClient && process.env.GEMINI_API_KEY) {
+  const geminiKey = process.env.GEMINI_API_KEY || process.env['CentralTOK-key'] || process.env.CENTRALTOK_KEY;
+  if (!aiClient && geminiKey) {
     aiClient = new GoogleGenAI({
-      apiKey: process.env.GEMINI_API_KEY,
+      apiKey: geminiKey,
       httpOptions: {
         headers: {
           'User-Agent': 'aistudio-build',
