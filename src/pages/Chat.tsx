@@ -257,15 +257,32 @@ export function Chat() {
     await sendMessage(newMessage);
   };
 
-  // Cloudinary / Camera / Audio logic remains similar but updated to use generic sendMessage
+  // Cloudinary / Camera / Audio logic with resilient fallback if Cloudinary is terminated or down
   const uploadToCloudinary = async (file: Blob | File): Promise<{url: string, type: string}> => {
-    const formData = new FormData();
-    formData.append('file', file);
-    formData.append('upload_preset', 'centraltok');
-    const res = await fetch('https://api.cloudinary.com/v1_1/nmdsqhos/auto/upload', { method: 'POST', body: formData });
-    if (!res.ok) throw new Error('Cloudinary upload failed');
-    const data = await res.json();
-    return { url: data.secure_url, type: data.resource_type };
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('upload_preset', 'centraltok');
+      const res = await fetch('https://api.cloudinary.com/v1_1/nmdsqhos/auto/upload', { method: 'POST', body: formData });
+      if (res.ok) {
+        const data = await res.json();
+        return { url: data.secure_url, type: data.resource_type };
+      }
+    } catch {
+      // Graceful fallback to data URL
+    }
+
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const fileType = file.type || '';
+        resolve({
+          url: reader.result as string,
+          type: fileType.startsWith('video') ? 'video' : fileType.startsWith('audio') ? 'audio' : 'image'
+        });
+      };
+      reader.readAsDataURL(file);
+    });
   };
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {

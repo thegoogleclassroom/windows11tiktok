@@ -136,9 +136,11 @@ export function Home() {
             const staticResponse = await fetch('./youtube-feed.json', {cache: 'no-store'});
             if (staticResponse.ok) {
               const data = await staticResponse.json();
-              feedItems = data.videos || [];
-              setYoutubeOverloaded(Boolean(data.overloaded));
-              staticResponseOk = true;
+              if (Array.isArray(data.videos) && data.videos.length > 0) {
+                feedItems = data.videos;
+                setYoutubeOverloaded(Boolean(data.overloaded));
+                staticResponseOk = true;
+              }
             }
           }
 
@@ -174,7 +176,11 @@ export function Home() {
               setYoutubeOverloaded(false);
             }
           }
-          const validItems = feedItems.filter((item: {videoId?: string}) => item.videoId && !seenFeedIds.current.has(`yt_${item.videoId}`));
+          let validItems = feedItems.filter((item: {videoId?: string}) => item.videoId && !seenFeedIds.current.has(`yt_${item.videoId}`));
+          if (validItems.length === 0 && feedItems.length > 0) {
+            seenFeedIds.current.clear();
+            validItems = feedItems.filter((item: {videoId?: string}) => item.videoId);
+          }
           const valid = validItems.length > 0 ? validItems[Math.floor(Math.random() * validItems.length)] : undefined;
           if (valid) {
             nextYtPageToken = '';
