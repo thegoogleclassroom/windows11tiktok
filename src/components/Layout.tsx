@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { Home, Compass, PlusSquare, MessageSquare, User, Moon, Sun, LogIn, ShieldAlert, X, HelpCircle, Bell, Gamepad2, ShieldCheck } from 'lucide-react';
+import { Home, Compass, PlusSquare, MessageSquare, User, Moon, Sun, LogIn, ShieldAlert, X, HelpCircle, Bell, Gamepad2, ShieldCheck, Info } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAppStore } from '../store';
 import { AuthModal } from './AuthModal';
@@ -636,6 +636,94 @@ export function Layout({ children }: { children: React.ReactNode }) {
         </div>
       )}
       <GlobalMusicBubble />
+      <IframeDomainNotice />
+    </div>
+  );
+}
+
+function IframeDomainNotice() {
+  const [isTargetDomain, setIsTargetDomain] = useState(false);
+  const [isHovered, setIsHovered] = useState(false);
+
+  useEffect(() => {
+    try {
+      const hostname = window.location.hostname || '';
+      const href = window.location.href || '';
+      const referrer = document.referrer || '';
+
+      let matched =
+        hostname.includes('windows11-unblocked.pages.dev') ||
+        href.includes('windows11-unblocked.pages.dev') ||
+        referrer.includes('windows11-unblocked.pages.dev');
+
+      if (!matched && window.location.ancestorOrigins) {
+        for (let i = 0; i < window.location.ancestorOrigins.length; i++) {
+          if (window.location.ancestorOrigins[i].includes('windows11-unblocked.pages.dev')) {
+            matched = true;
+            break;
+          }
+        }
+      }
+
+      // Also support preview testing via query parameter ?iframe_notice=1
+      if (!matched && (href.includes('iframe_notice') || window.location.search.includes('iframe_notice'))) {
+        matched = true;
+      }
+
+      setIsTargetDomain(matched);
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  if (!isTargetDomain) return null;
+
+  return (
+    <div
+      className="fixed bottom-5 right-5 z-[99999]"
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+      onClick={() => setIsHovered((prev) => !prev)}
+    >
+      <motion.div
+        layout
+        initial={{ scale: 0.85, opacity: 0 }}
+        animate={{ scale: isHovered ? 1.05 : 1, opacity: 1 }}
+        transition={{ type: 'spring', stiffness: 350, damping: 25 }}
+        className={`relative flex items-center shadow-2xl backdrop-blur-xl border border-white/20 transition-all duration-300 cursor-pointer overflow-hidden ${
+          isHovered
+            ? 'bg-zinc-900/95 text-white rounded-2xl p-4 max-w-sm sm:max-w-md ring-2 ring-pink-500/50 shadow-pink-500/30'
+            : 'bg-zinc-900/90 hover:bg-zinc-800 text-pink-500 rounded-full p-3 shadow-lg hover:scale-110 ring-1 ring-zinc-700/60'
+        }`}
+      >
+        <div className="flex items-center gap-3 shrink-0">
+          <div className="w-9 h-9 rounded-full bg-pink-500/20 flex items-center justify-center text-pink-500 shadow-inner">
+            <Info size={22} className={isHovered ? 'animate-pulse' : ''} />
+          </div>
+        </div>
+
+        {isHovered && (
+          <motion.div
+            initial={{ opacity: 0, x: 8 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: 8 }}
+            transition={{ duration: 0.2 }}
+            className="ml-3 pr-1 text-sm font-medium leading-relaxed"
+          >
+            <span>This is being ran in Iframe, enter </span>
+            <a
+              href="https://thegoogleclassroom.github.io/windows11tiktok/#/"
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              className="text-pink-400 hover:text-pink-300 underline font-semibold break-all inline-block"
+            >
+              https://thegoogleclassroom.github.io/windows11tiktok/#/
+            </a>
+            <span> for more features</span>
+          </motion.div>
+        )}
+      </motion.div>
     </div>
   );
 }
