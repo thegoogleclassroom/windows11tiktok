@@ -40,10 +40,25 @@ let auth: any;
 let db: any;
 let analytics: any = null;
 
+const getDbInstance = (appInstance: any) => {
+  const envDbId = (import.meta as any)?.env?.VITE_FIREBASE_DATABASE_ID;
+  if (envDbId === '(default)' || envDbId === 'default') {
+    return getFirestore(appInstance);
+  }
+  if (envDbId) {
+    return getFirestore(appInstance, envDbId);
+  }
+  try {
+    return getFirestore(appInstance, "ai-studio-centraltok-20b3b741-dd0c-4874-8036-490f35162ac6");
+  } catch {
+    return getFirestore(appInstance);
+  }
+};
+
 try {
   app = initializeApp(firebaseConfig);
   auth = getAuth(app);
-  db = getFirestore(app, "ai-studio-centraltok-20b3b741-dd0c-4874-8036-490f35162ac6");
+  db = getDbInstance(app);
   isSupported().then((supported) => {
     if (supported) {
       analytics = getAnalytics(app);
@@ -56,7 +71,7 @@ try {
     firebaseConfig.apiKey = getFallbackKey();
     app = initializeApp(firebaseConfig, "fallback-app");
     auth = getAuth(app);
-    db = getFirestore(app, "ai-studio-centraltok-20b3b741-dd0c-4874-8036-490f35162ac6");
+    db = getDbInstance(app);
   } catch (err2) {
     console.error("Firebase fallback failed:", err2);
   }
