@@ -263,7 +263,7 @@ export function Chat() {
       const formData = new FormData();
       formData.append('file', file);
       formData.append('upload_preset', 'centraltok');
-      const res = await fetch('https://api.cloudinary.com/v1_1/nmdsqhos/auto/upload', { method: 'POST', body: formData });
+      const res = await fetch('https://api.cloudinary.com/v1_1/dzpocbcl/auto/upload', { method: 'POST', body: formData });
       if (res.ok) {
         const data = await res.json();
         return { url: data.secure_url, type: data.resource_type };

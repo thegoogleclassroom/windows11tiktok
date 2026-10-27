@@ -203,11 +203,30 @@ export function Upload() {
     setIsUploading(true);
     
     try {
-      let downloadUrl = await new Promise<string>((resolve) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result as string);
-        reader.readAsDataURL(file);
-      });
+      let downloadUrl = '';
+      try {
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('upload_preset', 'centraltok');
+        const res = await fetch('https://api.cloudinary.com/v1_1/dzpocbcl/auto/upload', {
+          method: 'POST',
+          body: formData
+        });
+        if (res.ok) {
+          const data = await res.json();
+          downloadUrl = data.secure_url;
+        }
+      } catch (err) {
+        console.warn("Cloudinary upload failed, falling back to local processing:", err);
+      }
+
+      if (!downloadUrl) {
+        downloadUrl = await new Promise<string>((resolve) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result as string);
+          reader.readAsDataURL(file);
+        });
+      }
 
       if (!downloadUrl) {
         alert("Failed to process media file. Please try again.");
