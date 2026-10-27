@@ -575,6 +575,7 @@ export function Home() {
             key={video.feedId} 
             video={video} 
             onDelete={() => handlePostDeleted(video.id)}
+            onSkip={scrollDown}
           />
         ))}
 
@@ -618,7 +619,8 @@ export const VideoItem: React.FC<{
   video: Video & { user: User; feedId?: string };
   onDelete?: (id: string) => void;
   onMinimize?: () => void;
-}> = ({ video, onDelete, onMinimize }) => {
+  onSkip?: () => void;
+}> = ({ video, onDelete, onMinimize, onSkip }) => {
   const { 
     currentUser, 
     setCurrentUser, 
@@ -680,6 +682,15 @@ export const VideoItem: React.FC<{
       }
     };
   }, []);
+
+  useEffect(() => {
+    if (youtubeError && onSkip) {
+      const timer = setTimeout(() => {
+        onSkip();
+      }, 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [youtubeError, onSkip]);
 
   const handleDeletePost = async () => {
     if (!window.confirm("Are you sure you want to delete this post? This action cannot be undone.")) return;
@@ -795,6 +806,10 @@ export const VideoItem: React.FC<{
   };
 
   const togglePlay = () => {
+    if (youtubeError) {
+      if (onSkip) onSkip();
+      return;
+    }
     if (video.isYouTube && ytPlayerRef.current) {
       if (typeof ytPlayerRef.current.unMute === 'function') ytPlayerRef.current.unMute();
       if (typeof ytPlayerRef.current.setVolume === 'function') ytPlayerRef.current.setVolume(100);
@@ -1004,28 +1019,8 @@ export const VideoItem: React.FC<{
             onMouseDown={handleDoubleTap}
           >
             {video.isYouTube ? (
-              youtubeError ? (
-                <div className="absolute inset-0 z-0 flex flex-col items-center justify-center gap-4 bg-zinc-950 p-6 text-center text-white select-none">
-                  <img 
-                    src={`https://img.youtube.com/vi/${video.youtubeId}/hqdefault.jpg`} 
-                    alt="Video preview" 
-                    className="absolute inset-0 h-full w-full object-cover opacity-25 blur-sm" 
-                  />
-                  <div className="relative z-10 max-w-xs flex flex-col items-center">
-                    <div className="w-12 h-12 rounded-full bg-zinc-800/90 flex items-center justify-center mb-2 shadow-lg">
-                      <Music size={22} className="text-pink-500" />
-                    </div>
-                    <p className="font-semibold text-sm">Media stream unavailable</p>
-                    <button 
-                      onClick={(e) => { e.stopPropagation(); setYoutubeError(null); }} 
-                      className="mt-3 inline-block rounded-xl bg-pink-600 hover:bg-pink-700 px-4 py-2 text-xs font-bold text-white shadow-lg active:scale-95 transition-transform"
-                    >
-                      Retry Stream
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <div className="absolute inset-0 z-0 pointer-events-none overflow-hidden flex items-center justify-center select-none bg-black">
+              <>
+                <div className={`absolute inset-0 z-0 pointer-events-none overflow-hidden flex items-center justify-center select-none bg-black ${youtubeError ? 'invisible' : 'visible'}`}>
                   <div className="w-[124%] h-[124%] scale-105 relative flex items-center justify-center pointer-events-none">
                     <YouTube 
                       videoId={video.youtubeId} 
@@ -1042,7 +1037,44 @@ export const VideoItem: React.FC<{
                   <div className="absolute top-0 right-0 w-44 h-24 bg-gradient-to-b from-black via-black/80 to-transparent pointer-events-none z-[5]" />
                   <div className="absolute top-0 left-0 w-full h-16 bg-gradient-to-b from-black/80 to-transparent pointer-events-none z-[5]" />
                 </div>
-              )
+
+                {youtubeError && (
+                  <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-4 bg-zinc-950/95 p-6 text-center text-white select-none">
+                    <img 
+                      src={`https://img.youtube.com/vi/${video.youtubeId}/hqdefault.jpg`} 
+                      alt="Video preview" 
+                      className="absolute inset-0 h-full w-full object-cover opacity-20 blur-sm pointer-events-none" 
+                    />
+                    <div className="relative z-10 max-w-xs flex flex-col items-center">
+                      <div className="w-12 h-12 rounded-full bg-zinc-800/90 flex items-center justify-center mb-2 shadow-lg">
+                        <AlertCircle size={22} className="text-yellow-400" />
+                      </div>
+                      <p className="font-bold text-sm">Embedding Restricted by Creator</p>
+                      <p className="text-xs text-zinc-400 mt-1">This creator restricts playback to YouTube. Skipping...</p>
+                      
+                      <div className="mt-4 flex flex-col gap-2 w-full">
+                        {onSkip && (
+                          <button 
+                            onClick={(e) => { e.stopPropagation(); onSkip(); }} 
+                            className="w-full rounded-xl bg-pink-600 hover:bg-pink-700 px-4 py-2.5 text-xs font-bold text-white shadow-lg active:scale-95 transition-transform"
+                          >
+                            Skip to Next Video →
+                          </button>
+                        )}
+                        <a 
+                          href={`https://www.youtube.com/watch?v=${video.youtubeId}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={(e) => e.stopPropagation()}
+                          className="w-full rounded-xl bg-zinc-800 hover:bg-zinc-700 px-4 py-2.5 text-xs font-bold text-zinc-200 shadow-md active:scale-95 transition-transform"
+                        >
+                          Watch on YouTube
+                        </a>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </>
             ) : isImageMedia ? (
               <div className="w-full h-full bg-black flex items-center justify-center relative select-none">
                 <img 
