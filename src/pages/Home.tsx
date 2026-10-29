@@ -22,6 +22,7 @@ import { isFriend } from '../lib/utils';
 import YouTube, { YouTubeEvent, YouTubeProps } from 'react-youtube';
 import { getReports, saveReports } from '../lib/db';
 import { normalizeYoutubeShorts } from '../lib/feed';
+import { FALLBACK_VIDEOS } from '../lib/fallbackVideos';
 
 const SONGS = [
   { id: '1', name: 'Summer Vibes', artist: 'Lofi Girl', url: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3' },
@@ -115,13 +116,10 @@ export function Home() {
         user: allUsers.find(u => u.id === v.userId) || ({} as User)
       }));
 
-      // If we target UGV but have none, fallback to YouTube
-      if (targetType === 'ugv' && unseenUgvs.length === 0) {
-        targetType = 'youtube';
-      }
-
       let nextVideo: Video & { user: User } | undefined = targetType === 'ugv' 
-        ? unseenUgvs[Math.floor(Math.random() * unseenUgvs.length)]
+        ? (unseenUgvs.length > 0 
+            ? unseenUgvs[Math.floor(Math.random() * unseenUgvs.length)]
+            : FALLBACK_VIDEOS[Math.floor(Math.random() * FALLBACK_VIDEOS.length)])
         : undefined;
 
       let nextYtPageToken = ytPageToken;
@@ -219,6 +217,11 @@ export function Home() {
         } catch (error) {
           console.warn('YouTube Shorts request failed', error);
         }
+      }
+
+      if (!nextVideo) {
+        const fallback = FALLBACK_VIDEOS[Math.floor(Math.random() * FALLBACK_VIDEOS.length)];
+        nextVideo = { ...fallback, id: `${fallback.id}_${Date.now()}` };
       }
 
       setYtPageToken(nextYtPageToken);
@@ -579,15 +582,7 @@ export function Home() {
           />
         ))}
 
-        {hasMore ? (
-          <div ref={endRef} className="h-20 snap-start flex items-center justify-center bg-black shrink-0">
-            <Loader2 size={32} className="animate-spin text-zinc-500" />
-          </div>
-        ) : (
-          <div className="h-20 snap-start flex items-center justify-center bg-black shrink-0 text-zinc-500 text-sm pb-8 text-center px-4">
-            {youtubeOverloaded ? 'The Servers are Overloaded, This will be fixed shortly' : "You've caught up for now!"}
-          </div>
-        )}
+        <div ref={endRef} className="h-0 w-full shrink-0 pointer-events-none opacity-0" />
       </motion.div>
       
       {/* Desktop Navigation Arrows */}
@@ -687,10 +682,23 @@ export const VideoItem: React.FC<{
     if (youtubeError && onSkip) {
       const timer = setTimeout(() => {
         onSkip();
-      }, 3000);
+      }, 1500);
       return () => clearTimeout(timer);
     }
   }, [youtubeError, onSkip]);
+
+  // Network/DNS Block Detector (e.g. School WiFi blocking YouTube)
+  useEffect(() => {
+    if (isActive && video.isYouTube && !isPlaying && !ytPlayerRef.current) {
+      const checkTimer = setTimeout(() => {
+        if (!isPlaying && !ytPlayerRef.current) {
+          setYoutubeError(999);
+          if (onSkip) onSkip();
+        }
+      }, 3500);
+      return () => clearTimeout(checkTimer);
+    }
+  }, [isActive, video.isYouTube, isPlaying, onSkip]);
 
   const handleDeletePost = async () => {
     if (!window.confirm("Are you sure you want to delete this post? This action cannot be undone.")) return;
@@ -1023,7 +1031,7 @@ export const VideoItem: React.FC<{
                 <div className={`absolute inset-0 z-0 pointer-events-none overflow-hidden flex items-center justify-center select-none bg-black ${youtubeError ? 'invisible' : 'visible'}`}>
                   <div className="w-[124%] h-[124%] scale-105 relative flex items-center justify-center pointer-events-none">
                     <YouTube 
-                      videoId={video.youtubeId} 
+                      videoId={video.youtubeId || video.videoId || ''} 
                       opts={opts} 
                       host="https://www.youtube.com"
                       onReady={handleYtReady}
@@ -1046,7 +1054,7 @@ export const VideoItem: React.FC<{
                 {youtubeError && (
                   <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-4 bg-zinc-950/95 p-6 text-center text-white select-none">
                     <img 
-                      src={`https://img.youtube.com/vi/${video.youtubeId}/hqdefault.jpg`} 
+                      src={`https://img.youtube.com/vi/${video.youtubeId || video.videoId || ''}/hqdefault.jpg`} 
                       alt="Video preview" 
                       className="absolute inset-0 h-full w-full object-cover opacity-20 blur-sm pointer-events-none" 
                     />
@@ -1054,8 +1062,12 @@ export const VideoItem: React.FC<{
                       <div className="w-12 h-12 rounded-full bg-zinc-800/90 flex items-center justify-center mb-2 shadow-lg">
                         <AlertCircle size={22} className="text-yellow-400" />
                       </div>
-                      <p className="font-bold text-sm">Embedding Restricted by Creator</p>
-                      <p className="text-xs text-zinc-400 mt-1">This creator restricts playback to YouTube. Skipping...</p>
+                      <p className="font-bold text-sm">
+                        {youtubeError === 999 ? 'YouTube Blocked on Network' : 'Embedding Restricted by Creator'}
+                      </p>
+                      <p className="text-xs text-zinc-400 mt-1">
+                        {youtubeError === 999 ? 'Network/School filter detected. Auto-playing CentralTok clips...' : 'This video is restricted to YouTube by its owner. Skipping...'}
+                      </p>
                       
                       <div className="mt-4 flex flex-col gap-2 w-full">
                         {onSkip && (

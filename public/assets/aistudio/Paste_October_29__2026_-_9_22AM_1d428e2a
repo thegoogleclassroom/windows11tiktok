@@ -1,0 +1,1304 @@
+index-2F_5HKJR.js:4949 Fetch finished loading: GET "https://firebase.googleapis.com/v1alpha/projects/-/apps/1:319434380307:web:f7c907fb7eae79ee2d1be6/webConfig".
+aye @ index-2F_5HKJR.js:4949
+Hq @ index-2F_5HKJR.js:4949
+await in Hq
+oye @ index-2F_5HKJR.js:4949
+mye @ index-2F_5HKJR.js:4964
+yye @ index-2F_5HKJR.js:4979
+(anonymous) @ index-2F_5HKJR.js:5009
+getOrInitializeService @ index-2F_5HKJR.js:850
+initialize @ index-2F_5HKJR.js:850
+xye @ index-2F_5HKJR.js:4994
+vye @ index-2F_5HKJR.js:4994
+(anonymous) @ index-2F_5HKJR.js:5009
+Promise.then
+(anonymous) @ index-2F_5HKJR.js:5009
+js?l=dataLayer&id=G-CVV3FDNYQM:827 [Violation] 'setTimeout' handler took 62ms
+43Fetch finished loading: POST "<URL>".
+js?l=dataLayer&id=G-CVV3FDNYQM:341 Fetch failed loading: POST "https://www.google-analytics.com/g/collect?v=2&tid=G-CVV3FDNYQM&gtm=45je6ar1v9264823018za208zd9264823018xf1&_p=1793283238353&gcd=13l3l3l3l1l1&npa=0&dma=0&_eu=AAAAAAQ&_fid=eyxt7Y-skTbbF1PDOym7zf&cid=1933722974.1793283100&frm=0&lps=1&ngs=1&pscdl=noapi&rcb=18&sr=1536x960&uaa=x86&uab=64&uafvl=Google%2520Chrome%3B155.0.8059.85%7CChromium%3B155.0.8059.85%7CNot(A%253ABrand%3B24.0.0.0&uam=&uamb=0&uap=Windows&uapv=19.0.0&uaw=0&ul=en-us&_s=1&tag_exp=115938466~115938468~118897920~118897930~120213116~120385422~120412527~120469145~120469153~121246026~121246034~123620775&sid=1793283099&sct=1&seg=1&dl=https%3A%2F%2Fthegoogleclassroom.github.io%2Fwindows11tiktok%2F&dr=https%3A%2F%2Fwww.google.com%2F&dt=CentralTok&en=page_view&_ee=1&ep.origin=firebase&tfd=2681".
+vd @ js?l=dataLayer&id=G-CVV3FDNYQM:341
+Xl @ js?l=dataLayer&id=G-CVV3FDNYQM:495
+jS @ js?l=dataLayer&id=G-CVV3FDNYQM:1078
+mS @ js?l=dataLayer&id=G-CVV3FDNYQM:1079
+l.flush @ js?l=dataLayer&id=G-CVV3FDNYQM:1089
+l.Ng @ js?l=dataLayer&id=G-CVV3FDNYQM:1085
+l.add @ js?l=dataLayer&id=G-CVV3FDNYQM:1087
+l.km @ js?l=dataLayer&id=G-CVV3FDNYQM:1116
+l.Pr @ js?l=dataLayer&id=G-CVV3FDNYQM:1116
+(anonymous) @ js?l=dataLayer&id=G-CVV3FDNYQM:1114
+Um @ js?l=dataLayer&id=G-CVV3FDNYQM:515
+mp @ js?l=dataLayer&id=G-CVV3FDNYQM:534
+(anonymous) @ js?l=dataLayer&id=G-CVV3FDNYQM:1114
+d @ js?l=dataLayer&id=G-CVV3FDNYQM:860
+$G.da @ js?l=dataLayer&id=G-CVV3FDNYQM:861
+l.Or @ js?l=dataLayer&id=G-CVV3FDNYQM:1114
+b @ js?l=dataLayer&id=G-CVV3FDNYQM:1118
+v @ js?l=dataLayer&id=G-CVV3FDNYQM:781
+$m @ js?l=dataLayer&id=G-CVV3FDNYQM:517
+x @ js?l=dataLayer&id=G-CVV3FDNYQM:781
+oD @ js?l=dataLayer&id=G-CVV3FDNYQM:781
+mD.flush @ js?l=dataLayer&id=G-CVV3FDNYQM:785
+mD.push @ js?l=dataLayer&id=G-CVV3FDNYQM:783
+uD @ js?l=dataLayer&id=G-CVV3FDNYQM:788
+$D.event @ js?l=dataLayer&id=G-CVV3FDNYQM:806
+QE @ js?l=dataLayer&id=G-CVV3FDNYQM:819
+c.push @ js?l=dataLayer&id=G-CVV3FDNYQM:825
+IE.push @ js?l=dataLayer&id=G-CVV3FDNYQM:826
+WE @ js?l=dataLayer&id=G-CVV3FDNYQM:827
+nM @ js?l=dataLayer&id=G-CVV3FDNYQM:976
+iM @ js?l=dataLayer&id=G-CVV3FDNYQM:975
+(anonymous) @ js?l=dataLayer&id=G-CVV3FDNYQM:979
+setTimeout
+kd @ js?l=dataLayer&id=G-CVV3FDNYQM:336
+qM @ js?l=dataLayer&id=G-CVV3FDNYQM:979
+(anonymous) @ js?l=dataLayer&id=G-CVV3FDNYQM:429
+l.apply @ js?l=dataLayer&id=G-CVV3FDNYQM:349
+ib @ js?l=dataLayer&id=G-CVV3FDNYQM:309
+Md.evaluate @ js?l=dataLayer&id=G-CVV3FDNYQM:351
+he @ js?l=dataLayer&id=G-CVV3FDNYQM:366
+l.apply @ js?l=dataLayer&id=G-CVV3FDNYQM:349
+ib @ js?l=dataLayer&id=G-CVV3FDNYQM:309
+hb @ js?l=dataLayer&id=G-CVV3FDNYQM:309
+(anonymous) @ js?l=dataLayer&id=G-CVV3FDNYQM:373
+l.apply @ js?l=dataLayer&id=G-CVV3FDNYQM:349
+ce @ js?l=dataLayer&id=G-CVV3FDNYQM:364
+l.apply @ js?l=dataLayer&id=G-CVV3FDNYQM:349
+ib @ js?l=dataLayer&id=G-CVV3FDNYQM:309
+Md.evaluate @ js?l=dataLayer&id=G-CVV3FDNYQM:351
+he @ js?l=dataLayer&id=G-CVV3FDNYQM:366
+l.apply @ js?l=dataLayer&id=G-CVV3FDNYQM:349
+ib @ js?l=dataLayer&id=G-CVV3FDNYQM:309
+hb @ js?l=dataLayer&id=G-CVV3FDNYQM:309
+(anonymous) @ js?l=dataLayer&id=G-CVV3FDNYQM:373
+l.apply @ js?l=dataLayer&id=G-CVV3FDNYQM:349
+ib @ js?l=dataLayer&id=G-CVV3FDNYQM:309
+l.Yo @ js?l=dataLayer&id=G-CVV3FDNYQM:310
+(anonymous) @ js?l=dataLayer&id=G-CVV3FDNYQM:844
+Pz @ js?l=dataLayer&id=G-CVV3FDNYQM:719
+EA.evaluate @ js?l=dataLayer&id=G-CVV3FDNYQM:739
+e @ js?l=dataLayer&id=G-CVV3FDNYQM:756
+QB @ js?l=dataLayer&id=G-CVV3FDNYQM:757
+UB @ js?l=dataLayer&id=G-CVV3FDNYQM:761
+QE @ js?l=dataLayer&id=G-CVV3FDNYQM:821
+RE @ js?l=dataLayer&id=G-CVV3FDNYQM:822
+TE @ js?l=dataLayer&id=G-CVV3FDNYQM:827
+setTimeout
+kd @ js?l=dataLayer&id=G-CVV3FDNYQM:336
+IE.bind @ js?l=dataLayer&id=G-CVV3FDNYQM:825
+VV @ js?l=dataLayer&id=G-CVV3FDNYQM:1195
+Bk @ js?l=dataLayer&id=G-CVV3FDNYQM:1200
+(anonymous) @ js?l=dataLayer&id=G-CVV3FDNYQM:1203
+c @ js?l=dataLayer&id=G-CVV3FDNYQM:1201
+(anonymous) @ js?l=dataLayer&id=G-CVV3FDNYQM:1203
+(anonymous) @ js?l=dataLayer&id=G-CVV3FDNYQM:1203
+(anonymous) @ js?l=dataLayer&id=G-CVV3FDNYQM:1205
+PendingScript
+Y0e @ index-2F_5HKJR.js:4934
+mye @ index-2F_5HKJR.js:4964
+await in mye
+yye @ index-2F_5HKJR.js:4979
+(anonymous) @ index-2F_5HKJR.js:5009
+getOrInitializeService @ index-2F_5HKJR.js:850
+initialize @ index-2F_5HKJR.js:850
+xye @ index-2F_5HKJR.js:4994
+vye @ index-2F_5HKJR.js:4994
+(anonymous) @ index-2F_5HKJR.js:5009
+Promise.then
+(anonymous) @ index-2F_5HKJR.js:5009
+index-2F_5HKJR.js:5032 Fetch finished loading: GET "https://thegoogleclassroom.github.io/windows11tiktok/youtube-feed.json".
+we @ index-2F_5HKJR.js:5032
+await in we
+(anonymous) @ index-2F_5HKJR.js:5032
+(anonymous) @ index-2F_5HKJR.js:5032
+sB @ index-2F_5HKJR.js:48
+PM @ index-2F_5HKJR.js:48
+to @ index-2F_5HKJR.js:48
+PM @ index-2F_5HKJR.js:48
+to @ index-2F_5HKJR.js:48
+PM @ index-2F_5HKJR.js:48
+to @ index-2F_5HKJR.js:48
+PM @ index-2F_5HKJR.js:48
+to @ index-2F_5HKJR.js:48
+PM @ index-2F_5HKJR.js:48
+to @ index-2F_5HKJR.js:48
+PM @ index-2F_5HKJR.js:48
+to @ index-2F_5HKJR.js:48
+PM @ index-2F_5HKJR.js:48
+to @ index-2F_5HKJR.js:48
+PM @ index-2F_5HKJR.js:48
+to @ index-2F_5HKJR.js:48
+PM @ index-2F_5HKJR.js:48
+to @ index-2F_5HKJR.js:48
+PM @ index-2F_5HKJR.js:48
+to @ index-2F_5HKJR.js:48
+PM @ index-2F_5HKJR.js:48
+to @ index-2F_5HKJR.js:48
+PM @ index-2F_5HKJR.js:48
+to @ index-2F_5HKJR.js:48
+PM @ index-2F_5HKJR.js:48
+to @ index-2F_5HKJR.js:48
+PM @ index-2F_5HKJR.js:48
+to @ index-2F_5HKJR.js:48
+PM @ index-2F_5HKJR.js:48
+to @ index-2F_5HKJR.js:48
+PM @ index-2F_5HKJR.js:48
+to @ index-2F_5HKJR.js:48
+PM @ index-2F_5HKJR.js:48
+nz @ index-2F_5HKJR.js:48
+(anonymous) @ index-2F_5HKJR.js:48
+V @ index-2F_5HKJR.js:25
+postMessage
+L @ index-2F_5HKJR.js:25
+V @ index-2F_5HKJR.js:25
+postMessage
+L @ index-2F_5HKJR.js:25
+Qne.t.unstable_scheduleCallback @ index-2F_5HKJR.js:25
+az @ index-2F_5HKJR.js:48
+sz @ index-2F_5HKJR.js:48
+(anonymous) @ index-2F_5HKJR.js:48
+postMessage
+L @ index-2F_5HKJR.js:25
+V @ index-2F_5HKJR.js:25
+postMessage
+L @ index-2F_5HKJR.js:25
+Qne.t.unstable_scheduleCallback @ index-2F_5HKJR.js:25
+az @ index-2F_5HKJR.js:48
+sz @ index-2F_5HKJR.js:48
+(anonymous) @ index-2F_5HKJR.js:48
+9Failed to execute 'postMessage' on 'DOMWindow': The target origin provided ('<URL>') does not match the recipient window's origin ('<URL>').
+www.youtube.com/embed/nxEBDQbvmZ8?autoplay=1&enablejsapi=1&origin=https%3A%2F%2Fthegoogleclassroom.github.io&widget_referrer=https%3A%2F%2Fthegoogleclassroom.github.io&mute=0&controls=0&rel=0&showinfo=0&modestbranding=1&fs=0&disablekb=1&playsinline=1&iv_load_policy=3&widgetid=1&forigin=https%3A%2F%2Fthegoogleclassroom.github.io%2Fwindows11tiktok%2F%23%2F&aoriginsup=1&gporigin=https%3A%2F%2Fwww.google.com%2F&vf=1:1 [Intervention] Slow network is detected. See https://www.chromestatus.com/feature/5636954674692096 for more details. Fallback font will be used while loading: https://fonts.gstatic.com/s/roboto/v48/KFO7CnqEu92Fr1ME7kSn66aGLdTylUAMa3yUBA.woff2
+js?l=dataLayer&id=G-CVV3FDNYQM:341 Fetch failed loading: POST "https://www.google-analytics.com/g/collect?v=2&tid=G-CVV3FDNYQM&gtm=45je6ar1v9264823018za200zd9264823018xf1&_p=1793283238353&gcd=13l3l3l3l1l1&npa=0&dma=0&_eu=AEAAAAQ&_fid=eyxt7Y-skTbbF1PDOym7zf&ae=a&cid=1933722974.1793283100&frm=0&lps=1&ngs=1&pscdl=noapi&rcb=18&sr=1536x960&uaa=x86&uab=64&uafvl=Google%2520Chrome%3B155.0.8059.85%7CChromium%3B155.0.8059.85%7CNot(A%253ABrand%3B24.0.0.0&uam=&uamb=0&uap=Windows&uapv=19.0.0&uaw=0&ul=en-us&_s=2&tag_exp=115938466~115938468~118897920~118897930~120213116~120385422~120412527~120469145~120469153~121246026~121246034~123620775&sid=1793283099&sct=1&seg=1&dl=https%3A%2F%2Fthegoogleclassroom.github.io%2Fwindows11tiktok%2F&dr=https%3A%2F%2Fwww.google.com%2F&dt=CentralTok&en=scroll&ep.origin=firebase&epn.percent_scrolled=90&_et=29&tfd=7687".
+vd @ js?l=dataLayer&id=G-CVV3FDNYQM:341
+Xl @ js?l=dataLayer&id=G-CVV3FDNYQM:495
+jS @ js?l=dataLayer&id=G-CVV3FDNYQM:1078
+mS @ js?l=dataLayer&id=G-CVV3FDNYQM:1079
+l.flush @ js?l=dataLayer&id=G-CVV3FDNYQM:1089
+(anonymous) @ js?l=dataLayer&id=G-CVV3FDNYQM:1085
+setTimeout
+l.Ng @ js?l=dataLayer&id=G-CVV3FDNYQM:1085
+l.add @ js?l=dataLayer&id=G-CVV3FDNYQM:1087
+l.km @ js?l=dataLayer&id=G-CVV3FDNYQM:1116
+l.Pr @ js?l=dataLayer&id=G-CVV3FDNYQM:1116
+(anonymous) @ js?l=dataLayer&id=G-CVV3FDNYQM:1114
+Um @ js?l=dataLayer&id=G-CVV3FDNYQM:515
+mp @ js?l=dataLayer&id=G-CVV3FDNYQM:534
+(anonymous) @ js?l=dataLayer&id=G-CVV3FDNYQM:1114
+d @ js?l=dataLayer&id=G-CVV3FDNYQM:860
+$G.da @ js?l=dataLayer&id=G-CVV3FDNYQM:861
+l.Or @ js?l=dataLayer&id=G-CVV3FDNYQM:1114
+b @ js?l=dataLayer&id=G-CVV3FDNYQM:1118
+v @ js?l=dataLayer&id=G-CVV3FDNYQM:781
+$m @ js?l=dataLayer&id=G-CVV3FDNYQM:517
+x @ js?l=dataLayer&id=G-CVV3FDNYQM:781
+oD @ js?l=dataLayer&id=G-CVV3FDNYQM:781
+mD.flush @ js?l=dataLayer&id=G-CVV3FDNYQM:785
+mD.push @ js?l=dataLayer&id=G-CVV3FDNYQM:783
+uD @ js?l=dataLayer&id=G-CVV3FDNYQM:788
+$D.event @ js?l=dataLayer&id=G-CVV3FDNYQM:806
+QE @ js?l=dataLayer&id=G-CVV3FDNYQM:819
+c.push @ js?l=dataLayer&id=G-CVV3FDNYQM:825
+IE.push @ js?l=dataLayer&id=G-CVV3FDNYQM:826
+WE @ js?l=dataLayer&id=G-CVV3FDNYQM:827
+nM @ js?l=dataLayer&id=G-CVV3FDNYQM:976
+iM @ js?l=dataLayer&id=G-CVV3FDNYQM:975
+(anonymous) @ js?l=dataLayer&id=G-CVV3FDNYQM:979
+setTimeout
+kd @ js?l=dataLayer&id=G-CVV3FDNYQM:336
+qM @ js?l=dataLayer&id=G-CVV3FDNYQM:979
+(anonymous) @ js?l=dataLayer&id=G-CVV3FDNYQM:429
+l.apply @ js?l=dataLayer&id=G-CVV3FDNYQM:349
+ib @ js?l=dataLayer&id=G-CVV3FDNYQM:309
+Md.evaluate @ js?l=dataLayer&id=G-CVV3FDNYQM:351
+he @ js?l=dataLayer&id=G-CVV3FDNYQM:366
+l.apply @ js?l=dataLayer&id=G-CVV3FDNYQM:349
+ib @ js?l=dataLayer&id=G-CVV3FDNYQM:309
+hb @ js?l=dataLayer&id=G-CVV3FDNYQM:309
+(anonymous) @ js?l=dataLayer&id=G-CVV3FDNYQM:373
+l.apply @ js?l=dataLayer&id=G-CVV3FDNYQM:349
+ce @ js?l=dataLayer&id=G-CVV3FDNYQM:364
+l.apply @ js?l=dataLayer&id=G-CVV3FDNYQM:349
+ib @ js?l=dataLayer&id=G-CVV3FDNYQM:309
+Md.evaluate @ js?l=dataLayer&id=G-CVV3FDNYQM:351
+he @ js?l=dataLayer&id=G-CVV3FDNYQM:366
+l.apply @ js?l=dataLayer&id=G-CVV3FDNYQM:349
+ib @ js?l=dataLayer&id=G-CVV3FDNYQM:309
+hb @ js?l=dataLayer&id=G-CVV3FDNYQM:309
+(anonymous) @ js?l=dataLayer&id=G-CVV3FDNYQM:373
+l.apply @ js?l=dataLayer&id=G-CVV3FDNYQM:349
+ib @ js?l=dataLayer&id=G-CVV3FDNYQM:309
+l.Yo @ js?l=dataLayer&id=G-CVV3FDNYQM:310
+(anonymous) @ js?l=dataLayer&id=G-CVV3FDNYQM:844
+Pz @ js?l=dataLayer&id=G-CVV3FDNYQM:719
+EA.evaluate @ js?l=dataLayer&id=G-CVV3FDNYQM:739
+e @ js?l=dataLayer&id=G-CVV3FDNYQM:756
+QB @ js?l=dataLayer&id=G-CVV3FDNYQM:757
+UB @ js?l=dataLayer&id=G-CVV3FDNYQM:761
+QE @ js?l=dataLayer&id=G-CVV3FDNYQM:821
+RE @ js?l=dataLayer&id=G-CVV3FDNYQM:822
+TE @ js?l=dataLayer&id=G-CVV3FDNYQM:827
+setTimeout
+kd @ js?l=dataLayer&id=G-CVV3FDNYQM:336
+IE.bind @ js?l=dataLayer&id=G-CVV3FDNYQM:825
+VV @ js?l=dataLayer&id=G-CVV3FDNYQM:1195
+Bk @ js?l=dataLayer&id=G-CVV3FDNYQM:1200
+(anonymous) @ js?l=dataLayer&id=G-CVV3FDNYQM:1203
+c @ js?l=dataLayer&id=G-CVV3FDNYQM:1201
+(anonymous) @ js?l=dataLayer&id=G-CVV3FDNYQM:1203
+(anonymous) @ js?l=dataLayer&id=G-CVV3FDNYQM:1203
+(anonymous) @ js?l=dataLayer&id=G-CVV3FDNYQM:1205
+PendingScript
+Y0e @ index-2F_5HKJR.js:4934
+mye @ index-2F_5HKJR.js:4964
+await in mye
+yye @ index-2F_5HKJR.js:4979
+(anonymous) @ index-2F_5HKJR.js:5009
+getOrInitializeService @ index-2F_5HKJR.js:850
+initialize @ index-2F_5HKJR.js:850
+xye @ index-2F_5HKJR.js:4994
+vye @ index-2F_5HKJR.js:4994
+(anonymous) @ index-2F_5HKJR.js:5009
+Promise.then
+(anonymous) @ index-2F_5HKJR.js:5009
+12[Violation] Added non-passive event listener to a scroll-blocking <some> event. Consider marking event handler as 'passive' to make the page more responsive. See <URL>
+5[Violation] 'setTimeout' handler took <N>ms
+[Violation] Forced reflow while executing JavaScript took 32ms
+8XHR finished loading: GET "<URL>".
+16Fetch finished loading: POST "<URL>".
+(unknown) The powerPreference option is currently ignored when calling requestAdapter() on Windows. See https://crbug.com/369219127
+eval @ VM116:1
+tF @ VM109:1
+dH @ VM154:1
+(anonymous) @ nxEBDQbvmZ8:1
+(anonymous) @ nxEBDQbvmZ8:1
+(anonymous) @ nxEBDQbvmZ8:1
+(anonymous) @ nxEBDQbvmZ8:1
+(anonymous) @ nxEBDQbvmZ8:1
+(anonymous) @ nxEBDQbvmZ8:1
+requestIdleCallback
+(anonymous) @ nxEBDQbvmZ8:1
+(anonymous) @ nxEBDQbvmZ8:1
+(anonymous) @ nxEBDQbvmZ8:1
+(anonymous) @ nxEBDQbvmZ8:1
+(anonymous) @ nxEBDQbvmZ8:1
+requestIdleCallback
+(anonymous) @ nxEBDQbvmZ8:1
+(anonymous) @ nxEBDQbvmZ8:1
+(anonymous) @ nxEBDQbvmZ8:1
+(anonymous) @ nxEBDQbvmZ8:1
+(anonymous) @ nxEBDQbvmZ8:1
+requestIdleCallback
+(anonymous) @ nxEBDQbvmZ8:1
+(anonymous) @ nxEBDQbvmZ8:1
+(anonymous) @ nxEBDQbvmZ8:1
+(anonymous) @ nxEBDQbvmZ8:1
+(anonymous) @ nxEBDQbvmZ8:1
+requestIdleCallback
+(anonymous) @ nxEBDQbvmZ8:1
+(anonymous) @ nxEBDQbvmZ8:1
+(anonymous) @ nxEBDQbvmZ8:1
+(anonymous) @ nxEBDQbvmZ8:1
+(anonymous) @ nxEBDQbvmZ8:1
+requestIdleCallback
+(anonymous) @ nxEBDQbvmZ8:1
+(anonymous) @ nxEBDQbvmZ8:1
+(anonymous) @ nxEBDQbvmZ8:1
+(anonymous) @ nxEBDQbvmZ8:1
+(anonymous) @ nxEBDQbvmZ8:1
+requestIdleCallback
+(anonymous) @ nxEBDQbvmZ8:1
+(anonymous) @ nxEBDQbvmZ8:1
+(anonymous) @ nxEBDQbvmZ8:1
+(anonymous) @ nxEBDQbvmZ8:1
+(anonymous) @ nxEBDQbvmZ8:1
+requestIdleCallback
+(anonymous) @ nxEBDQbvmZ8:1
+(anonymous) @ nxEBDQbvmZ8:1
+(anonymous) @ nxEBDQbvmZ8:1
+(anonymous) @ nxEBDQbvmZ8:1
+(anonymous) @ nxEBDQbvmZ8:1
+requestIdleCallback
+(anonymous) @ nxEBDQbvmZ8:1
+(anonymous) @ nxEBDQbvmZ8:1
+(anonymous) @ nxEBDQbvmZ8:1
+(anonymous) @ nxEBDQbvmZ8:1
+(anonymous) @ nxEBDQbvmZ8:1
+requestIdleCallback
+(anonymous) @ nxEBDQbvmZ8:1
+(anonymous) @ nxEBDQbvmZ8:1
+(anonymous) @ nxEBDQbvmZ8:1
+(anonymous) @ nxEBDQbvmZ8:1
+(anonymous) @ nxEBDQbvmZ8:1
+requestIdleCallback
+(anonymous) @ nxEBDQbvmZ8:1
+(anonymous) @ nxEBDQbvmZ8:1
+(anonymous) @ nxEBDQbvmZ8:1
+(anonymous) @ nxEBDQbvmZ8:1
+(anonymous) @ nxEBDQbvmZ8:1
+requestIdleCallback
+(anonymous) @ nxEBDQbvmZ8:1
+(anonymous) @ nxEBDQbvmZ8:1
+(anonymous) @ nxEBDQbvmZ8:1
+(anonymous) @ nxEBDQbvmZ8:1
+(anonymous) @ nxEBDQbvmZ8:1
+requestIdleCallback
+(anonymous) @ nxEBDQbvmZ8:1
+(anonymous) @ nxEBDQbvmZ8:1
+(anonymous) @ nxEBDQbvmZ8:1
+(anonymous) @ nxEBDQbvmZ8:1
+(anonymous) @ nxEBDQbvmZ8:1
+requestIdleCallback
+(anonymous) @ nxEBDQbvmZ8:1
+(anonymous) @ nxEBDQbvmZ8:1
+(anonymous) @ nxEBDQbvmZ8:1
+(anonymous) @ nxEBDQbvmZ8:1
+(anonymous) @ nxEBDQbvmZ8:1
+requestIdleCallback
+(anonymous) @ nxEBDQbvmZ8:1
+(anonymous) @ nxEBDQbvmZ8:1
+(anonymous) @ nxEBDQbvmZ8:1
+(anonymous) @ nxEBDQbvmZ8:1
+(anonymous) @ nxEBDQbvmZ8:1
+requestIdleCallback
+(anonymous) @ nxEBDQbvmZ8:1
+(anonymous) @ nxEBDQbvmZ8:1
+(anonymous) @ nxEBDQbvmZ8:1
+(anonymous) @ nxEBDQbvmZ8:1
+(anonymous) @ nxEBDQbvmZ8:1
+requestIdleCallback
+(anonymous) @ nxEBDQbvmZ8:1
+(anonymous) @ nxEBDQbvmZ8:1
+(anonymous) @ nxEBDQbvmZ8:1
+(anonymous) @ nxEBDQbvmZ8:1
+(anonymous) @ nxEBDQbvmZ8:1
+requestIdleCallback
+(anonymous) @ nxEBDQbvmZ8:1
+(anonymous) @ nxEBDQbvmZ8:1
+(anonymous) @ nxEBDQbvmZ8:1
+(anonymous) @ nxEBDQbvmZ8:1
+(anonymous) @ nxEBDQbvmZ8:1
+requestIdleCallback
+(anonymous) @ nxEBDQbvmZ8:1
+(anonymous) @ nxEBDQbvmZ8:1
+(anonymous) @ nxEBDQbvmZ8:1
+(anonymous) @ nxEBDQbvmZ8:1
+(anonymous) @ nxEBDQbvmZ8:1
+requestIdleCallback
+(anonymous) @ nxEBDQbvmZ8:1
+(anonymous) @ nxEBDQbvmZ8:1
+(anonymous) @ nxEBDQbvmZ8:1
+(anonymous) @ nxEBDQbvmZ8:1
+(anonymous) @ nxEBDQbvmZ8:1
+requestIdleCallback
+(anonymous) @ nxEBDQbvmZ8:1
+(anonymous) @ nxEBDQbvmZ8:1
+(anonymous) @ nxEBDQbvmZ8:1
+(anonymous) @ nxEBDQbvmZ8:1
+(anonymous) @ nxEBDQbvmZ8:1
+requestIdleCallback
+(anonymous) @ nxEBDQbvmZ8:1
+(anonymous) @ nxEBDQbvmZ8:1
+(anonymous) @ nxEBDQbvmZ8:1
+(anonymous) @ nxEBDQbvmZ8:1
+(anonymous) @ nxEBDQbvmZ8:1
+requestIdleCallback
+(anonymous) @ nxEBDQbvmZ8:1
+(anonymous) @ nxEBDQbvmZ8:1
+(anonymous) @ nxEBDQbvmZ8:1
+(anonymous) @ nxEBDQbvmZ8:1
+(anonymous) @ nxEBDQbvmZ8:1
+requestIdleCallback
+(anonymous) @ nxEBDQbvmZ8:1
+(anonymous) @ nxEBDQbvmZ8:1
+(anonymous) @ nxEBDQbvmZ8:1
+(anonymous) @ nxEBDQbvmZ8:1
+(anonymous) @ nxEBDQbvmZ8:1
+requestIdleCallback
+(anonymous) @ nxEBDQbvmZ8:1
+(anonymous) @ nxEBDQbvmZ8:1
+(anonymous) @ nxEBDQbvmZ8:1
+(anonymous) @ nxEBDQbvmZ8:1
+(anonymous) @ nxEBDQbvmZ8:1
+requestIdleCallback
+(anonymous) @ nxEBDQbvmZ8:1
+(anonymous) @ nxEBDQbvmZ8:1
+(anonymous) @ nxEBDQbvmZ8:1
+(anonymous) @ nxEBDQbvmZ8:1
+(anonymous) @ nxEBDQbvmZ8:1
+requestIdleCallback
+(anonymous) @ nxEBDQbvmZ8:1
+(anonymous) @ nxEBDQbvmZ8:1
+(anonymous) @ nxEBDQbvmZ8:1
+(anonymous) @ nxEBDQbvmZ8:1
+(anonymous) @ nxEBDQbvmZ8:1
+requestIdleCallback
+(anonymous) @ nxEBDQbvmZ8:1
+(anonymous) @ nxEBDQbvmZ8:1
+(anonymous) @ nxEBDQbvmZ8:1
+(anonymous) @ nxEBDQbvmZ8:1
+(anonymous) @ nxEBDQbvmZ8:1
+requestIdleCallback
+(anonymous) @ nxEBDQbvmZ8:1
+(anonymous) @ nxEBDQbvmZ8:1
+(anonymous) @ nxEBDQbvmZ8:1
+(anonymous) @ nxEBDQbvmZ8:1
+(anonymous) @ nxEBDQbvmZ8:1
+requestIdleCallback
+(anonymous) @ nxEBDQbvmZ8:1
+(anonymous) @ nxEBDQbvmZ8:1
+(anonymous) @ nxEBDQbvmZ8:1
+(anonymous) @ nxEBDQbvmZ8:1
+(anonymous) @ nxEBDQbvmZ8:1
+requestIdleCallback
+OQ @ (unknown)
+SZ @ (unknown)
+p @ (unknown)
+uq @ (unknown)
+Vd @ (unknown)
+p$.VoY_ @ (unknown)
+PD @ (unknown)
+C$ @ (unknown)
+LZ @ www.youtube.com/s/_/ytembeds/_/js/k=ytembeds.base.en_US.2hqvwU9M_kA.2021.O/am=AAAAQA/d=1/excm=base,root/br=1/rs=AGKMywFIywF2YFEB2RJI-M_Snd1KCoEmlw/m=root,base:950
+Qua @ www.youtube.com/s/_/ytembeds/_/js/k=ytembeds.base.en_US.2hqvwU9M_kA.2021.O/am=AAAAQA/d=1/excm=base,root/br=1/rs=AGKMywFIywF2YFEB2RJI-M_Snd1KCoEmlw/m=root,base:801
+await in Qua
+YZ @ www.youtube.com/s/_/ytembeds/_/js/k=ytembeds.base.en_US.2hqvwU9M_kA.2021.O/am=AAAAQA/d=1/excm=base,root/br=1/rs=AGKMywFIywF2YFEB2RJI-M_Snd1KCoEmlw/m=root,base:951
+(anonymous) @ www.youtube.com/s/_/ytembeds/_/js/k=ytembeds.base.en_US.2hqvwU9M_kA.2021.O/am=AAAAQA/d=1/excm=base,root/br=1/rs=AGKMywFIywF2YFEB2RJI-M_Snd1KCoEmlw/m=root,base:994
+fwa @ www.youtube.com/s/_/ytembeds/_/js/k=ytembeds.base.en_US.2hqvwU9M_kA.2021.O/am=AAAAQA/d=1/excm=base,root/br=1/rs=AGKMywFIywF2YFEB2RJI-M_Snd1KCoEmlw/m=root,base:874
+T0 @ www.youtube.com/s/_/ytembeds/_/js/k=ytembeds.base.en_US.2hqvwU9M_kA.2021.O/am=AAAAQA/d=1/excm=base,root/br=1/rs=AGKMywFIywF2YFEB2RJI-M_Snd1KCoEmlw/m=root,base:873
+a.ytAtRC @ www.youtube.com/s/_/ytembeds/_/js/k=ytembeds.base.en_US.2hqvwU9M_kA.2021.O/am=AAAAQA/d=1/excm=base,root/br=1/rs=AGKMywFIywF2YFEB2RJI-M_Snd1KCoEmlw/m=root,base:876
+wva @ www.youtube.com/s/_/ytembeds/_/js/k=ytembeds.base.en_US.2hqvwU9M_kA.2021.O/am=AAAAQA/d=1/excm=base,root/br=1/rs=AGKMywFIywF2YFEB2RJI-M_Snd1KCoEmlw/m=root,base:831
+await in wva
+B1 @ www.youtube.com/s/_/ytembeds/_/js/k=ytembeds.base.en_US.2hqvwU9M_kA.2021.O/am=AAAAQA/d=1/excm=base,root/br=1/rs=AGKMywFIywF2YFEB2RJI-M_Snd1KCoEmlw/m=root,base:972
+(anonymous) @ www.youtube.com/s/_/ytembeds/_/js/k=ytembeds.base.en_US.2hqvwU9M_kA.2021.O/am=AAAAQA/d=1/excm=base,root/br=1/rs=AGKMywFIywF2YFEB2RJI-M_Snd1KCoEmlw/m=root,base:906
+[Violation] 'requestIdleCallback' handler took 50ms
+7XHR finished loading: POST "<URL>".
+14Fetch failed loading: POST "<URL>".
+22Unchecked runtime.lastError: Could not establish connection. Receiving end does not exist.
+base.js:977 [Violation] 'setInterval' handler took 211340ms
+base.js:977 [Violation] 'setInterval' handler took 90ms
+index-2F_5HKJR.js:1064 Fetch failed loading: GET "https://firestore.googleapis.com/google.firestore.v1.Firestore/Listen/channel?gsessionid=lqEaMm99uu6bkrhBbJPxXnbUkEV7rnjgswxbfhgACtQP8iV6P_w3OQ&VER=8&database=projects%2Fgen-lang-client-0065963524%2Fdatabases%2Fai-studio-centraltok-20b3b741-dd0c-4874-8036-490f35162ac6&RID=rpc&SID=19y8mLgAfzVZFkyNRhHHTA&AID=0&CI=0&TYPE=xmlhttp&zx=wilkezqeamf6&t=1".
+t.send @ index-2F_5HKJR.js:1064
+t.ea @ index-2F_5HKJR.js:1066
+_t @ index-2F_5HKJR.js:1063
+Cv @ index-2F_5HKJR.js:1067
+t.Da @ index-2F_5HKJR.js:1067
+O @ index-2F_5HKJR.js:1059
+Promise.then
+j @ index-2F_5HKJR.js:1059
+bv @ index-2F_5HKJR.js:1067
+fa @ index-2F_5HKJR.js:1064
+us.Y @ index-2F_5HKJR.js:1063
+us.ba @ index-2F_5HKJR.js:1063
+ne @ index-2F_5HKJR.js:1059
+Y @ index-2F_5HKJR.js:1059
+Nd @ index-2F_5HKJR.js:1066
+t.Xa @ index-2F_5HKJR.js:1066
+t.Ca @ index-2F_5HKJR.js:1066
+Ya @ index-2F_5HKJR.js:1065
+t.Ma @ index-2F_5HKJR.js:1064
+Promise.then
+Sf @ index-2F_5HKJR.js:1064
+t.Pa @ index-2F_5HKJR.js:1064
+Promise.then
+t.send @ index-2F_5HKJR.js:1064
+t.ea @ index-2F_5HKJR.js:1066
+_t @ index-2F_5HKJR.js:1063
+ht @ index-2F_5HKJR.js:1063
+t.Ea @ index-2F_5HKJR.js:1067
+O @ index-2F_5HKJR.js:1059
+Promise.then
+j @ index-2F_5HKJR.js:1059
+Mo @ index-2F_5HKJR.js:1067
+t.connect @ index-2F_5HKJR.js:1067
+hs.m @ index-2F_5HKJR.js:1067
+_t @ index-2F_5HKJR.js:1977
+send @ index-2F_5HKJR.js:1962
+tn @ index-2F_5HKJR.js:2007
+Tn @ index-2F_5HKJR.js:2007
+WI @ index-2F_5HKJR.js:2978
+(anonymous) @ index-2F_5HKJR.js:2978
+Qfe @ index-2F_5HKJR.js:2978
+(anonymous) @ index-2F_5HKJR.js:2007
+(anonymous) @ index-2F_5HKJR.js:2007
+(anonymous) @ index-2F_5HKJR.js:3268
+(anonymous) @ index-2F_5HKJR.js:3268
+Promise.then
+Yc @ index-2F_5HKJR.js:3268
+enqueue @ index-2F_5HKJR.js:3268
+enqueueAndForget @ index-2F_5HKJR.js:3268
+(anonymous) @ index-2F_5HKJR.js:2007
+(anonymous) @ index-2F_5HKJR.js:2007
+It @ index-2F_5HKJR.js:1962
+(anonymous) @ index-2F_5HKJR.js:1977
+setTimeout
+St @ index-2F_5HKJR.js:1977
+cn @ index-2F_5HKJR.js:2007
+an @ index-2F_5HKJR.js:2007
+(anonymous) @ index-2F_5HKJR.js:2007
+Promise.then
+auth @ index-2F_5HKJR.js:2007
+start @ index-2F_5HKJR.js:2007
+YI @ index-2F_5HKJR.js:2978
+M1 @ index-2F_5HKJR.js:2978
+m7 @ index-2F_5HKJR.js:3163
+await in m7
+Bme @ index-2F_5HKJR.js:3163
+ZI @ index-2F_5HKJR.js:3133
+(anonymous) @ index-2F_5HKJR.js:3208
+await in (anonymous)
+(anonymous) @ index-2F_5HKJR.js:3268
+(anonymous) @ index-2F_5HKJR.js:3268
+Promise.then
+Yc @ index-2F_5HKJR.js:3268
+enqueue @ index-2F_5HKJR.js:3268
+enqueueAndForget @ index-2F_5HKJR.js:3268
+Ume @ index-2F_5HKJR.js:3208
+Wi @ index-2F_5HKJR.js:3494
+P2 @ index-2F_5HKJR.js:5009
+(anonymous) @ index-2F_5HKJR.js:5023
+sB @ index-2F_5HKJR.js:48
+PM @ index-2F_5HKJR.js:48
+to @ index-2F_5HKJR.js:48
+PM @ index-2F_5HKJR.js:48
+to @ index-2F_5HKJR.js:48
+PM @ index-2F_5HKJR.js:48
+to @ index-2F_5HKJR.js:48
+PM @ index-2F_5HKJR.js:48
+to @ index-2F_5HKJR.js:48
+PM @ index-2F_5HKJR.js:48
+to @ index-2F_5HKJR.js:48
+PM @ index-2F_5HKJR.js:48
+to @ index-2F_5HKJR.js:48
+PM @ index-2F_5HKJR.js:48
+to @ index-2F_5HKJR.js:48
+PM @ index-2F_5HKJR.js:48
+to @ index-2F_5HKJR.js:48
+PM @ index-2F_5HKJR.js:48
+to @ index-2F_5HKJR.js:48
+PM @ index-2F_5HKJR.js:48
+to @ index-2F_5HKJR.js:48
+PM @ index-2F_5HKJR.js:48
+to @ index-2F_5HKJR.js:48
+PM @ index-2F_5HKJR.js:48
+to @ index-2F_5HKJR.js:48
+PM @ index-2F_5HKJR.js:48
+nz @ index-2F_5HKJR.js:48
+(anonymous) @ index-2F_5HKJR.js:48
+V @ index-2F_5HKJR.js:25
+postMessage
+L @ index-2F_5HKJR.js:25
+V @ index-2F_5HKJR.js:25
+postMessage
+L @ index-2F_5HKJR.js:25
+Qne.t.unstable_scheduleCallback @ index-2F_5HKJR.js:25
+az @ index-2F_5HKJR.js:48
+sz @ index-2F_5HKJR.js:48
+(anonymous) @ index-2F_5HKJR.js:48
+index-2F_5HKJR.js:1064 Fetch failed loading: POST "https://firestore.googleapis.com/google.firestore.v1.Firestore/Listen/channel?VER=8&database=projects%2Fgen-lang-client-0065963524%2Fdatabases%2Fai-studio-centraltok-20b3b741-dd0c-4874-8036-490f35162ac6&gsessionid=lqEaMm99uu6bkrhBbJPxXnbUkEV7rnjgswxbfhgACtQP8iV6P_w3OQ&SID=19y8mLgAfzVZFkyNRhHHTA&RID=5726&AID=213&zx=4lpg1fu4o2i&t=1".
+t.send @ index-2F_5HKJR.js:1064
+t.ea @ index-2F_5HKJR.js:1066
+_t @ index-2F_5HKJR.js:1063
+ht @ index-2F_5HKJR.js:1063
+zg @ index-2F_5HKJR.js:1067
+t.Ea @ index-2F_5HKJR.js:1067
+O @ index-2F_5HKJR.js:1059
+Promise.then
+j @ index-2F_5HKJR.js:1059
+Mo @ index-2F_5HKJR.js:1067
+hs.o @ index-2F_5HKJR.js:1067
+_t @ index-2F_5HKJR.js:1977
+send @ index-2F_5HKJR.js:1962
+tn @ index-2F_5HKJR.js:2007
+Tn @ index-2F_5HKJR.js:2007
+WI @ index-2F_5HKJR.js:2978
+M1 @ index-2F_5HKJR.js:2978
+m7 @ index-2F_5HKJR.js:3163
+await in m7
+Bme @ index-2F_5HKJR.js:3163
+ZI @ index-2F_5HKJR.js:3133
+(anonymous) @ index-2F_5HKJR.js:3208
+(anonymous) @ index-2F_5HKJR.js:3208
+await in (anonymous)
+(anonymous) @ index-2F_5HKJR.js:3268
+(anonymous) @ index-2F_5HKJR.js:3268
+Promise.then
+Yc @ index-2F_5HKJR.js:3268
+enqueue @ index-2F_5HKJR.js:3268
+enqueueAndForget @ index-2F_5HKJR.js:3268
+w7 @ index-2F_5HKJR.js:3208
+F7 @ index-2F_5HKJR.js:3494
+os @ index-2F_5HKJR.js:5009
+Gy @ index-2F_5HKJR.js:5009
+h @ index-2F_5HKJR.js:5032
+setInterval
+(anonymous) @ index-2F_5HKJR.js:5032
+sB @ index-2F_5HKJR.js:48
+PM @ index-2F_5HKJR.js:48
+to @ index-2F_5HKJR.js:48
+PM @ index-2F_5HKJR.js:48
+to @ index-2F_5HKJR.js:48
+PM @ index-2F_5HKJR.js:48
+to @ index-2F_5HKJR.js:48
+PM @ index-2F_5HKJR.js:48
+to @ index-2F_5HKJR.js:48
+PM @ index-2F_5HKJR.js:48
+to @ index-2F_5HKJR.js:48
+PM @ index-2F_5HKJR.js:48
+to @ index-2F_5HKJR.js:48
+PM @ index-2F_5HKJR.js:48
+to @ index-2F_5HKJR.js:48
+PM @ index-2F_5HKJR.js:48
+to @ index-2F_5HKJR.js:48
+PM @ index-2F_5HKJR.js:48
+to @ index-2F_5HKJR.js:48
+PM @ index-2F_5HKJR.js:48
+to @ index-2F_5HKJR.js:48
+PM @ index-2F_5HKJR.js:48
+to @ index-2F_5HKJR.js:48
+PM @ index-2F_5HKJR.js:48
+to @ index-2F_5HKJR.js:48
+PM @ index-2F_5HKJR.js:48
+to @ index-2F_5HKJR.js:48
+PM @ index-2F_5HKJR.js:48
+to @ index-2F_5HKJR.js:48
+PM @ index-2F_5HKJR.js:48
+to @ index-2F_5HKJR.js:48
+PM @ index-2F_5HKJR.js:48
+to @ index-2F_5HKJR.js:48
+PM @ index-2F_5HKJR.js:48
+to @ index-2F_5HKJR.js:48
+PM @ index-2F_5HKJR.js:48
+to @ index-2F_5HKJR.js:48
+PM @ index-2F_5HKJR.js:48
+to @ index-2F_5HKJR.js:48
+PM @ index-2F_5HKJR.js:48
+nz @ index-2F_5HKJR.js:48
+(anonymous) @ index-2F_5HKJR.js:48
+V @ index-2F_5HKJR.js:25
+postMessage
+L @ index-2F_5HKJR.js:25
+V @ index-2F_5HKJR.js:25
+postMessage
+L @ index-2F_5HKJR.js:25
+Qne.t.unstable_scheduleCallback @ index-2F_5HKJR.js:25
+az @ index-2F_5HKJR.js:48
+sz @ index-2F_5HKJR.js:48
+(anonymous) @ index-2F_5HKJR.js:48
+setTimeout
+(anonymous) @ index-2F_5HKJR.js:5032
+setTimeout
+(anonymous) @ index-2F_5HKJR.js:5032
+sB @ index-2F_5HKJR.js:48
+PM @ index-2F_5HKJR.js:48
+to @ index-2F_5HKJR.js:48
+PM @ index-2F_5HKJR.js:48
+to @ index-2F_5HKJR.js:48
+PM @ index-2F_5HKJR.js:48
+to @ index-2F_5HKJR.js:48
+PM @ index-2F_5HKJR.js:48
+to @ index-2F_5HKJR.js:48
+PM @ index-2F_5HKJR.js:48
+to @ index-2F_5HKJR.js:48
+PM @ index-2F_5HKJR.js:48
+to @ index-2F_5HKJR.js:48
+PM @ index-2F_5HKJR.js:48
+to @ index-2F_5HKJR.js:48
+PM @ index-2F_5HKJR.js:48
+to @ index-2F_5HKJR.js:48
+PM @ index-2F_5HKJR.js:48
+to @ index-2F_5HKJR.js:48
+PM @ index-2F_5HKJR.js:48
+to @ index-2F_5HKJR.js:48
+PM @ index-2F_5HKJR.js:48
+to @ index-2F_5HKJR.js:48
+PM @ index-2F_5HKJR.js:48
+to @ index-2F_5HKJR.js:48
+PM @ index-2F_5HKJR.js:48
+to @ index-2F_5HKJR.js:48
+PM @ index-2F_5HKJR.js:48
+to @ index-2F_5HKJR.js:48
+PM @ index-2F_5HKJR.js:48
+to @ index-2F_5HKJR.js:48
+PM @ index-2F_5HKJR.js:48
+to @ index-2F_5HKJR.js:48
+PM @ index-2F_5HKJR.js:48
+nz @ index-2F_5HKJR.js:48
+(anonymous) @ index-2F_5HKJR.js:48
+V @ index-2F_5HKJR.js:25
+postMessage
+L @ index-2F_5HKJR.js:25
+V @ index-2F_5HKJR.js:25
+postMessage
+L @ index-2F_5HKJR.js:25
+Qne.t.unstable_scheduleCallback @ index-2F_5HKJR.js:25
+az @ index-2F_5HKJR.js:48
+sz @ index-2F_5HKJR.js:48
+(anonymous) @ index-2F_5HKJR.js:48
+index-2F_5HKJR.js:1064  POST https://firestore.googleapis.com/google.firestore.v1.Firestore/Listen/channel?VER=8&database=projects%2Fgen-lang-client-0065963524%2Fdatabases%2Fai-studio-centraltok-20b3b741-dd0c-4874-8036-490f35162ac6&RID=48445&CVER=22&X-HTTP-Session-Id=gsessionid&zx=sq8qdt5ldarq&t=1 net::ERR_NAME_NOT_RESOLVED
+t.send @ index-2F_5HKJR.js:1064
+t.ea @ index-2F_5HKJR.js:1066
+_t @ index-2F_5HKJR.js:1063
+ht @ index-2F_5HKJR.js:1063
+t.Ea @ index-2F_5HKJR.js:1067
+O @ index-2F_5HKJR.js:1059
+Promise.then
+j @ index-2F_5HKJR.js:1059
+Mo @ index-2F_5HKJR.js:1067
+t.connect @ index-2F_5HKJR.js:1067
+hs.m @ index-2F_5HKJR.js:1067
+_t @ index-2F_5HKJR.js:1977
+send @ index-2F_5HKJR.js:1962
+tn @ index-2F_5HKJR.js:2007
+Tn @ index-2F_5HKJR.js:2007
+WI @ index-2F_5HKJR.js:2978
+(anonymous) @ index-2F_5HKJR.js:2978
+Qfe @ index-2F_5HKJR.js:2978
+(anonymous) @ index-2F_5HKJR.js:2007
+(anonymous) @ index-2F_5HKJR.js:2007
+(anonymous) @ index-2F_5HKJR.js:3268
+(anonymous) @ index-2F_5HKJR.js:3268
+Promise.then
+Yc @ index-2F_5HKJR.js:3268
+enqueue @ index-2F_5HKJR.js:3268
+enqueueAndForget @ index-2F_5HKJR.js:3268
+(anonymous) @ index-2F_5HKJR.js:2007
+(anonymous) @ index-2F_5HKJR.js:2007
+It @ index-2F_5HKJR.js:1962
+(anonymous) @ index-2F_5HKJR.js:1977
+setTimeout
+St @ index-2F_5HKJR.js:1977
+cn @ index-2F_5HKJR.js:2007
+an @ index-2F_5HKJR.js:2007
+(anonymous) @ index-2F_5HKJR.js:2007
+Promise.then
+auth @ index-2F_5HKJR.js:2007
+start @ index-2F_5HKJR.js:2007
+YI @ index-2F_5HKJR.js:2978
+(anonymous) @ index-2F_5HKJR.js:2978
+Ry @ index-2F_5HKJR.js:2978
+(anonymous) @ index-2F_5HKJR.js:2978
+await in (anonymous)
+(anonymous) @ index-2F_5HKJR.js:2978
+(anonymous) @ index-2F_5HKJR.js:3268
+(anonymous) @ index-2F_5HKJR.js:3268
+Promise.then
+Yc @ index-2F_5HKJR.js:3268
+enqueue @ index-2F_5HKJR.js:3268
+enqueueAndForget @ index-2F_5HKJR.js:3268
+(anonymous) @ index-2F_5HKJR.js:2978
+ze @ index-2F_5HKJR.js:1917
+RL.Ge @ index-2F_5HKJR.js:1917
+base.js:1014  POST https://www.youtube.com/api/stats/qoe?fmt=395&afmt=251&cpn=jd_mFz3GLFHVaaxV&el=shortspage&ns=yt&fexp=v1%2C100673025%2C1884%2C-76670265%2C494889%2C26564110%2C34656%2C124674%2C117689%2C9252%2C16509%2C6257%2C16949%2C100702%2C15105%2C25059%2C4174%2C30447%2C18705%2C20493%2C5515%2C13015%2C16088%2C6621%2C2783%2C23826%2C9500%2C1840%2C94837%2C20589%2C4200%2C30113%2C9181%2C59015%2C191%2C977%2C8131%2C3786%2C26418%2C4116%2C11462%2C41921%2C4367%2C9717%2C3613%2C26539%2C3843%2C18500%2C24514%2C6974%2C12384%2C22089%2C2418%2C17955%2C3465%2C6957%2C2009%2C20174%2C1656%2C4594%2C9280%2C760%2C2877%2C5326%2C2267%2C4783%2C8892%2C6810%2C17596%2C8898%2C3421%2C747%2C1067%2C4270%2C164%2C287%2C3618%2C939%2C2072%2C4821%2C975%2C1795%2C733%2C2841%2C283%2C1204%2C442%2C2079%2C1474%2C7121%2C3299%2C8822%2C489%2C2600%2C5179%2C3041%2C7831%2C9119&cl=1007718936&seq=6&docid=nxEBDQbvmZ8&ei=rFTjaqDPNp3_2_gPhfXx0AI&event=streamingstats&plid=AAZe-0rLWDSkwWUB&cbr=Chrome&cbrver=155.0.0.0&c=WEB_EMBEDDED_PLAYER&cver=2.20261028.01.00&cplayer=UNIPLAYER&cos=Windows&cosver=10.0&cplatform=DESKTOP&bwe=261.423:1964233,261.423:1964233,261.432:1964233&bat=261.423:0.39:0,261.423:0.39:0,261.432:0.39:0&vis=261.423:3&cmt=261.423:0.000,261.423:0.000,261.432:0.000&bh=261.423:0.000,261.423:0.000,261.432:0.000&vps=261.432:B&qclc=ChBqZF9tRnozR0xGSFZhYXhWEAY net::ERR_NAME_NOT_RESOLVED
+Uq @ www.youtube.com/s/player/096efeec/player_embed_es6.vflset/en_US/base.js:1014
+FR @ www.youtube.com/s/player/096efeec/player_embed_es6.vflset/en_US/base.js:3252
+(anonymous) @ www.youtube.com/s/player/096efeec/player_embed_es6.vflset/en_US/base.js:3283
+then @ www.youtube.com/s/player/096efeec/player_embed_es6.vflset/en_US/base.js:4708
+gxa @ www.youtube.com/s/player/096efeec/player_embed_es6.vflset/en_US/base.js:3283
+reportStats @ www.youtube.com/s/player/096efeec/player_embed_es6.vflset/en_US/base.js:5555
+(anonymous) @ www.youtube.com/s/player/096efeec/player_embed_es6.vflset/en_US/base.js:3291
+(anonymous) @ www.youtube.com/s/player/096efeec/player_embed_es6.vflset/en_US/base.js:977
+setInterval
+Iq @ www.youtube.com/s/player/096efeec/player_embed_es6.vflset/en_US/base.js:1001
+hxa @ www.youtube.com/s/player/096efeec/player_embed_es6.vflset/en_US/base.js:3291
+Rn @ www.youtube.com/s/player/096efeec/player_embed_es6.vflset/en_US/base.js:5756
+Gx @ www.youtube.com/s/player/096efeec/player_embed_es6.vflset/en_US/base.js:5759
+Gx @ www.youtube.com/s/player/096efeec/player_embed_es6.vflset/en_US/base.js:5261
+KX @ www.youtube.com/s/player/096efeec/player_embed_es6.vflset/en_US/base.js:4306
+WGa @ www.youtube.com/s/player/096efeec/player_embed_es6.vflset/en_US/base.js:4275
+g.D_ @ www.youtube.com/s/player/096efeec/player_embed_es6.vflset/en_US/base.js:6147
+create @ www.youtube.com/s/player/096efeec/player_embed_es6.vflset/en_US/base.js:6149
+TY.a.ga @ www.youtube.com/s/_/ytembeds/_/js/k=ytembeds.base.en_US.2hqvwU9M_kA.2021.O/am=AAAAQA/d=1/excm=base,root/br=1/rs=AGKMywFIywF2YFEB2RJI-M_Snd1KCoEmlw/m=root,base:772
+TY @ www.youtube.com/s/_/ytembeds/_/js/k=ytembeds.base.en_US.2hqvwU9M_kA.2021.O/am=AAAAQA/d=1/excm=base,root/br=1/rs=AGKMywFIywF2YFEB2RJI-M_Snd1KCoEmlw/m=root,base:772
+loadNewVideoConfig @ www.youtube.com/s/_/ytembeds/_/js/k=ytembeds.base.en_US.2hqvwU9M_kA.2021.O/am=AAAAQA/d=1/excm=base,root/br=1/rs=AGKMywFIywF2YFEB2RJI-M_Snd1KCoEmlw/m=root,base:928
+(anonymous) @ www.youtube.com/s/_/ytembeds/_/js/k=ytembeds.base.en_US.2hqvwU9M_kA.2021.O/am=AAAAQA/d=1/excm=base,root/br=1/rs=AGKMywFIywF2YFEB2RJI-M_Snd1KCoEmlw/m=root,base:928
+setTimeout
+$ta @ www.youtube.com/s/_/ytembeds/_/js/k=ytembeds.base.en_US.2hqvwU9M_kA.2021.O/am=AAAAQA/d=1/excm=base,root/br=1/rs=AGKMywFIywF2YFEB2RJI-M_Snd1KCoEmlw/m=root,base:927
+aua @ www.youtube.com/s/_/ytembeds/_/js/k=ytembeds.base.en_US.2hqvwU9M_kA.2021.O/am=AAAAQA/d=1/excm=base,root/br=1/rs=AGKMywFIywF2YFEB2RJI-M_Snd1KCoEmlw/m=root,base:780
+Mwa @ www.youtube.com/s/_/ytembeds/_/js/k=ytembeds.base.en_US.2hqvwU9M_kA.2021.O/am=AAAAQA/d=1/excm=base,root/br=1/rs=AGKMywFIywF2YFEB2RJI-M_Snd1KCoEmlw/m=root,base:904
+(anonymous) @ www.youtube.com/embed/nxEBDQbvmZ8?autoplay=1&enablejsapi=1&origin=https%3A%2F%2Fthegoogleclassroom.github.io&widget_referrer=https%3A%2F%2Fthegoogleclassroom.github.io&mute=0&controls=0&rel=0&showinfo=0&modestbranding=1&fs=0&disablekb=1&playsinline=1&iv_load_policy=3&widgetid=1&forigin=https%3A%2F%2Fthegoogleclassroom.github.io%2Fwindows11tiktok%2F%23%2F&aoriginsup=1&gporigin=https%3A%2F%2Fwww.google.com%2F&vf=1:11
+m=root,base:245  POST https://www.youtube.com/youtubei/v1/log_event?alt=json net::ERR_NAME_NOT_RESOLVED
+ll @ www.youtube.com/s/_/ytembeds/_/js/k=ytembeds.base.en_US.2hqvwU9M_kA.2021.O/am=AAAAQA/d=1/excm=base,root/br=1/rs=AGKMywFIywF2YFEB2RJI-M_Snd1KCoEmlw/m=root,base:245
+_.nl @ www.youtube.com/s/_/ytembeds/_/js/k=ytembeds.base.en_US.2hqvwU9M_kA.2021.O/am=AAAAQA/d=1/excm=base,root/br=1/rs=AGKMywFIywF2YFEB2RJI-M_Snd1KCoEmlw/m=root,base:248
+dp @ www.youtube.com/s/_/ytembeds/_/js/k=ytembeds.base.en_US.2hqvwU9M_kA.2021.O/am=AAAAQA/d=1/excm=base,root/br=1/rs=AGKMywFIywF2YFEB2RJI-M_Snd1KCoEmlw/m=root,base:318
+sendAndWrite @ www.youtube.com/s/_/ytembeds/_/js/k=ytembeds.base.en_US.2hqvwU9M_kA.2021.O/am=AAAAQA/d=1/excm=base,root/br=1/rs=AGKMywFIywF2YFEB2RJI-M_Snd1KCoEmlw/m=root,base:465
+sendAndWrite @ www.youtube.com/s/_/ytembeds/_/js/k=ytembeds.base.en_US.2hqvwU9M_kA.2021.O/am=AAAAQA/d=1/excm=base,root/br=1/rs=AGKMywFIywF2YFEB2RJI-M_Snd1KCoEmlw/m=root,base:498
+l @ www.youtube.com/s/player/096efeec/player_embed_es6.vflset/en_US/base.js:1310
+(anonymous) @ www.youtube.com/s/player/096efeec/player_embed_es6.vflset/en_US/base.js:1311
+Promise.then
+g.tv @ www.youtube.com/s/player/096efeec/player_embed_es6.vflset/en_US/base.js:1311
+Vw @ www.youtube.com/s/player/096efeec/player_embed_es6.vflset/en_US/base.js:1401
+bx @ www.youtube.com/s/player/096efeec/player_embed_es6.vflset/en_US/base.js:1391
+(anonymous) @ www.youtube.com/s/player/096efeec/player_embed_es6.vflset/en_US/base.js:1389
+g.Ak @ www.youtube.com/s/player/096efeec/player_embed_es6.vflset/en_US/base.js:586
+Rw @ www.youtube.com/s/player/096efeec/player_embed_es6.vflset/en_US/base.js:1389
+c @ www.youtube.com/s/player/096efeec/player_embed_es6.vflset/en_US/base.js:1392
+(anonymous) @ www.youtube.com/s/player/096efeec/player_embed_es6.vflset/en_US/base.js:1393
+(anonymous) @ www.youtube.com/s/player/096efeec/player_embed_es6.vflset/en_US/base.js:977
+setTimeout
+g.Hq @ www.youtube.com/s/player/096efeec/player_embed_es6.vflset/en_US/base.js:1000
+Tw @ www.youtube.com/s/player/096efeec/player_embed_es6.vflset/en_US/base.js:1421
+Uw @ www.youtube.com/s/player/096efeec/player_embed_es6.vflset/en_US/base.js:1393
+Nw @ www.youtube.com/s/player/096efeec/player_embed_es6.vflset/en_US/base.js:1385
+gga @ www.youtube.com/s/player/096efeec/player_embed_es6.vflset/en_US/base.js:1383
+ux @ www.youtube.com/s/player/096efeec/player_embed_es6.vflset/en_US/base.js:1430
+g.xx @ www.youtube.com/s/player/096efeec/player_embed_es6.vflset/en_US/base.js:1434
+tick @ www.youtube.com/s/player/096efeec/player_embed_es6.vflset/en_US/base.js:4862
+pz @ www.youtube.com/s/player/096efeec/player_embed_es6.vflset/en_US/base.js:1562
+(anonymous) @ www.youtube.com/s/player/096efeec/player_embed_es6.vflset/en_US/base.js:977
+g.Lz @ www.youtube.com/s/player/096efeec/player_embed_es6.vflset/en_US/base.js:1587
+tick @ www.youtube.com/s/player/096efeec/player_embed_es6.vflset/en_US/base.js:5951
+lU @ www.youtube.com/s/player/096efeec/player_embed_es6.vflset/en_US/base.js:3751
+(anonymous) @ www.youtube.com/s/player/096efeec/player_embed_es6.vflset/en_US/base.js:5803
+(anonymous) @ www.youtube.com/s/player/096efeec/player_embed_es6.vflset/en_US/base.js:977
+setInterval
+Iq @ www.youtube.com/s/player/096efeec/player_embed_es6.vflset/en_US/base.js:1001
+Tt @ www.youtube.com/s/player/096efeec/player_embed_es6.vflset/en_US/base.js:5803
+v1 @ www.youtube.com/s/player/096efeec/player_embed_es6.vflset/en_US/base.js:5797
+(anonymous) @ www.youtube.com/s/player/096efeec/player_embed_es6.vflset/en_US/base.js:977
+qk @ www.youtube.com/s/player/096efeec/player_embed_es6.vflset/en_US/base.js:578
+g.J.dispatchEvent @ www.youtube.com/s/player/096efeec/player_embed_es6.vflset/en_US/base.js:4488
+dispatchEvent @ www.youtube.com/s/player/096efeec/player_embed_es6.vflset/en_US/base.js:5648
+listener @ www.youtube.com/s/player/096efeec/player_embed_es6.vflset/en_US/base.js:5897
+base.js:1014  POST https://www.youtube.com/api/stats/qoe?fmt=395&afmt=251&cpn=jd_mFz3GLFHVaaxV&el=shortspage&ns=yt&fexp=v1%2C100673025%2C1884%2C-76670265%2C494889%2C26564110%2C34656%2C124674%2C117689%2C9252%2C16509%2C6257%2C16949%2C100702%2C15105%2C25059%2C4174%2C30447%2C18705%2C20493%2C5515%2C13015%2C16088%2C6621%2C2783%2C23826%2C9500%2C1840%2C94837%2C20589%2C4200%2C30113%2C9181%2C59015%2C191%2C977%2C8131%2C3786%2C26418%2C4116%2C11462%2C41921%2C4367%2C9717%2C3613%2C26539%2C3843%2C18500%2C24514%2C6974%2C12384%2C22089%2C2418%2C17955%2C3465%2C6957%2C2009%2C20174%2C1656%2C4594%2C9280%2C760%2C2877%2C5326%2C2267%2C4783%2C8892%2C6810%2C17596%2C8898%2C3421%2C747%2C1067%2C4270%2C164%2C287%2C3618%2C939%2C2072%2C4821%2C975%2C1795%2C733%2C2841%2C283%2C1204%2C442%2C2079%2C1474%2C7121%2C3299%2C8822%2C489%2C2600%2C5179%2C3041%2C7831%2C9119&cl=1007718936&seq=7&docid=nxEBDQbvmZ8&ei=rFTjaqDPNp3_2_gPhfXx0AI&event=streamingstats&plid=AAZe-0rLWDSkwWUB&cbr=Chrome&cbrver=155.0.0.0&c=WEB_EMBEDDED_PLAYER&cver=2.20261028.01.00&cplayer=UNIPLAYER&cos=Windows&cosver=10.0&cplatform=DESKTOP&vps=384.923:B&bwe=384.923:1964233&bat=384.923:0.39:0&cmt=384.923:0.000&bh=384.923:0.000&qclc=ChBqZF9tRnozR0xGSFZhYXhWEAc net::ERR_NAME_NOT_RESOLVED
+Uq @ www.youtube.com/s/player/096efeec/player_embed_es6.vflset/en_US/base.js:1014
+FR @ www.youtube.com/s/player/096efeec/player_embed_es6.vflset/en_US/base.js:3252
+(anonymous) @ www.youtube.com/s/player/096efeec/player_embed_es6.vflset/en_US/base.js:3283
+then @ www.youtube.com/s/player/096efeec/player_embed_es6.vflset/en_US/base.js:4708
+gxa @ www.youtube.com/s/player/096efeec/player_embed_es6.vflset/en_US/base.js:3283
+reportStats @ www.youtube.com/s/player/096efeec/player_embed_es6.vflset/en_US/base.js:5555
+(anonymous) @ www.youtube.com/s/player/096efeec/player_embed_es6.vflset/en_US/base.js:3291
+(anonymous) @ www.youtube.com/s/player/096efeec/player_embed_es6.vflset/en_US/base.js:977
+setInterval
+Iq @ www.youtube.com/s/player/096efeec/player_embed_es6.vflset/en_US/base.js:1001
+hxa @ www.youtube.com/s/player/096efeec/player_embed_es6.vflset/en_US/base.js:3291
+Rn @ www.youtube.com/s/player/096efeec/player_embed_es6.vflset/en_US/base.js:5756
+Gx @ www.youtube.com/s/player/096efeec/player_embed_es6.vflset/en_US/base.js:5759
+Gx @ www.youtube.com/s/player/096efeec/player_embed_es6.vflset/en_US/base.js:5261
+KX @ www.youtube.com/s/player/096efeec/player_embed_es6.vflset/en_US/base.js:4306
+WGa @ www.youtube.com/s/player/096efeec/player_embed_es6.vflset/en_US/base.js:4275
+g.D_ @ www.youtube.com/s/player/096efeec/player_embed_es6.vflset/en_US/base.js:6147
+create @ www.youtube.com/s/player/096efeec/player_embed_es6.vflset/en_US/base.js:6149
+TY.a.ga @ www.youtube.com/s/_/ytembeds/_/js/k=ytembeds.base.en_US.2hqvwU9M_kA.2021.O/am=AAAAQA/d=1/excm=base,root/br=1/rs=AGKMywFIywF2YFEB2RJI-M_Snd1KCoEmlw/m=root,base:772
+TY @ www.youtube.com/s/_/ytembeds/_/js/k=ytembeds.base.en_US.2hqvwU9M_kA.2021.O/am=AAAAQA/d=1/excm=base,root/br=1/rs=AGKMywFIywF2YFEB2RJI-M_Snd1KCoEmlw/m=root,base:772
+loadNewVideoConfig @ www.youtube.com/s/_/ytembeds/_/js/k=ytembeds.base.en_US.2hqvwU9M_kA.2021.O/am=AAAAQA/d=1/excm=base,root/br=1/rs=AGKMywFIywF2YFEB2RJI-M_Snd1KCoEmlw/m=root,base:928
+(anonymous) @ www.youtube.com/s/_/ytembeds/_/js/k=ytembeds.base.en_US.2hqvwU9M_kA.2021.O/am=AAAAQA/d=1/excm=base,root/br=1/rs=AGKMywFIywF2YFEB2RJI-M_Snd1KCoEmlw/m=root,base:928
+setTimeout
+$ta @ www.youtube.com/s/_/ytembeds/_/js/k=ytembeds.base.en_US.2hqvwU9M_kA.2021.O/am=AAAAQA/d=1/excm=base,root/br=1/rs=AGKMywFIywF2YFEB2RJI-M_Snd1KCoEmlw/m=root,base:927
+aua @ www.youtube.com/s/_/ytembeds/_/js/k=ytembeds.base.en_US.2hqvwU9M_kA.2021.O/am=AAAAQA/d=1/excm=base,root/br=1/rs=AGKMywFIywF2YFEB2RJI-M_Snd1KCoEmlw/m=root,base:780
+Mwa @ www.youtube.com/s/_/ytembeds/_/js/k=ytembeds.base.en_US.2hqvwU9M_kA.2021.O/am=AAAAQA/d=1/excm=base,root/br=1/rs=AGKMywFIywF2YFEB2RJI-M_Snd1KCoEmlw/m=root,base:904
+(anonymous) @ www.youtube.com/embed/nxEBDQbvmZ8?autoplay=1&enablejsapi=1&origin=https%3A%2F%2Fthegoogleclassroom.github.io&widget_referrer=https%3A%2F%2Fthegoogleclassroom.github.io&mute=0&controls=0&rel=0&showinfo=0&modestbranding=1&fs=0&disablekb=1&playsinline=1&iv_load_policy=3&widgetid=1&forigin=https%3A%2F%2Fthegoogleclassroom.github.io%2Fwindows11tiktok%2F%23%2F&aoriginsup=1&gporigin=https%3A%2F%2Fwww.google.com%2F&vf=1:11
+m=root,base:153  HEAD https://www.youtube.com/generate_204 net::ERR_NAME_NOT_RESOLVED
+(anonymous) @ www.youtube.com/s/_/ytembeds/_/js/k=ytembeds.base.en_US.2hqvwU9M_kA.2021.O/am=AAAAQA/d=1/excm=base,root/br=1/rs=AGKMywFIywF2YFEB2RJI-M_Snd1KCoEmlw/m=root,base:153
+Fg @ www.youtube.com/s/_/ytembeds/_/js/k=ytembeds.base.en_US.2hqvwU9M_kA.2021.O/am=AAAAQA/d=1/excm=base,root/br=1/rs=AGKMywFIywF2YFEB2RJI-M_Snd1KCoEmlw/m=root,base:153
+Dg.v @ www.youtube.com/s/_/ytembeds/_/js/k=ytembeds.base.en_US.2hqvwU9M_kA.2021.O/am=AAAAQA/d=1/excm=base,root/br=1/rs=AGKMywFIywF2YFEB2RJI-M_Snd1KCoEmlw/m=root,base:409
+m=root,base:245  GET https://googleads.g.doubleclick.net/pagead/id net::ERR_NAME_NOT_RESOLVED
+ll @ www.youtube.com/s/_/ytembeds/_/js/k=ytembeds.base.en_US.2hqvwU9M_kA.2021.O/am=AAAAQA/d=1/excm=base,root/br=1/rs=AGKMywFIywF2YFEB2RJI-M_Snd1KCoEmlw/m=root,base:245
+_.nl @ www.youtube.com/s/_/ytembeds/_/js/k=ytembeds.base.en_US.2hqvwU9M_kA.2021.O/am=AAAAQA/d=1/excm=base,root/br=1/rs=AGKMywFIywF2YFEB2RJI-M_Snd1KCoEmlw/m=root,base:248
+(anonymous) @ www.youtube.com/s/_/ytembeds/_/js/k=ytembeds.base.en_US.2hqvwU9M_kA.2021.O/am=AAAAQA/d=1/excm=base,root/br=1/rs=AGKMywFIywF2YFEB2RJI-M_Snd1KCoEmlw/m=root,base:817
+_.Vg @ www.youtube.com/s/_/ytembeds/_/js/k=ytembeds.base.en_US.2hqvwU9M_kA.2021.O/am=AAAAQA/d=1/excm=base,root/br=1/rs=AGKMywFIywF2YFEB2RJI-M_Snd1KCoEmlw/m=root,base:156
+g_ @ www.youtube.com/s/_/ytembeds/_/js/k=ytembeds.base.en_US.2hqvwU9M_kA.2021.O/am=AAAAQA/d=1/excm=base,root/br=1/rs=AGKMywFIywF2YFEB2RJI-M_Snd1KCoEmlw/m=root,base:817
+(anonymous) @ www.youtube.com/s/_/ytembeds/_/js/k=ytembeds.base.en_US.2hqvwU9M_kA.2021.O/am=AAAAQA/d=1/excm=base,root/br=1/rs=AGKMywFIywF2YFEB2RJI-M_Snd1KCoEmlw/m=root,base:821
+(anonymous) @ www.youtube.com/s/_/ytembeds/_/js/k=ytembeds.base.en_US.2hqvwU9M_kA.2021.O/am=AAAAQA/d=1/excm=base,root/br=1/rs=AGKMywFIywF2YFEB2RJI-M_Snd1KCoEmlw/m=root,base:233
+setTimeout
+_.bl @ www.youtube.com/s/_/ytembeds/_/js/k=ytembeds.base.en_US.2hqvwU9M_kA.2021.O/am=AAAAQA/d=1/excm=base,root/br=1/rs=AGKMywFIywF2YFEB2RJI-M_Snd1KCoEmlw/m=root,base:242
+p_ @ www.youtube.com/s/_/ytembeds/_/js/k=ytembeds.base.en_US.2hqvwU9M_kA.2021.O/am=AAAAQA/d=1/excm=base,root/br=1/rs=AGKMywFIywF2YFEB2RJI-M_Snd1KCoEmlw/m=root,base:821
+n_ @ www.youtube.com/s/_/ytembeds/_/js/k=ytembeds.base.en_US.2hqvwU9M_kA.2021.O/am=AAAAQA/d=1/excm=base,root/br=1/rs=AGKMywFIywF2YFEB2RJI-M_Snd1KCoEmlw/m=root,base:821
+(anonymous) @ www.youtube.com/s/_/ytembeds/_/js/k=ytembeds.base.en_US.2hqvwU9M_kA.2021.O/am=AAAAQA/d=1/excm=base,root/br=1/rs=AGKMywFIywF2YFEB2RJI-M_Snd1KCoEmlw/m=root,base:820
+e.j @ www.youtube.com/s/_/ytembeds/_/js/k=ytembeds.base.en_US.2hqvwU9M_kA.2021.O/am=AAAAQA/d=1/excm=base,root/br=1/rs=AGKMywFIywF2YFEB2RJI-M_Snd1KCoEmlw/m=root,base:159
+nh @ www.youtube.com/s/_/ytembeds/_/js/k=ytembeds.base.en_US.2hqvwU9M_kA.2021.O/am=AAAAQA/d=1/excm=base,root/br=1/rs=AGKMywFIywF2YFEB2RJI-M_Snd1KCoEmlw/m=root,base:161
+hh @ www.youtube.com/s/_/ytembeds/_/js/k=ytembeds.base.en_US.2hqvwU9M_kA.2021.O/am=AAAAQA/d=1/excm=base,root/br=1/rs=AGKMywFIywF2YFEB2RJI-M_Snd1KCoEmlw/m=root,base:161
+_.g.Zv @ www.youtube.com/s/_/ytembeds/_/js/k=ytembeds.base.en_US.2hqvwU9M_kA.2021.O/am=AAAAQA/d=1/excm=base,root/br=1/rs=AGKMywFIywF2YFEB2RJI-M_Snd1KCoEmlw/m=root,base:411
+Rg @ www.youtube.com/s/_/ytembeds/_/js/k=ytembeds.base.en_US.2hqvwU9M_kA.2021.O/am=AAAAQA/d=1/excm=base,root/br=1/rs=AGKMywFIywF2YFEB2RJI-M_Snd1KCoEmlw/m=root,base:156
+Promise.then
+qt @ www.youtube.com/s/_/ytembeds/_/js/k=ytembeds.base.en_US.2hqvwU9M_kA.2021.O/am=AAAAQA/d=1/excm=base,root/br=1/rs=AGKMywFIywF2YFEB2RJI-M_Snd1KCoEmlw/m=root,base:410
+$g @ www.youtube.com/s/_/ytembeds/_/js/k=ytembeds.base.en_US.2hqvwU9M_kA.2021.O/am=AAAAQA/d=1/excm=base,root/br=1/rs=AGKMywFIywF2YFEB2RJI-M_Snd1KCoEmlw/m=root,base:410
+ih @ www.youtube.com/s/_/ytembeds/_/js/k=ytembeds.base.en_US.2hqvwU9M_kA.2021.O/am=AAAAQA/d=1/excm=base,root/br=1/rs=AGKMywFIywF2YFEB2RJI-M_Snd1KCoEmlw/m=root,base:160
+_.Ug @ www.youtube.com/s/_/ytembeds/_/js/k=ytembeds.base.en_US.2hqvwU9M_kA.2021.O/am=AAAAQA/d=1/excm=base,root/br=1/rs=AGKMywFIywF2YFEB2RJI-M_Snd1KCoEmlw/m=root,base:159
+(anonymous) @ www.youtube.com/s/_/ytembeds/_/js/k=ytembeds.base.en_US.2hqvwU9M_kA.2021.O/am=AAAAQA/d=1/excm=base,root/br=1/rs=AGKMywFIywF2YFEB2RJI-M_Snd1KCoEmlw/m=root,base:156
+a.onSuccess @ www.youtube.com/s/_/ytembeds/_/js/k=ytembeds.base.en_US.2hqvwU9M_kA.2021.O/am=AAAAQA/d=1/excm=base,root/br=1/rs=AGKMywFIywF2YFEB2RJI-M_Snd1KCoEmlw/m=root,base:817
+(anonymous) @ www.youtube.com/s/_/ytembeds/_/js/k=ytembeds.base.en_US.2hqvwU9M_kA.2021.O/am=AAAAQA/d=1/excm=base,root/br=1/rs=AGKMywFIywF2YFEB2RJI-M_Snd1KCoEmlw/m=root,base:248
+(anonymous) @ www.youtube.com/s/_/ytembeds/_/js/k=ytembeds.base.en_US.2hqvwU9M_kA.2021.O/am=AAAAQA/d=1/excm=base,root/br=1/rs=AGKMywFIywF2YFEB2RJI-M_Snd1KCoEmlw/m=root,base:233
+n @ www.youtube.com/s/_/ytembeds/_/js/k=ytembeds.base.en_US.2hqvwU9M_kA.2021.O/am=AAAAQA/d=1/excm=base,root/br=1/rs=AGKMywFIywF2YFEB2RJI-M_Snd1KCoEmlw/m=root,base:244
+XMLHttpRequest.send
+ll @ www.youtube.com/s/_/ytembeds/_/js/k=ytembeds.base.en_US.2hqvwU9M_kA.2021.O/am=AAAAQA/d=1/excm=base,root/br=1/rs=AGKMywFIywF2YFEB2RJI-M_Snd1KCoEmlw/m=root,base:245
+_.nl @ www.youtube.com/s/_/ytembeds/_/js/k=ytembeds.base.en_US.2hqvwU9M_kA.2021.O/am=AAAAQA/d=1/excm=base,root/br=1/rs=AGKMywFIywF2YFEB2RJI-M_Snd1KCoEmlw/m=root,base:248
+(anonymous) @ www.youtube.com/s/_/ytembeds/_/js/k=ytembeds.base.en_US.2hqvwU9M_kA.2021.O/am=AAAAQA/d=1/excm=base,root/br=1/rs=AGKMywFIywF2YFEB2RJI-M_Snd1KCoEmlw/m=root,base:817
+_.Vg @ www.youtube.com/s/_/ytembeds/_/js/k=ytembeds.base.en_US.2hqvwU9M_kA.2021.O/am=AAAAQA/d=1/excm=base,root/br=1/rs=AGKMywFIywF2YFEB2RJI-M_Snd1KCoEmlw/m=root,base:156
+g_ @ www.youtube.com/s/_/ytembeds/_/js/k=ytembeds.base.en_US.2hqvwU9M_kA.2021.O/am=AAAAQA/d=1/excm=base,root/br=1/rs=AGKMywFIywF2YFEB2RJI-M_Snd1KCoEmlw/m=root,base:817
+XX @ www.youtube.com/s/_/ytembeds/_/js/k=ytembeds.base.en_US.2hqvwU9M_kA.2021.O/am=AAAAQA/d=1/excm=base,root/br=1/rs=AGKMywFIywF2YFEB2RJI-M_Snd1KCoEmlw/m=root,base:820
+nva @ www.youtube.com/s/_/ytembeds/_/js/k=ytembeds.base.en_US.2hqvwU9M_kA.2021.O/am=AAAAQA/d=1/excm=base,root/br=1/rs=AGKMywFIywF2YFEB2RJI-M_Snd1KCoEmlw/m=root,base:821
+u_ @ www.youtube.com/s/_/ytembeds/_/js/k=ytembeds.base.en_US.2hqvwU9M_kA.2021.O/am=AAAAQA/d=1/excm=base,root/br=1/rs=AGKMywFIywF2YFEB2RJI-M_Snd1KCoEmlw/m=root,base:825
+Mwa @ www.youtube.com/s/_/ytembeds/_/js/k=ytembeds.base.en_US.2hqvwU9M_kA.2021.O/am=AAAAQA/d=1/excm=base,root/br=1/rs=AGKMywFIywF2YFEB2RJI-M_Snd1KCoEmlw/m=root,base:903
+(anonymous) @ www.youtube.com/embed/nxEBDQbvmZ8?autoplay=1&enablejsapi=1&origin=https%3A%2F%2Fthegoogleclassroom.github.io&widget_referrer=https%3A%2F%2Fthegoogleclassroom.github.io&mute=0&controls=0&rel=0&showinfo=0&modestbranding=1&fs=0&disablekb=1&playsinline=1&iv_load_policy=3&widgetid=1&forigin=https%3A%2F%2Fthegoogleclassroom.github.io%2Fwindows11tiktok%2F%23%2F&aoriginsup=1&gporigin=https%3A%2F%2Fwww.google.com%2F&vf=1:11
+index-2F_5HKJR.js:880 [2026-10-29T14:20:34.060Z]  @firebase/firestore: Firestore (12.18.0): WebChannelConnection RPC 'Listen' stream 0x2f3d8ce9 transport errored. Name: undefined Message: undefined
+ole @ index-2F_5HKJR.js:880
+warn @ index-2F_5HKJR.js:880
+hi @ index-2F_5HKJR.js:1152
+(anonymous) @ index-2F_5HKJR.js:1977
+(anonymous) @ index-2F_5HKJR.js:1977
+ne @ index-2F_5HKJR.js:1059
+Y @ index-2F_5HKJR.js:1059
+kl.pa @ index-2F_5HKJR.js:1067
+zo @ index-2F_5HKJR.js:1067
+wv @ index-2F_5HKJR.js:1067
+Rn @ index-2F_5HKJR.js:1064
+us.Y @ index-2F_5HKJR.js:1063
+us.ba @ index-2F_5HKJR.js:1063
+ne @ index-2F_5HKJR.js:1059
+Y @ index-2F_5HKJR.js:1059
+Nd @ index-2F_5HKJR.js:1066
+t.Xa @ index-2F_5HKJR.js:1066
+t.Ca @ index-2F_5HKJR.js:1066
+Ya @ index-2F_5HKJR.js:1065
+Lc @ index-2F_5HKJR.js:1064
+t.ga @ index-2F_5HKJR.js:1064
+Promise.then
+t.send @ index-2F_5HKJR.js:1064
+t.ea @ index-2F_5HKJR.js:1066
+_t @ index-2F_5HKJR.js:1063
+ht @ index-2F_5HKJR.js:1063
+t.Ea @ index-2F_5HKJR.js:1067
+O @ index-2F_5HKJR.js:1059
+Promise.then
+j @ index-2F_5HKJR.js:1059
+Mo @ index-2F_5HKJR.js:1067
+t.connect @ index-2F_5HKJR.js:1067
+hs.m @ index-2F_5HKJR.js:1067
+_t @ index-2F_5HKJR.js:1977
+send @ index-2F_5HKJR.js:1962
+tn @ index-2F_5HKJR.js:2007
+Tn @ index-2F_5HKJR.js:2007
+WI @ index-2F_5HKJR.js:2978
+(anonymous) @ index-2F_5HKJR.js:2978
+Qfe @ index-2F_5HKJR.js:2978
+(anonymous) @ index-2F_5HKJR.js:2007
+(anonymous) @ index-2F_5HKJR.js:2007
+(anonymous) @ index-2F_5HKJR.js:3268
+(anonymous) @ index-2F_5HKJR.js:3268
+Promise.then
+Yc @ index-2F_5HKJR.js:3268
+enqueue @ index-2F_5HKJR.js:3268
+enqueueAndForget @ index-2F_5HKJR.js:3268
+(anonymous) @ index-2F_5HKJR.js:2007
+(anonymous) @ index-2F_5HKJR.js:2007
+It @ index-2F_5HKJR.js:1962
+(anonymous) @ index-2F_5HKJR.js:1977
+setTimeout
+St @ index-2F_5HKJR.js:1977
+cn @ index-2F_5HKJR.js:2007
+an @ index-2F_5HKJR.js:2007
+(anonymous) @ index-2F_5HKJR.js:2007
+Promise.then
+auth @ index-2F_5HKJR.js:2007
+start @ index-2F_5HKJR.js:2007
+YI @ index-2F_5HKJR.js:2978
+(anonymous) @ index-2F_5HKJR.js:2978
+Ry @ index-2F_5HKJR.js:2978
+(anonymous) @ index-2F_5HKJR.js:2978
+await in (anonymous)
+(anonymous) @ index-2F_5HKJR.js:2978
+(anonymous) @ index-2F_5HKJR.js:3268
+(anonymous) @ index-2F_5HKJR.js:3268
+Promise.then
+Yc @ index-2F_5HKJR.js:3268
+enqueue @ index-2F_5HKJR.js:3268
+enqueueAndForget @ index-2F_5HKJR.js:3268
+(anonymous) @ index-2F_5HKJR.js:2978
+ze @ index-2F_5HKJR.js:1917
+RL.Ge @ index-2F_5HKJR.js:1917
+index-2F_5HKJR.js:1067  POST https://firestore.googleapis.com/google.firestore.v1.Firestore/Listen/channel?VER=8&database=projects%2Fgen-lang-client-0065963524%2Fdatabases%2Fai-studio-centraltok-20b3b741-dd0c-4874-8036-490f35162ac6&gsessionid=lqEaMm99uu6bkrhBbJPxXnbUkEV7rnjgswxbfhgACtQP8iV6P_w3OQ&SID=19y8mLgAfzVZFkyNRhHHTA&RID=5727&TYPE=terminate&zx=b32rnpme8r9d net::ERR_NAME_NOT_RESOLVED
+Mg @ index-2F_5HKJR.js:1067
+hs.close @ index-2F_5HKJR.js:1067
+ot @ index-2F_5HKJR.js:1977
+close @ index-2F_5HKJR.js:1962
+close @ index-2F_5HKJR.js:2007
+stop @ index-2F_5HKJR.js:2007
+(anonymous) @ index-2F_5HKJR.js:2978
+tg @ index-2F_5HKJR.js:2978
+(anonymous) @ index-2F_5HKJR.js:2978
+(anonymous) @ index-2F_5HKJR.js:2978
+(anonymous) @ index-2F_5HKJR.js:3268
+(anonymous) @ index-2F_5HKJR.js:3268
+Promise.then
+Yc @ index-2F_5HKJR.js:3268
+enqueue @ index-2F_5HKJR.js:3268
+enqueueAndForget @ index-2F_5HKJR.js:3268
+(anonymous) @ index-2F_5HKJR.js:2978
+ze @ index-2F_5HKJR.js:1917
+RL.Ge @ index-2F_5HKJR.js:1917
+index-2F_5HKJR.js:1064 Fetch failed loading: POST "https://firestore.googleapis.com/google.firestore.v1.Firestore/Listen/channel?VER=8&database=projects%2Fgen-lang-client-0065963524%2Fdatabases%2Fai-studio-centraltok-20b3b741-dd0c-4874-8036-490f35162ac6&RID=48445&CVER=22&X-HTTP-Session-Id=gsessionid&zx=sq8qdt5ldarq&t=1".
+t.send @ index-2F_5HKJR.js:1064
+t.ea @ index-2F_5HKJR.js:1066
+_t @ index-2F_5HKJR.js:1063
+ht @ index-2F_5HKJR.js:1063
+t.Ea @ index-2F_5HKJR.js:1067
+O @ index-2F_5HKJR.js:1059
+Promise.then
+j @ index-2F_5HKJR.js:1059
+Mo @ index-2F_5HKJR.js:1067
+t.connect @ index-2F_5HKJR.js:1067
+hs.m @ index-2F_5HKJR.js:1067
+_t @ index-2F_5HKJR.js:1977
+send @ index-2F_5HKJR.js:1962
+tn @ index-2F_5HKJR.js:2007
+Tn @ index-2F_5HKJR.js:2007
+WI @ index-2F_5HKJR.js:2978
+(anonymous) @ index-2F_5HKJR.js:2978
+Qfe @ index-2F_5HKJR.js:2978
+(anonymous) @ index-2F_5HKJR.js:2007
+(anonymous) @ index-2F_5HKJR.js:2007
+(anonymous) @ index-2F_5HKJR.js:3268
+(anonymous) @ index-2F_5HKJR.js:3268
+Promise.then
+Yc @ index-2F_5HKJR.js:3268
+enqueue @ index-2F_5HKJR.js:3268
+enqueueAndForget @ index-2F_5HKJR.js:3268
+(anonymous) @ index-2F_5HKJR.js:2007
+(anonymous) @ index-2F_5HKJR.js:2007
+It @ index-2F_5HKJR.js:1962
+(anonymous) @ index-2F_5HKJR.js:1977
+setTimeout
+St @ index-2F_5HKJR.js:1977
+cn @ index-2F_5HKJR.js:2007
+an @ index-2F_5HKJR.js:2007
+(anonymous) @ index-2F_5HKJR.js:2007
+Promise.then
+auth @ index-2F_5HKJR.js:2007
+start @ index-2F_5HKJR.js:2007
+YI @ index-2F_5HKJR.js:2978
+(anonymous) @ index-2F_5HKJR.js:2978
+Ry @ index-2F_5HKJR.js:2978
+(anonymous) @ index-2F_5HKJR.js:2978
+await in (anonymous)
+(anonymous) @ index-2F_5HKJR.js:2978
+(anonymous) @ index-2F_5HKJR.js:3268
+(anonymous) @ index-2F_5HKJR.js:3268
+Promise.then
+Yc @ index-2F_5HKJR.js:3268
+enqueue @ index-2F_5HKJR.js:3268
+enqueueAndForget @ index-2F_5HKJR.js:3268
+(anonymous) @ index-2F_5HKJR.js:2978
+ze @ index-2F_5HKJR.js:1917
+RL.Ge @ index-2F_5HKJR.js:1917
+m=root,base:245 XHR failed loading: POST "https://www.youtube.com/youtubei/v1/log_event?alt=json".
+ll @ www.youtube.com/s/_/ytembeds/_/js/k=ytembeds.base.en_US.2hqvwU9M_kA.2021.O/am=AAAAQA/d=1/excm=base,root/br=1/rs=AGKMywFIywF2YFEB2RJI-M_Snd1KCoEmlw/m=root,base:245
+_.nl @ www.youtube.com/s/_/ytembeds/_/js/k=ytembeds.base.en_US.2hqvwU9M_kA.2021.O/am=AAAAQA/d=1/excm=base,root/br=1/rs=AGKMywFIywF2YFEB2RJI-M_Snd1KCoEmlw/m=root,base:248
+dp @ www.youtube.com/s/_/ytembeds/_/js/k=ytembeds.base.en_US.2hqvwU9M_kA.2021.O/am=AAAAQA/d=1/excm=base,root/br=1/rs=AGKMywFIywF2YFEB2RJI-M_Snd1KCoEmlw/m=root,base:318
+sendAndWrite @ www.youtube.com/s/_/ytembeds/_/js/k=ytembeds.base.en_US.2hqvwU9M_kA.2021.O/am=AAAAQA/d=1/excm=base,root/br=1/rs=AGKMywFIywF2YFEB2RJI-M_Snd1KCoEmlw/m=root,base:465
+sendAndWrite @ www.youtube.com/s/_/ytembeds/_/js/k=ytembeds.base.en_US.2hqvwU9M_kA.2021.O/am=AAAAQA/d=1/excm=base,root/br=1/rs=AGKMywFIywF2YFEB2RJI-M_Snd1KCoEmlw/m=root,base:498
+l @ www.youtube.com/s/player/096efeec/player_embed_es6.vflset/en_US/base.js:1310
+(anonymous) @ www.youtube.com/s/player/096efeec/player_embed_es6.vflset/en_US/base.js:1311
+Promise.then
+g.tv @ www.youtube.com/s/player/096efeec/player_embed_es6.vflset/en_US/base.js:1311
+Vw @ www.youtube.com/s/player/096efeec/player_embed_es6.vflset/en_US/base.js:1401
+bx @ www.youtube.com/s/player/096efeec/player_embed_es6.vflset/en_US/base.js:1391
+(anonymous) @ www.youtube.com/s/player/096efeec/player_embed_es6.vflset/en_US/base.js:1389
+g.Ak @ www.youtube.com/s/player/096efeec/player_embed_es6.vflset/en_US/base.js:586
+Rw @ www.youtube.com/s/player/096efeec/player_embed_es6.vflset/en_US/base.js:1389
+c @ www.youtube.com/s/player/096efeec/player_embed_es6.vflset/en_US/base.js:1392
+(anonymous) @ www.youtube.com/s/player/096efeec/player_embed_es6.vflset/en_US/base.js:1393
+(anonymous) @ www.youtube.com/s/player/096efeec/player_embed_es6.vflset/en_US/base.js:977
+setTimeout
+g.Hq @ www.youtube.com/s/player/096efeec/player_embed_es6.vflset/en_US/base.js:1000
+Tw @ www.youtube.com/s/player/096efeec/player_embed_es6.vflset/en_US/base.js:1421
+Uw @ www.youtube.com/s/player/096efeec/player_embed_es6.vflset/en_US/base.js:1393
+Nw @ www.youtube.com/s/player/096efeec/player_embed_es6.vflset/en_US/base.js:1385
+gga @ www.youtube.com/s/player/096efeec/player_embed_es6.vflset/en_US/base.js:1383
+ux @ www.youtube.com/s/player/096efeec/player_embed_es6.vflset/en_US/base.js:1430
+g.xx @ www.youtube.com/s/player/096efeec/player_embed_es6.vflset/en_US/base.js:1434
+tick @ www.youtube.com/s/player/096efeec/player_embed_es6.vflset/en_US/base.js:4862
+pz @ www.youtube.com/s/player/096efeec/player_embed_es6.vflset/en_US/base.js:1562
+(anonymous) @ www.youtube.com/s/player/096efeec/player_embed_es6.vflset/en_US/base.js:977
+g.Lz @ www.youtube.com/s/player/096efeec/player_embed_es6.vflset/en_US/base.js:1587
+tick @ www.youtube.com/s/player/096efeec/player_embed_es6.vflset/en_US/base.js:5951
+lU @ www.youtube.com/s/player/096efeec/player_embed_es6.vflset/en_US/base.js:3751
+(anonymous) @ www.youtube.com/s/player/096efeec/player_embed_es6.vflset/en_US/base.js:5803
+(anonymous) @ www.youtube.com/s/player/096efeec/player_embed_es6.vflset/en_US/base.js:977
+setInterval
+Iq @ www.youtube.com/s/player/096efeec/player_embed_es6.vflset/en_US/base.js:1001
+Tt @ www.youtube.com/s/player/096efeec/player_embed_es6.vflset/en_US/base.js:5803
+v1 @ www.youtube.com/s/player/096efeec/player_embed_es6.vflset/en_US/base.js:5797
+(anonymous) @ www.youtube.com/s/player/096efeec/player_embed_es6.vflset/en_US/base.js:977
+qk @ www.youtube.com/s/player/096efeec/player_embed_es6.vflset/en_US/base.js:578
+g.J.dispatchEvent @ www.youtube.com/s/player/096efeec/player_embed_es6.vflset/en_US/base.js:4488
+dispatchEvent @ www.youtube.com/s/player/096efeec/player_embed_es6.vflset/en_US/base.js:5648
+listener @ www.youtube.com/s/player/096efeec/player_embed_es6.vflset/en_US/base.js:5897
+m=root,base:153 Fetch failed loading: HEAD "https://www.youtube.com/generate_204".
+(anonymous) @ www.youtube.com/s/_/ytembeds/_/js/k=ytembeds.base.en_US.2hqvwU9M_kA.2021.O/am=AAAAQA/d=1/excm=base,root/br=1/rs=AGKMywFIywF2YFEB2RJI-M_Snd1KCoEmlw/m=root,base:153
+Fg @ www.youtube.com/s/_/ytembeds/_/js/k=ytembeds.base.en_US.2hqvwU9M_kA.2021.O/am=AAAAQA/d=1/excm=base,root/br=1/rs=AGKMywFIywF2YFEB2RJI-M_Snd1KCoEmlw/m=root,base:153
+Dg.v @ www.youtube.com/s/_/ytembeds/_/js/k=ytembeds.base.en_US.2hqvwU9M_kA.2021.O/am=AAAAQA/d=1/excm=base,root/br=1/rs=AGKMywFIywF2YFEB2RJI-M_Snd1KCoEmlw/m=root,base:409
+m=root,base:245 XHR failed loading: GET "https://googleads.g.doubleclick.net/pagead/id".
+ll @ www.youtube.com/s/_/ytembeds/_/js/k=ytembeds.base.en_US.2hqvwU9M_kA.2021.O/am=AAAAQA/d=1/excm=base,root/br=1/rs=AGKMywFIywF2YFEB2RJI-M_Snd1KCoEmlw/m=root,base:245
+_.nl @ www.youtube.com/s/_/ytembeds/_/js/k=ytembeds.base.en_US.2hqvwU9M_kA.2021.O/am=AAAAQA/d=1/excm=base,root/br=1/rs=AGKMywFIywF2YFEB2RJI-M_Snd1KCoEmlw/m=root,base:248
+(anonymous) @ www.youtube.com/s/_/ytembeds/_/js/k=ytembeds.base.en_US.2hqvwU9M_kA.2021.O/am=AAAAQA/d=1/excm=base,root/br=1/rs=AGKMywFIywF2YFEB2RJI-M_Snd1KCoEmlw/m=root,base:817
+_.Vg @ www.youtube.com/s/_/ytembeds/_/js/k=ytembeds.base.en_US.2hqvwU9M_kA.2021.O/am=AAAAQA/d=1/excm=base,root/br=1/rs=AGKMywFIywF2YFEB2RJI-M_Snd1KCoEmlw/m=root,base:156
+g_ @ www.youtube.com/s/_/ytembeds/_/js/k=ytembeds.base.en_US.2hqvwU9M_kA.2021.O/am=AAAAQA/d=1/excm=base,root/br=1/rs=AGKMywFIywF2YFEB2RJI-M_Snd1KCoEmlw/m=root,base:817
+(anonymous) @ www.youtube.com/s/_/ytembeds/_/js/k=ytembeds.base.en_US.2hqvwU9M_kA.2021.O/am=AAAAQA/d=1/excm=base,root/br=1/rs=AGKMywFIywF2YFEB2RJI-M_Snd1KCoEmlw/m=root,base:821
+(anonymous) @ www.youtube.com/s/_/ytembeds/_/js/k=ytembeds.base.en_US.2hqvwU9M_kA.2021.O/am=AAAAQA/d=1/excm=base,root/br=1/rs=AGKMywFIywF2YFEB2RJI-M_Snd1KCoEmlw/m=root,base:233
+setTimeout
+_.bl @ www.youtube.com/s/_/ytembeds/_/js/k=ytembeds.base.en_US.2hqvwU9M_kA.2021.O/am=AAAAQA/d=1/excm=base,root/br=1/rs=AGKMywFIywF2YFEB2RJI-M_Snd1KCoEmlw/m=root,base:242
+p_ @ www.youtube.com/s/_/ytembeds/_/js/k=ytembeds.base.en_US.2hqvwU9M_kA.2021.O/am=AAAAQA/d=1/excm=base,root/br=1/rs=AGKMywFIywF2YFEB2RJI-M_Snd1KCoEmlw/m=root,base:821
+n_ @ www.youtube.com/s/_/ytembeds/_/js/k=ytembeds.base.en_US.2hqvwU9M_kA.2021.O/am=AAAAQA/d=1/excm=base,root/br=1/rs=AGKMywFIywF2YFEB2RJI-M_Snd1KCoEmlw/m=root,base:821
+(anonymous) @ www.youtube.com/s/_/ytembeds/_/js/k=ytembeds.base.en_US.2hqvwU9M_kA.2021.O/am=AAAAQA/d=1/excm=base,root/br=1/rs=AGKMywFIywF2YFEB2RJI-M_Snd1KCoEmlw/m=root,base:820
+e.j @ www.youtube.com/s/_/ytembeds/_/js/k=ytembeds.base.en_US.2hqvwU9M_kA.2021.O/am=AAAAQA/d=1/excm=base,root/br=1/rs=AGKMywFIywF2YFEB2RJI-M_Snd1KCoEmlw/m=root,base:159
+nh @ www.youtube.com/s/_/ytembeds/_/js/k=ytembeds.base.en_US.2hqvwU9M_kA.2021.O/am=AAAAQA/d=1/excm=base,root/br=1/rs=AGKMywFIywF2YFEB2RJI-M_Snd1KCoEmlw/m=root,base:161
+hh @ www.youtube.com/s/_/ytembeds/_/js/k=ytembeds.base.en_US.2hqvwU9M_kA.2021.O/am=AAAAQA/d=1/excm=base,root/br=1/rs=AGKMywFIywF2YFEB2RJI-M_Snd1KCoEmlw/m=root,base:161
+_.g.Zv @ www.youtube.com/s/_/ytembeds/_/js/k=ytembeds.base.en_US.2hqvwU9M_kA.2021.O/am=AAAAQA/d=1/excm=base,root/br=1/rs=AGKMywFIywF2YFEB2RJI-M_Snd1KCoEmlw/m=root,base:411
+Rg @ www.youtube.com/s/_/ytembeds/_/js/k=ytembeds.base.en_US.2hqvwU9M_kA.2021.O/am=AAAAQA/d=1/excm=base,root/br=1/rs=AGKMywFIywF2YFEB2RJI-M_Snd1KCoEmlw/m=root,base:156
+Promise.then
+qt @ www.youtube.com/s/_/ytembeds/_/js/k=ytembeds.base.en_US.2hqvwU9M_kA.2021.O/am=AAAAQA/d=1/excm=base,root/br=1/rs=AGKMywFIywF2YFEB2RJI-M_Snd1KCoEmlw/m=root,base:410
+$g @ www.youtube.com/s/_/ytembeds/_/js/k=ytembeds.base.en_US.2hqvwU9M_kA.2021.O/am=AAAAQA/d=1/excm=base,root/br=1/rs=AGKMywFIywF2YFEB2RJI-M_Snd1KCoEmlw/m=root,base:410
+ih @ www.youtube.com/s/_/ytembeds/_/js/k=ytembeds.base.en_US.2hqvwU9M_kA.2021.O/am=AAAAQA/d=1/excm=base,root/br=1/rs=AGKMywFIywF2YFEB2RJI-M_Snd1KCoEmlw/m=root,base:160
+_.Ug @ www.youtube.com/s/_/ytembeds/_/js/k=ytembeds.base.en_US.2hqvwU9M_kA.2021.O/am=AAAAQA/d=1/excm=base,root/br=1/rs=AGKMywFIywF2YFEB2RJI-M_Snd1KCoEmlw/m=root,base:159
+(anonymous) @ www.youtube.com/s/_/ytembeds/_/js/k=ytembeds.base.en_US.2hqvwU9M_kA.2021.O/am=AAAAQA/d=1/excm=base,root/br=1/rs=AGKMywFIywF2YFEB2RJI-M_Snd1KCoEmlw/m=root,base:156
+a.onSuccess @ www.youtube.com/s/_/ytembeds/_/js/k=ytembeds.base.en_US.2hqvwU9M_kA.2021.O/am=AAAAQA/d=1/excm=base,root/br=1/rs=AGKMywFIywF2YFEB2RJI-M_Snd1KCoEmlw/m=root,base:817
+(anonymous) @ www.youtube.com/s/_/ytembeds/_/js/k=ytembeds.base.en_US.2hqvwU9M_kA.2021.O/am=AAAAQA/d=1/excm=base,root/br=1/rs=AGKMywFIywF2YFEB2RJI-M_Snd1KCoEmlw/m=root,base:248
+(anonymous) @ www.youtube.com/s/_/ytembeds/_/js/k=ytembeds.base.en_US.2hqvwU9M_kA.2021.O/am=AAAAQA/d=1/excm=base,root/br=1/rs=AGKMywFIywF2YFEB2RJI-M_Snd1KCoEmlw/m=root,base:233
+n @ www.youtube.com/s/_/ytembeds/_/js/k=ytembeds.base.en_US.2hqvwU9M_kA.2021.O/am=AAAAQA/d=1/excm=base,root/br=1/rs=AGKMywFIywF2YFEB2RJI-M_Snd1KCoEmlw/m=root,base:244
+XMLHttpRequest.send
+ll @ www.youtube.com/s/_/ytembeds/_/js/k=ytembeds.base.en_US.2hqvwU9M_kA.2021.O/am=AAAAQA/d=1/excm=base,root/br=1/rs=AGKMywFIywF2YFEB2RJI-M_Snd1KCoEmlw/m=root,base:245
+_.nl @ www.youtube.com/s/_/ytembeds/_/js/k=ytembeds.base.en_US.2hqvwU9M_kA.2021.O/am=AAAAQA/d=1/excm=base,root/br=1/rs=AGKMywFIywF2YFEB2RJI-M_Snd1KCoEmlw/m=root,base:248
+(anonymous) @ www.youtube.com/s/_/ytembeds/_/js/k=ytembeds.base.en_US.2hqvwU9M_kA.2021.O/am=AAAAQA/d=1/excm=base,root/br=1/rs=AGKMywFIywF2YFEB2RJI-M_Snd1KCoEmlw/m=root,base:817
+_.Vg @ www.youtube.com/s/_/ytembeds/_/js/k=ytembeds.base.en_US.2hqvwU9M_kA.2021.O/am=AAAAQA/d=1/excm=base,root/br=1/rs=AGKMywFIywF2YFEB2RJI-M_Snd1KCoEmlw/m=root,base:156
+g_ @ www.youtube.com/s/_/ytembeds/_/js/k=ytembeds.base.en_US.2hqvwU9M_kA.2021.O/am=AAAAQA/d=1/excm=base,root/br=1/rs=AGKMywFIywF2YFEB2RJI-M_Snd1KCoEmlw/m=root,base:817
+XX @ www.youtube.com/s/_/ytembeds/_/js/k=ytembeds.base.en_US.2hqvwU9M_kA.2021.O/am=AAAAQA/d=1/excm=base,root/br=1/rs=AGKMywFIywF2YFEB2RJI-M_Snd1KCoEmlw/m=root,base:820
+nva @ www.youtube.com/s/_/ytembeds/_/js/k=ytembeds.base.en_US.2hqvwU9M_kA.2021.O/am=AAAAQA/d=1/excm=base,root/br=1/rs=AGKMywFIywF2YFEB2RJI-M_Snd1KCoEmlw/m=root,base:821
+u_ @ www.youtube.com/s/_/ytembeds/_/js/k=ytembeds.base.en_US.2hqvwU9M_kA.2021.O/am=AAAAQA/d=1/excm=base,root/br=1/rs=AGKMywFIywF2YFEB2RJI-M_Snd1KCoEmlw/m=root,base:825
+Mwa @ www.youtube.com/s/_/ytembeds/_/js/k=ytembeds.base.en_US.2hqvwU9M_kA.2021.O/am=AAAAQA/d=1/excm=base,root/br=1/rs=AGKMywFIywF2YFEB2RJI-M_Snd1KCoEmlw/m=root,base:903
+(anonymous) @ www.youtube.com/embed/nxEBDQbvmZ8?autoplay=1&enablejsapi=1&origin=https%3A%2F%2Fthegoogleclassroom.github.io&widget_referrer=https%3A%2F%2Fthegoogleclassroom.github.io&mute=0&controls=0&rel=0&showinfo=0&modestbranding=1&fs=0&disablekb=1&playsinline=1&iv_load_policy=3&widgetid=1&forigin=https%3A%2F%2Fthegoogleclassroom.github.io%2Fwindows11tiktok%2F%23%2F&aoriginsup=1&gporigin=https%3A%2F%2Fwww.google.com%2F&vf=1:11
+m=root,base:153 Fetch failed loading: HEAD "https://www.youtube.com/generate_204".
+(anonymous) @ www.youtube.com/s/_/ytembeds/_/js/k=ytembeds.base.en_US.2hqvwU9M_kA.2021.O/am=AAAAQA/d=1/excm=base,root/br=1/rs=AGKMywFIywF2YFEB2RJI-M_Snd1KCoEmlw/m=root,base:153
+Fg @ www.youtube.com/s/_/ytembeds/_/js/k=ytembeds.base.en_US.2hqvwU9M_kA.2021.O/am=AAAAQA/d=1/excm=base,root/br=1/rs=AGKMywFIywF2YFEB2RJI-M_Snd1KCoEmlw/m=root,base:153
+Dg.v @ www.youtube.com/s/_/ytembeds/_/js/k=ytembeds.base.en_US.2hqvwU9M_kA.2021.O/am=AAAAQA/d=1/excm=base,root/br=1/rs=AGKMywFIywF2YFEB2RJI-M_Snd1KCoEmlw/m=root,base:409
+index-2F_5HKJR.js:5032 [Violation] 'setInterval' handler took 78ms
+index-2F_5HKJR.js:1064 Fetch failed loading: GET "https://firestore.googleapis.com/google.firestore.v1.Firestore/Listen/channel?gsessionid=K5QZvuSF_ICHYusn4eoSjqDrwLIWVKPn6f_gX7uLViNLfpEeWuIIag&VER=8&database=projects%2Fgen-lang-client-0065963524%2Fdatabases%2Fai-studio-centraltok-20b3b741-dd0c-4874-8036-490f35162ac6&RID=rpc&SID=hpJmWMKGxvP8KvUJIf_oaA&AID=0&CI=0&TYPE=xmlhttp&zx=lodlr6f95ltq&t=1".
+t.send @ index-2F_5HKJR.js:1064
+t.ea @ index-2F_5HKJR.js:1066
+_t @ index-2F_5HKJR.js:1063
+Cv @ index-2F_5HKJR.js:1067
+t.Da @ index-2F_5HKJR.js:1067
+O @ index-2F_5HKJR.js:1059
+Promise.then
+j @ index-2F_5HKJR.js:1059
+bv @ index-2F_5HKJR.js:1067
+fa @ index-2F_5HKJR.js:1064
+us.Y @ index-2F_5HKJR.js:1063
+us.ba @ index-2F_5HKJR.js:1063
+ne @ index-2F_5HKJR.js:1059
+Y @ index-2F_5HKJR.js:1059
+Nd @ index-2F_5HKJR.js:1066
+t.Xa @ index-2F_5HKJR.js:1066
+t.Ca @ index-2F_5HKJR.js:1066
+Ya @ index-2F_5HKJR.js:1065
+t.Ma @ index-2F_5HKJR.js:1064
+Promise.then
+Sf @ index-2F_5HKJR.js:1064
+t.Pa @ index-2F_5HKJR.js:1064
+Promise.then
+t.send @ index-2F_5HKJR.js:1064
+t.ea @ index-2F_5HKJR.js:1066
+_t @ index-2F_5HKJR.js:1063
+ht @ index-2F_5HKJR.js:1063
+t.Ea @ index-2F_5HKJR.js:1067
+O @ index-2F_5HKJR.js:1059
+Promise.then
+j @ index-2F_5HKJR.js:1059
+Mo @ index-2F_5HKJR.js:1067
+t.connect @ index-2F_5HKJR.js:1067
+hs.m @ index-2F_5HKJR.js:1067
+_t @ index-2F_5HKJR.js:1977
+send @ index-2F_5HKJR.js:1962
+tn @ index-2F_5HKJR.js:2007
+Tn @ index-2F_5HKJR.js:2007
+WI @ index-2F_5HKJR.js:2978
+(anonymous) @ index-2F_5HKJR.js:2978
+Qfe @ index-2F_5HKJR.js:2978
+(anonymous) @ index-2F_5HKJR.js:2007
+(anonymous) @ index-2F_5HKJR.js:2007
+(anonymous) @ index-2F_5HKJR.js:3268
+(anonymous) @ index-2F_5HKJR.js:3268
+Promise.then
+Yc @ index-2F_5HKJR.js:3268
+enqueue @ index-2F_5HKJR.js:3268
+enqueueAndForget @ index-2F_5HKJR.js:3268
+(anonymous) @ index-2F_5HKJR.js:2007
+(anonymous) @ index-2F_5HKJR.js:2007
+It @ index-2F_5HKJR.js:1962
+(anonymous) @ index-2F_5HKJR.js:1977
+setTimeout
+St @ index-2F_5HKJR.js:1977
+cn @ index-2F_5HKJR.js:2007
+an @ index-2F_5HKJR.js:2007
+(anonymous) @ index-2F_5HKJR.js:2007
+Promise.then
+auth @ index-2F_5HKJR.js:2007
+start @ index-2F_5HKJR.js:2007
+YI @ index-2F_5HKJR.js:2978
+(anonymous) @ index-2F_5HKJR.js:2978
+Ry @ index-2F_5HKJR.js:2978
+(anonymous) @ index-2F_5HKJR.js:2978
+await in (anonymous)
+(anonymous) @ index-2F_5HKJR.js:2978
+(anonymous) @ index-2F_5HKJR.js:3268
+(anonymous) @ index-2F_5HKJR.js:3268
+Promise.then
+Yc @ index-2F_5HKJR.js:3268
+enqueue @ index-2F_5HKJR.js:3268
+enqueueAndForget @ index-2F_5HKJR.js:3268
+(anonymous) @ index-2F_5HKJR.js:2978
+We @ index-2F_5HKJR.js:1917
+RL.Qe @ index-2F_5HKJR.js:1917
+index-2F_5HKJR.js:5032 Fetch finished loading: GET "https://thegoogleclassroom.github.io/windows11tiktok/youtube-feed.json".
+we @ index-2F_5HKJR.js:5032
+await in we
+(anonymous) @ index-2F_5HKJR.js:5032
+(anonymous) @ index-2F_5HKJR.js:5032
+sB @ index-2F_5HKJR.js:48
+PM @ index-2F_5HKJR.js:48
+to @ index-2F_5HKJR.js:48
+PM @ index-2F_5HKJR.js:48
+to @ index-2F_5HKJR.js:48
+PM @ index-2F_5HKJR.js:48
+to @ index-2F_5HKJR.js:48
+PM @ index-2F_5HKJR.js:48
+to @ index-2F_5HKJR.js:48
+PM @ index-2F_5HKJR.js:48
+to @ index-2F_5HKJR.js:48
+PM @ index-2F_5HKJR.js:48
+to @ index-2F_5HKJR.js:48
+PM @ index-2F_5HKJR.js:48
+to @ index-2F_5HKJR.js:48
+PM @ index-2F_5HKJR.js:48
+to @ index-2F_5HKJR.js:48
+PM @ index-2F_5HKJR.js:48
+to @ index-2F_5HKJR.js:48
+PM @ index-2F_5HKJR.js:48
+to @ index-2F_5HKJR.js:48
+PM @ index-2F_5HKJR.js:48
+to @ index-2F_5HKJR.js:48
+PM @ index-2F_5HKJR.js:48
+to @ index-2F_5HKJR.js:48
+PM @ index-2F_5HKJR.js:48
+to @ index-2F_5HKJR.js:48
+PM @ index-2F_5HKJR.js:48
+to @ index-2F_5HKJR.js:48
+PM @ index-2F_5HKJR.js:48
+to @ index-2F_5HKJR.js:48
+PM @ index-2F_5HKJR.js:48
+to @ index-2F_5HKJR.js:48
+PM @ index-2F_5HKJR.js:48
+nz @ index-2F_5HKJR.js:48
+(anonymous) @ index-2F_5HKJR.js:48
+V @ index-2F_5HKJR.js:25
+postMessage
+L @ index-2F_5HKJR.js:25
+V @ index-2F_5HKJR.js:25
+postMessage
+L @ index-2F_5HKJR.js:25
+V @ index-2F_5HKJR.js:25
+postMessage
+L @ index-2F_5HKJR.js:25
+Qne.t.unstable_scheduleCallback @ index-2F_5HKJR.js:25
+az @ index-2F_5HKJR.js:48
+sz @ index-2F_5HKJR.js:48
+(anonymous) @ index-2F_5HKJR.js:48
+VM107:1 The powerPreference option is currently ignored when calling requestAdapter() on Windows. See https://crbug.com/369219127
