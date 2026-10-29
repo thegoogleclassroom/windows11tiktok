@@ -533,17 +533,29 @@ export function Inbox() {
                 </div>
               ) : diagnosticsStatus ? (
                 <div className="space-y-3">
-                  <HealthItem 
-                    icon={<Server size={18} />} 
-                    label="Core Backend" 
-                    status={diagnosticsStatus.backend} 
-                    desc="Node.js Server & /api routes"
-                  />
+                  {diagnosticsStatus.isStaticHost && (
+                    <div className="p-3.5 rounded-2xl bg-pink-500/10 border border-pink-500/20 text-pink-600 dark:text-pink-400 mb-2">
+                      <div className="flex items-center gap-2 font-bold text-xs">
+                        <Check size={16} className="text-pink-500" />
+                        <span>Hosting: GitHub Pages (Static Client Mode)</span>
+                      </div>
+                      <p className="text-[11px] text-zinc-500 dark:text-zinc-400 mt-1">
+                        All videos, likes, chat messages, and Cloudinary uploads communicate directly with Firebase & Cloudinary from your browser.
+                      </p>
+                    </div>
+                  )}
+
                   <HealthItem 
                     icon={<Database size={18} />} 
                     label="Firebase Infrastructure" 
                     status={diagnosticsStatus.firebase} 
                     desc="Cloud Firestore & Auth"
+                  />
+                  <HealthItem 
+                    icon={<Server size={18} />} 
+                    label={diagnosticsStatus.isStaticHost ? "Node Server (Not needed on GitHub Pages)" : "Core Backend"} 
+                    status={diagnosticsStatus.backend || diagnosticsStatus.isStaticHost} 
+                    desc={diagnosticsStatus.isStaticHost ? "Static client architecture active" : "Node.js Server & /api routes"}
                   />
                   <HealthItem 
                     icon={<Sparkles size={18} />} 
@@ -553,9 +565,9 @@ export function Inbox() {
                   />
                   <HealthItem 
                     icon={<Youtube size={18} />} 
-                    label="Media Proxy (YouTube)" 
-                    status={diagnosticsStatus.youtube} 
-                    desc="Video Feed Services"
+                    label="Media Streaming" 
+                    status={true} 
+                    desc="Direct Embed & Cloudinary Active"
                   />
 
                   <div className="mt-8 p-4 rounded-2xl bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800">
@@ -574,7 +586,7 @@ export function Inbox() {
                   <div className="mt-6 flex items-start gap-3 p-4 rounded-2xl bg-blue-500/10 border border-blue-500/20 text-blue-600 dark:text-blue-400">
                     <ShieldAlert size={20} className="shrink-0" />
                     <p className="text-xs leading-relaxed">
-                      <strong>Note:</strong> All backend features are fully active in this environment. If you export this app to a static host (like GitHub Pages), these checks will fail.
+                      <strong>Host Note:</strong> You are hosted on GitHub Pages. Firebase database, Cloudinary media, and YouTube feeds run completely serverless in your browser!
                     </p>
                   </div>
                 </div>

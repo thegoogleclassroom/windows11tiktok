@@ -78,20 +78,25 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const loadData = async () => {
       await initDb();
       const currentUserId = localStorage.getItem('currentUserId');
-      if (currentUserId) {
+      if (currentUserId && currentUserId !== 'undefined' && currentUserId !== 'null' && currentUserId.trim().length > 0) {
         // Subscribe to user document in real-time
-        const userDocRef = doc(db, 'users', currentUserId);
-        unsubscribe = onSnapshot(userDocRef, (docSnap) => {
-          if (docSnap.exists()) {
-            setCurrentUser(docSnap.data() as User);
-          } else {
-            setCurrentUser(null);
-          }
+        try {
+          const userDocRef = doc(db, 'users', currentUserId.trim());
+          unsubscribe = onSnapshot(userDocRef, (docSnap) => {
+            if (docSnap.exists()) {
+              setCurrentUser(docSnap.data() as User);
+            } else {
+              setCurrentUser(null);
+            }
+            setIsLoading(false);
+          }, (err) => {
+            console.warn("User subscription warning:", err);
+            setIsLoading(false);
+          });
+        } catch (e) {
+          console.warn("Failed to subscribe to user doc:", e);
           setIsLoading(false);
-        }, (err) => {
-          console.error("User subscription error:", err);
-          setIsLoading(false);
-        });
+        }
       } else {
         setIsLoading(false);
       }
@@ -106,8 +111,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const handleSetUser = (user: User | null) => {
     setCurrentUser(user);
-    if (user) {
-      localStorage.setItem('currentUserId', user.id);
+    if (user && user.id && typeof user.id === 'string' && user.id.trim().length > 0 && user.id !== 'undefined') {
+      localStorage.setItem('currentUserId', user.id.trim());
     } else {
       localStorage.removeItem('currentUserId');
     }

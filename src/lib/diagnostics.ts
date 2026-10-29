@@ -6,23 +6,34 @@ export interface SystemStatus {
   youtube: boolean;
   firebase: boolean;
   latency: number;
+  isStaticHost: boolean;
 }
 
 export async function checkSystemHealth(): Promise<SystemStatus> {
   const start = Date.now();
+  const isStatic = typeof window !== 'undefined' && 
+    (window.location.hostname.includes('github.io') || 
+     window.location.hostname.includes('pages.dev') ||
+     window.location.protocol === 'file:');
+
   const status: SystemStatus = {
     backend: false,
     aiChat: false,
     aiSearch: false,
     youtube: false,
     firebase: false,
-    latency: 0
+    latency: 0,
+    isStaticHost: isStatic
   };
 
   try {
     // 1. Check Backend Health
-    const healthRes = await fetch('/api/health');
-    status.backend = healthRes.ok;
+    try {
+      const healthRes = await fetch('./api/health').catch(() => null);
+      status.backend = Boolean(healthRes && healthRes.ok);
+    } catch {
+      status.backend = false;
+    }
 
     // 2. Check Firebase (Simple check by fetching a known collection)
     try {
@@ -36,16 +47,28 @@ export async function checkSystemHealth(): Promise<SystemStatus> {
     }
 
     // 3. Check AI Chat API (GET request just checks if route exists)
-    const chatRes = await fetch('/api/chat');
-    status.aiChat = chatRes.ok;
+    try {
+      const chatRes = await fetch('./api/chat').catch(() => null);
+      status.aiChat = Boolean(chatRes && chatRes.ok);
+    } catch {
+      status.aiChat = false;
+    }
 
     // 4. Check AI Search API (Simple trending query)
-    const searchRes = await fetch('/api/ai-search?q=test');
-    status.aiSearch = searchRes.ok;
+    try {
+      const searchRes = await fetch('./api/ai-search?q=test').catch(() => null);
+      status.aiSearch = Boolean(searchRes && searchRes.ok);
+    } catch {
+      status.aiSearch = false;
+    }
 
     // 5. Check YouTube API (Check if the proxy returns a response)
-    const ytRes = await fetch('/api/youtube-shorts?maxResults=1');
-    status.youtube = ytRes.ok;
+    try {
+      const ytRes = await fetch('./api/youtube-shorts?maxResults=1').catch(() => null);
+      status.youtube = Boolean(ytRes && ytRes.ok);
+    } catch {
+      status.youtube = false;
+    }
 
   } catch (err) {
     console.error("Health check failed", err);
