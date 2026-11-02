@@ -1225,20 +1225,28 @@
     
     const VideoSources = [
       { 
-        name: 'VidLink Pro', 
-        url: 'https://vidlink.pro/${t}/${id}${se}', 
+        name: 'VidSrc VIP (Unblocked)', 
+        url: 'https://vidsrc.vip/embed/${t}/${id}${se}', 
         quality: '4K', 
         speed: 'fast',
         priority: 1,
-        note: 'Default Server (4K)'
+        note: 'Default Server (School-Bypass 4K)'
       },
       { 
-        name: 'Embed.su', 
+        name: 'Embed.su (Ultra)', 
         url: 'https://embed.su/embed/${t}/${id}${se}', 
         quality: 'HD', 
         speed: 'fast',
         priority: 1,
-        note: 'Ultra Reliable'
+        note: 'Ultra Reliable & Unblocked'
+      },
+      { 
+        name: 'SmashyStream', 
+        url: 'https://player.smashystream.com/${t}/${id}${se}', 
+        quality: 'HD', 
+        speed: 'fast',
+        priority: 1,
+        note: 'Cisco / LanSchool Resilient'
       },
       { 
         name: 'VidSrc CC', 
@@ -1258,11 +1266,19 @@
       },
       {
         name: 'Videasy',
-        url: 'https://videasy.net/embed/\${t}/\${id}',
+        url: 'https://videasy.net/embed/${t}/${id}',
         quality: 'HD',
         speed: 'fast',
         priority: 1,
         note: 'Best for Anime & TV'
+      },
+      { 
+        name: 'VidLink Pro (Legacy)', 
+        url: 'https://vidlink.pro/${t}/${id}${se}', 
+        quality: '4K', 
+        speed: 'medium',
+        priority: 2,
+        note: 'Backup Server'
       },
       { 
         name: 'VidSrc PM', 

@@ -39,6 +39,37 @@ export const HolographicBadge: React.FC<{ type?: 'verified' | 'staff' | 'owner' 
   );
 };
 
+// CentralPro Cosmic Badge
+export const CentralProBadge: React.FC = () => {
+  return (
+    <motion.span
+      className="relative group cursor-help inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-gradient-to-r from-cyan-500 via-blue-600 to-indigo-600 shadow-[0_0_12px_rgba(59,130,246,0.6)] border border-cyan-300/40"
+      whileHover={{ scale: 1.08 }}
+    >
+      <span className="text-[10px]">🚀</span>
+      <span className="text-[9px] font-black uppercase tracking-wider text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]">PRO</span>
+      
+      {/* Cosmic Animated Shimmer */}
+      <motion.span
+        animate={{
+          backgroundPosition: ['0% 50%', '100% 50%', '0% 50%'],
+        }}
+        transition={{
+          duration: 2.5,
+          repeat: Infinity,
+          ease: "linear"
+        }}
+        className="absolute inset-0 rounded-full opacity-60 blur-[1px] bg-[linear-gradient(90deg,transparent,rgba(255,255,255,0.9),transparent)] bg-[length:200%_100%] pointer-events-none"
+      />
+      
+      {/* Tooltip */}
+      <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-black/90 backdrop-blur-md border border-cyan-400/40 rounded text-[10px] text-cyan-300 font-bold opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-50 shadow-xl">
+        CENTRALPRO SUBSCRIBER
+      </span>
+    </motion.span>
+  );
+};
+
 // 2. Profile Hover Card
 export const ProfileHoverCard: React.FC<{ user: any }> = ({ user }) => {
   return (

@@ -19,6 +19,11 @@ export type User = {
   password?: string;
   isGhostMode?: boolean;
   isVerified?: boolean;
+  isCentralPro?: boolean;
+  centralProPlan?: 'monthly' | 'forever';
+  profileBannerUrl?: string;
+  displayNameFont?: string;
+  isSystemWiped?: boolean;
   themeStyle?: string;
   acceptedReportsCount?: number;
   banStatus?: {

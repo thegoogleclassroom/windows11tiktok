@@ -1,13 +1,13 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { Home, Compass, PlusSquare, MessageSquare, User, Moon, Sun, LogIn, ShieldAlert, X, HelpCircle, Bell, Gamepad2, ShieldCheck, Info } from 'lucide-react';
+import { Home, Compass, PlusSquare, MessageSquare, User, Moon, Sun, LogIn, ShieldAlert, X, HelpCircle, Bell, Gamepad2, ShieldCheck, Info, Rocket, Sparkles, Check, Copy, Flame } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAppStore } from '../store';
 import { AuthModal } from './AuthModal';
 import { MiniPlayer } from './MiniPlayer';
-import { saveReports, getMessages, getUsers, getNotifications, markNotificationAsRead, getFAQPosts, subscribeToNotifications, saveGameData, getGameData, subscribeToIncomingCalls, subscribeToMessages } from '../lib/db';
+import { saveReports, getMessages, getUsers, getNotifications, markNotificationAsRead, getFAQPosts, subscribeToNotifications, saveGameData, getGameData, subscribeToIncomingCalls, subscribeToMessages, updateUser } from '../lib/db';
 import { TradientInfoModal } from './TradientInfoModal';
-import { HolographicBadge } from './UIPolish';
+import { HolographicBadge, CentralProBadge } from './UIPolish';
 import * as Types from '../types';
 
 import AnnouncementBanner from './AnnouncementBanner';
@@ -20,6 +20,7 @@ import { GlobalMusicBubble } from './GlobalMusicBubble';
 export function Layout({ children }: { children: React.ReactNode }) {
   const { 
     currentUser, 
+    setCurrentUser,
     theme, 
     toggleTheme, 
     introPhase, 
@@ -34,6 +35,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
   const [showSupportModal, setShowSupportModal] = useState(false);
   const [showForumChooser, setShowForumChooser] = useState(false);
   const [showVerificationModal, setShowVerificationModal] = useState(false);
+  const [showCentralProModal, setShowCentralProModal] = useState(false);
   const [supportMessage, setSupportMessage] = useState('');
   const [supportType, setSupportType] = useState<'support' | 'bug' | null>(null);
   const [supportSent, setSupportSent] = useState(false);
@@ -391,13 +393,49 @@ export function Layout({ children }: { children: React.ReactNode }) {
                 <img src={currentUser.avatarUrl} alt={currentUser.username} className="w-10 h-10 rounded-xl object-cover border border-zinc-200 dark:border-zinc-800 shadow-sm" />
                 <div className="flex-1 min-w-0">
                   <p className="font-bold text-sm truncate flex items-center gap-1">
-                    {currentUser.username}
+                    <span className={currentUser.displayNameFont || ''}>{currentUser.username}</span>
                     {currentUser.isVerified && <HolographicBadge />}
+                    {currentUser.isCentralPro && <CentralProBadge />}
                   </p>
                   <p className="text-xs text-zinc-500 truncate">@{currentUser.handle}</p>
                 </div>
               </div>
             )}
+
+            {/* CentralPro Section below person profile frame */}
+            <div 
+              onClick={() => setShowCentralProModal(true)}
+              className="group relative cursor-pointer overflow-hidden rounded-2xl p-2.5 bg-gradient-to-r from-blue-950/80 via-slate-900/80 to-indigo-950/80 border border-cyan-500/40 hover:border-cyan-400 hover:shadow-[0_0_20px_rgba(6,182,212,0.35)] transition-all duration-300"
+            >
+              <div className="absolute inset-0 bg-gradient-to-r from-cyan-500/10 via-blue-500/10 to-indigo-500/10 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />
+              <div className="relative flex items-center justify-between">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-cyan-400 via-blue-600 to-indigo-600 flex items-center justify-center text-white shadow-md shadow-blue-500/30 group-hover:scale-110 group-hover:rotate-6 transition-transform shrink-0">
+                    <Rocket size={16} className="animate-pulse" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-xs font-black tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-cyan-300 via-blue-200 to-indigo-200">
+                        CENTRALPRO
+                      </span>
+                      {currentUser?.isCentralPro ? (
+                        <span className="text-[9px] px-1.5 py-0.2 bg-emerald-500/20 text-emerald-300 font-extrabold rounded-full border border-emerald-400/30">
+                          PRO
+                        </span>
+                      ) : (
+                        <span className="text-[9px] px-1.5 py-0.2 bg-cyan-500/20 text-cyan-300 font-extrabold rounded-full border border-cyan-400/30">
+                          $0.50
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[10px] text-zinc-400 truncate group-hover:text-cyan-300 transition-colors">
+                      {currentUser?.isCentralPro ? 'Cosmic Perks Active' : 'Banners, Fonts & Perks'}
+                    </p>
+                  </div>
+                </div>
+                <Sparkles size={14} className="text-cyan-400 shrink-0 animate-spin" style={{ animationDuration: '6s' }} />
+              </div>
+            </div>
           </div>
         </motion.div>
       )}
@@ -637,6 +675,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
       )}
       <GlobalMusicBubble />
       <IframeDomainNotice />
+      <CentralProModal isOpen={showCentralProModal} onClose={() => setShowCentralProModal(false)} />
     </div>
   );
 }
@@ -727,3 +766,551 @@ function IframeDomainNotice() {
     </div>
   );
 }
+
+function CentralProModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
+  const { currentUser, setCurrentUser, setShowAuthModal } = useAppStore();
+  const [selectedPlan, setSelectedPlan] = useState<'forever' | 'monthly'>('forever');
+  const [selectedFont, setSelectedFont] = useState(currentUser?.displayNameFont || 'font-mono tracking-wider text-cyan-400 font-bold');
+  const [selectedBanner, setSelectedBanner] = useState(currentUser?.profileBannerUrl || 'https://images.unsplash.com/photo-1506703719100-a0f3a48c0f86?w=1200&q=80');
+  const [explosionKey, setExplosionKey] = useState(0);
+  const [copiedCashApp, setCopiedCashApp] = useState(false);
+  const [isActivating, setIsActivating] = useState(false);
+  const [justActivated, setJustActivated] = useState(false);
+
+  useEffect(() => {
+    if (isOpen) {
+      setExplosionKey(prev => prev + 1);
+      setJustActivated(false);
+    }
+  }, [isOpen]);
+
+  if (!isOpen) return null;
+
+  const FONTS = [
+    { id: '', label: 'Default', style: 'font-sans font-bold' },
+    { id: 'font-mono tracking-wider text-cyan-400 font-bold', label: 'Cyber Mono', style: 'font-mono tracking-wider text-cyan-400 font-bold' },
+    { id: 'font-serif italic font-extrabold text-amber-300 tracking-wide', label: 'Royal Serif', style: 'font-serif italic font-extrabold text-amber-300 tracking-wide' },
+    { id: 'font-mono uppercase font-black tracking-[0.2em] text-blue-400', label: 'Glitch Tech', style: 'font-mono uppercase font-black tracking-[0.2em] text-blue-400' },
+    { id: 'italic font-bold tracking-wide text-pink-400', label: 'Neon Script', style: 'italic font-bold tracking-wide text-pink-400' }
+  ];
+
+  const BANNERS = [
+    { name: 'Deep Space', url: 'https://images.unsplash.com/photo-1506703719100-a0f3a48c0f86?w=1200&q=80' },
+    { name: 'Cyber Matrix', url: 'https://images.unsplash.com/photo-1550745165-9bc0b252726f?w=1200&q=80' },
+    { name: 'Synthwave', url: 'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?w=1200&q=80' },
+    { name: 'Midnight Galaxy', url: 'https://images.unsplash.com/photo-1538370965046-79c0d6907d47?w=1200&q=80' }
+  ];
+
+  const handleCopyCashApp = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    navigator.clipboard.writeText('$ZaelLac');
+    setCopiedCashApp(true);
+    setTimeout(() => setCopiedCashApp(false), 2500);
+  };
+
+  const handleActivatePro = async () => {
+    if (!currentUser) {
+      onClose();
+      setShowAuthModal(true);
+      return;
+    }
+    setIsActivating(true);
+    try {
+      const updateData = {
+        isCentralPro: true,
+        centralProPlan: selectedPlan,
+        displayNameFont: selectedFont,
+        profileBannerUrl: selectedBanner
+      };
+      await updateUser(currentUser.id, updateData);
+      setCurrentUser({ ...currentUser, ...updateData });
+      setJustActivated(true);
+      setExplosionKey(prev => prev + 1);
+    } catch (err) {
+      console.error(err);
+      alert('Could not activate CentralPro. Please try again.');
+    } finally {
+      setIsActivating(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[1200] flex items-center justify-center p-3 sm:p-4 bg-black/85 backdrop-blur-md overflow-y-auto">
+      <motion.div 
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        exit={{ opacity: 0, scale: 0.95 }}
+        className="relative w-full max-w-4xl bg-gradient-to-b from-[#050b18] via-[#091124] to-[#030712] border-2 border-cyan-500/50 rounded-3xl shadow-[0_0_60px_rgba(6,182,212,0.35)] text-white overflow-hidden my-auto max-h-[95vh] flex flex-col"
+      >
+        {/* Deep Space Background Canvas with Twinkling Stars */}
+        <div className="absolute inset-0 pointer-events-none opacity-40">
+          <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-blue-600/20 rounded-full blur-3xl animate-pulse" />
+          <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-cyan-500/20 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '2s' }} />
+          {Array.from({ length: 30 }).map((_, i) => (
+            <div 
+              key={i} 
+              className="absolute w-1 h-1 bg-white rounded-full animate-ping"
+              style={{
+                top: `${(i * 17) % 95}%`,
+                left: `${(i * 23) % 95}%`,
+                animationDuration: `${2 + (i % 4)}s`,
+                opacity: 0.3 + ((i % 5) * 0.15)
+              }}
+            />
+          ))}
+        </div>
+
+        {/* Modal Top Bar */}
+        <div className="relative z-20 flex items-center justify-between px-6 py-4 border-b border-cyan-500/30 bg-[#050b18]/80 backdrop-blur-sm">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-cyan-400 via-blue-600 to-indigo-600 flex items-center justify-center shadow-lg shadow-cyan-500/30">
+              <Rocket size={18} className="text-white" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h2 className="text-lg font-black tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-cyan-300 via-blue-200 to-indigo-200">
+                  CENTRALPRO
+                </h2>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-cyan-500/20 text-cyan-300 border border-cyan-400/40">
+                  COSMIC PASS
+                </span>
+              </div>
+              <p className="text-[11px] text-zinc-400">Exclusive Profiles, Banners & Verified Super-Powers</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setExplosionKey(k => k + 1)}
+              className="px-2.5 py-1.5 text-xs font-bold text-cyan-300 bg-cyan-950/60 hover:bg-cyan-900/60 border border-cyan-500/30 rounded-xl flex items-center gap-1.5 transition-colors"
+              title="Re-play CT Blast"
+            >
+              <Sparkles size={13} className="text-cyan-400" />
+              <span>Blast CT</span>
+            </button>
+            <button 
+              onClick={onClose}
+              className="w-8 h-8 rounded-xl bg-white/5 hover:bg-white/10 text-zinc-400 hover:text-white flex items-center justify-center transition-colors"
+            >
+              <X size={18} />
+            </button>
+          </div>
+        </div>
+
+        {/* Scrollable Body */}
+        <div className="relative z-10 flex-1 overflow-y-auto p-5 sm:p-6 space-y-6">
+          
+          {/* 1. CT BLOWING UP ANIMATION (Blue Color) + SPACESHIP HOVERING WITH FIRE ANIMATION */}
+          <div className="relative overflow-hidden rounded-2xl border border-cyan-500/40 bg-gradient-to-b from-blue-950/60 via-slate-950/90 to-black p-6 flex flex-col items-center justify-center min-h-[220px]">
+            {/* Blue CT Shockwaves & Shard Explosions */}
+            <AnimatePresence mode="wait">
+              <div key={explosionKey} className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                {/* Concentric Shockwave Rings */}
+                <motion.div 
+                  initial={{ scale: 0.2, opacity: 1 }}
+                  animate={{ scale: [0.2, 1.8, 3.2], opacity: [1, 0.7, 0] }}
+                  transition={{ duration: 1.4, ease: "easeOut" }}
+                  className="absolute w-44 h-44 rounded-full border-2 border-cyan-400 shadow-[0_0_50px_#00e5ff]"
+                />
+                <motion.div 
+                  initial={{ scale: 0.2, opacity: 0.9 }}
+                  animate={{ scale: [0.2, 2.2, 4], opacity: [0.9, 0.5, 0] }}
+                  transition={{ duration: 1.6, delay: 0.1, ease: "easeOut" }}
+                  className="absolute w-44 h-44 rounded-full border border-blue-500 shadow-[0_0_60px_#3b82f6]"
+                />
+                {/* 16 Radiating Blue Spark Shards */}
+                {Array.from({ length: 16 }).map((_, i) => {
+                  const angle = (i * 360) / 16;
+                  const rad = (angle * Math.PI) / 180;
+                  const dist = 140;
+                  const x = Math.cos(rad) * dist;
+                  const y = Math.sin(rad) * dist;
+                  return (
+                    <motion.div
+                      key={i}
+                      initial={{ x: 0, y: 0, scale: 1.2, opacity: 1 }}
+                      animate={{ x, y, scale: 0, opacity: 0 }}
+                      transition={{ duration: 1.2, ease: "easeOut" }}
+                      className="absolute w-3 h-3 rounded-full bg-cyan-300 shadow-[0_0_12px_#00f0ff]"
+                    />
+                  );
+                })}
+                {/* Flash of Blue Light */}
+                <motion.div
+                  initial={{ opacity: 0.8 }}
+                  animate={{ opacity: 0 }}
+                  transition={{ duration: 0.7 }}
+                  className="absolute inset-0 bg-blue-500/25 pointer-events-none"
+                />
+              </div>
+            </AnimatePresence>
+
+            {/* CT Logo Detonation Display */}
+            <div className="relative z-10 flex flex-col items-center mb-3">
+              <motion.div 
+                key={`ct-emblem-${explosionKey}`}
+                initial={{ scale: 0.4, opacity: 0.6, rotate: -8 }}
+                animate={{ scale: [0.4, 1.25, 1], opacity: 1, rotate: [0, 4, 0] }}
+                transition={{ duration: 0.8, ease: "easeOut" }}
+                className="relative flex items-center justify-center"
+              >
+                <span className="text-4xl sm:text-5xl font-black tracking-widest text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-blue-400 to-indigo-300 drop-shadow-[0_0_25px_rgba(6,182,212,0.9)]">
+                  CT
+                </span>
+                <span className="absolute -top-1 -right-7 text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-gradient-to-r from-cyan-500 to-blue-600 text-white shadow-lg shadow-cyan-500/50">
+                  BLAST
+                </span>
+              </motion.div>
+              <p className="text-[11px] font-mono tracking-widest text-cyan-300/80 uppercase mt-1">
+                SYSTEM OVERLOAD • CENTRALTOK PRIME
+              </p>
+            </div>
+
+            {/* SPACESHIP IN SPACE HOVERING WITH FIRE ANIMATIONS AT BOTTOM */}
+            <div className="relative z-10 mt-2 flex flex-col items-center">
+              <motion.div
+                animate={{ 
+                  y: [-6, 6, -6],
+                  rotate: [-1.2, 1.2, -1.2]
+                }}
+                transition={{ 
+                  duration: 3.6, 
+                  repeat: Infinity, 
+                  ease: "easeInOut" 
+                }}
+                className="relative flex flex-col items-center"
+              >
+                {/* Spaceship Vector Graphic */}
+                <svg width="84" height="64" viewBox="0 0 100 80" fill="none" xmlns="http://www.w3.org/2000/svg" className="drop-shadow-[0_0_15px_rgba(6,182,212,0.7)]">
+                  {/* Outer Wings */}
+                  <path d="M10 65 L45 20 L55 20 L90 65 L75 65 L55 45 L45 45 L25 65 Z" fill="#0f172a" stroke="#06b6d4" strokeWidth="2" />
+                  {/* Wing Cannons / Energy Conduits */}
+                  <line x1="20" y1="65" x2="20" y2="40" stroke="#38bdf8" strokeWidth="2.5" />
+                  <line x1="80" y1="65" x2="80" y2="40" stroke="#38bdf8" strokeWidth="2.5" />
+                  {/* Cockpit Hull */}
+                  <path d="M50 8 L64 45 L50 68 L36 45 Z" fill="#1e293b" stroke="#38bdf8" strokeWidth="2" />
+                  {/* Cockpit Canopy Glass Glow */}
+                  <ellipse cx="50" cy="34" rx="8" ry="16" fill="#06b6d4" opacity="0.85" />
+                  <ellipse cx="49" cy="30" rx="4" ry="9" fill="#ffffff" opacity="0.7" />
+                  {/* Dual Thruster Nozzles at Bottom */}
+                  <rect x="40" y="66" width="7" height="6" rx="1.5" fill="#334155" stroke="#06b6d4" strokeWidth="1" />
+                  <rect x="53" y="66" width="7" height="6" rx="1.5" fill="#334155" stroke="#06b6d4" strokeWidth="1" />
+                </svg>
+
+                {/* ANIMATED FIRE THRUSTER FLAMES AT THE BOTTOM OF THE SHIP */}
+                <div className="flex items-start justify-center gap-3.5 -mt-1">
+                  {/* Left Thruster Flame */}
+                  <div className="relative flex flex-col items-center">
+                    {/* Outer Fiery Orange Flame */}
+                    <motion.div
+                      animate={{
+                        scaleY: [1.1, 1.7, 0.95, 1.6, 1.1],
+                        scaleX: [0.9, 1.15, 0.95, 1.1, 0.9],
+                        opacity: [0.85, 1, 0.75, 1, 0.85]
+                      }}
+                      transition={{ duration: 0.35, repeat: Infinity, ease: "easeInOut" }}
+                      className="w-3.5 h-7 bg-gradient-to-b from-yellow-300 via-orange-500 to-red-600 rounded-b-full filter blur-[1px] origin-top shadow-[0_0_15px_#f97316]"
+                    />
+                    {/* Inner Intense Cyan/White Plasma Core */}
+                    <motion.div
+                      animate={{
+                        scaleY: [1, 1.45, 0.85, 1.35, 1],
+                        opacity: [0.9, 1, 0.8, 1, 0.9]
+                      }}
+                      transition={{ duration: 0.25, repeat: Infinity, ease: "linear" }}
+                      className="absolute top-0 w-1.5 h-4 bg-gradient-to-b from-white via-cyan-200 to-blue-400 rounded-b-full origin-top shadow-[0_0_8px_#00f0ff]"
+                    />
+                    {/* Dropping Fire Sparks */}
+                    <motion.div
+                      animate={{ y: [0, 16], opacity: [0.9, 0], scale: [1, 0.2] }}
+                      transition={{ duration: 0.5, repeat: Infinity, ease: "easeIn" }}
+                      className="absolute top-5 w-1 h-1 rounded-full bg-yellow-300"
+                    />
+                  </div>
+
+                  {/* Right Thruster Flame */}
+                  <div className="relative flex flex-col items-center">
+                    {/* Outer Fiery Orange Flame */}
+                    <motion.div
+                      animate={{
+                        scaleY: [1.15, 1.6, 1, 1.7, 1.15],
+                        scaleX: [1, 0.9, 1.1, 0.95, 1],
+                        opacity: [0.9, 0.8, 1, 0.85, 0.9]
+                      }}
+                      transition={{ duration: 0.38, repeat: Infinity, ease: "easeInOut", delay: 0.05 }}
+                      className="w-3.5 h-7 bg-gradient-to-b from-yellow-300 via-orange-500 to-red-600 rounded-b-full filter blur-[1px] origin-top shadow-[0_0_15px_#f97316]"
+                    />
+                    {/* Inner Intense Cyan/White Plasma Core */}
+                    <motion.div
+                      animate={{
+                        scaleY: [0.9, 1.4, 1, 1.3, 0.9],
+                        opacity: [0.85, 1, 0.9, 1, 0.85]
+                      }}
+                      transition={{ duration: 0.28, repeat: Infinity, ease: "linear", delay: 0.05 }}
+                      className="absolute top-0 w-1.5 h-4 bg-gradient-to-b from-white via-cyan-200 to-blue-400 rounded-b-full origin-top shadow-[0_0_8px_#00f0ff]"
+                    />
+                    {/* Dropping Fire Sparks */}
+                    <motion.div
+                      animate={{ y: [0, 16], opacity: [0.9, 0], scale: [1, 0.2] }}
+                      transition={{ duration: 0.45, repeat: Infinity, ease: "easeIn", delay: 0.15 }}
+                      className="absolute top-5 w-1 h-1 rounded-full bg-orange-300"
+                    />
+                  </div>
+                </div>
+              </motion.div>
+            </div>
+          </div>
+
+          {/* 2. THE SCREEN: FULL PREVIEW OF THEIR PROFILE WITH NEW FEATURES */}
+          <div className="rounded-2xl border-2 border-cyan-500/50 bg-[#070e1e]/90 p-5 shadow-2xl relative overflow-hidden">
+            {/* Screen Cyber HUD Corner Accents */}
+            <div className="absolute top-2 left-2 text-[9px] font-mono text-cyan-400 tracking-widest uppercase flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-cyan-400 animate-ping" />
+              LIVE SCREEN PREVIEW • CENTRALPRO ENGINE
+            </div>
+            <div className="absolute top-2 right-2 text-[9px] font-mono text-cyan-400 tracking-widest uppercase">
+              FEED RESILIENT [VIP]
+            </div>
+
+            {/* Profile Banner Preview */}
+            <div className="mt-6 relative h-28 rounded-xl overflow-hidden border border-cyan-400/30 group">
+              <img 
+                src={selectedBanner} 
+                alt="Banner Preview" 
+                className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/20" />
+              <div className="absolute bottom-2 left-3 text-[10px] font-black uppercase tracking-wider text-cyan-300 bg-black/60 px-2 py-0.5 rounded backdrop-blur-sm border border-cyan-500/40">
+                🌌 Background Profile Banner
+              </div>
+            </div>
+
+            {/* Banner Quick Switcher Chips */}
+            <div className="flex gap-2 mt-2 overflow-x-auto pb-1 items-center">
+              <span className="text-[10px] text-zinc-400 font-bold shrink-0">Switch Banner:</span>
+              {BANNERS.map(b => (
+                <button
+                  key={b.name}
+                  onClick={() => setSelectedBanner(b.url)}
+                  className={`px-2.5 py-1 rounded-lg text-[10px] font-bold shrink-0 transition-all ${
+                    selectedBanner === b.url 
+                      ? 'bg-cyan-500 text-black shadow-md shadow-cyan-500/30 font-black' 
+                      : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700'
+                  }`}
+                >
+                  {b.name}
+                </button>
+              ))}
+            </div>
+
+            {/* Profile User Info Preview */}
+            <div className="mt-4 flex flex-col sm:flex-row items-center sm:items-start gap-4 p-3 bg-black/40 rounded-xl border border-white/10">
+              <div className="relative shrink-0">
+                <img 
+                  src={currentUser?.avatarUrl || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150'} 
+                  alt="Avatar" 
+                  className="w-16 h-16 rounded-2xl object-cover border-2 border-cyan-400 shadow-[0_0_15px_rgba(6,182,212,0.5)]"
+                />
+                <div className="absolute -bottom-1 -right-1">
+                  <CentralProBadge />
+                </div>
+              </div>
+
+              <div className="flex-1 min-w-0 text-center sm:text-left">
+                <div className="flex items-center justify-center sm:justify-start gap-2 flex-wrap">
+                  <h3 className={`text-xl truncate ${selectedFont}`}>
+                    {currentUser?.username || 'CosmicPilot'}
+                  </h3>
+                  <CentralProBadge />
+                </div>
+                <p className="text-xs text-zinc-400 font-mono mt-0.5">
+                  @{currentUser?.handle || 'pilot'} • CentralPro Member 🚀
+                </p>
+                <p className="text-xs text-zinc-300 mt-1 line-clamp-1">
+                  {currentUser?.bio || 'Living in deep space. CentralPro gives me cosmic powers!'}
+                </p>
+              </div>
+            </div>
+
+            {/* Multiple Display Name Fonts Switcher Strip */}
+            <div className="mt-4">
+              <label className="block text-[11px] font-bold text-cyan-300 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
+                <Sparkles size={12} /> Choose Display Name Font Style:
+              </label>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                {FONTS.map(f => (
+                  <button
+                    key={f.id}
+                    onClick={() => setSelectedFont(f.id)}
+                    className={`p-2 rounded-xl border text-left transition-all ${
+                      selectedFont === f.id
+                        ? 'border-cyan-400 bg-cyan-500/20 text-cyan-300 shadow-sm shadow-cyan-500/30'
+                        : 'border-zinc-800 bg-zinc-900/60 text-zinc-400 hover:border-zinc-700'
+                    }`}
+                  >
+                    <p className="text-[10px] text-zinc-500 font-bold">{f.label}</p>
+                    <p className={`text-xs truncate mt-0.5 ${f.id || 'font-sans'}`}>
+                      {currentUser?.username || 'CentralPilot'}
+                    </p>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* CentralPro Perks List Breakdown */}
+            <div className="mt-5 grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-4 border-t border-cyan-500/20">
+              <div className="flex items-start gap-2 p-2 bg-white/5 rounded-xl">
+                <Check size={16} className="text-cyan-400 shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-xs font-bold text-white">Background Profile Banner</p>
+                  <p className="text-[10px] text-zinc-400">Custom panoramic space art across your profile.</p>
+                </div>
+              </div>
+              <div className="flex items-start gap-2 p-2 bg-white/5 rounded-xl">
+                <Check size={16} className="text-cyan-400 shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-xs font-bold text-white">Multiple Display Name Fonts</p>
+                  <p className="text-[10px] text-zinc-400">Cyber, Serif, Glitch, Script styling on profile & posts.</p>
+                </div>
+              </div>
+              <div className="flex items-start gap-2 p-2 bg-white/5 rounded-xl">
+                <Check size={16} className="text-cyan-400 shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-xs font-bold text-white">Everything In Verified Perks</p>
+                  <p className="text-[10px] text-zinc-400">HD uploads, long captions, boost, VIP themes unlocked!</p>
+                </div>
+              </div>
+              <div className="flex items-start gap-2 p-2 bg-white/5 rounded-xl">
+                <Check size={16} className="text-cyan-400 shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-xs font-bold text-white">Exclusive CentralPro Badge</p>
+                  <p className="text-[10px] text-zinc-400">Cooler cosmic rocket badge instead of standard checkmark.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* 3. PRICING CARDS */}
+          <div>
+            <h4 className="text-xs font-black uppercase tracking-wider text-zinc-400 mb-2">Select Your Plan:</h4>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {/* Pay Forever Cost: $1 */}
+              <div 
+                onClick={() => setSelectedPlan('forever')}
+                className={`p-4 rounded-2xl border-2 cursor-pointer transition-all relative overflow-hidden ${
+                  selectedPlan === 'forever' 
+                    ? 'border-cyan-400 bg-gradient-to-br from-cyan-950/70 via-blue-950/60 to-indigo-950/80 shadow-lg shadow-cyan-500/25' 
+                    : 'border-zinc-800 bg-zinc-900/60 hover:border-zinc-700'
+                }`}
+              >
+                <div className="absolute top-2 right-2 px-2 py-0.5 bg-gradient-to-r from-amber-400 to-yellow-500 text-black text-[9px] font-black rounded-full uppercase tracking-wider">
+                  BEST VALUE
+                </div>
+                <p className="text-xs font-bold text-cyan-300 uppercase tracking-wider">Pay Forever</p>
+                <div className="flex items-baseline gap-1 mt-1">
+                  <span className="text-3xl font-black text-white">$1</span>
+                  <span className="text-xs text-zinc-400 font-semibold">one-time / lifetime</span>
+                </div>
+                <p className="text-[11px] text-zinc-300 mt-2">
+                  Pay once and keep CentralPro perks permanently. Never renews.
+                </p>
+              </div>
+
+              {/* Monthly Cost: $0.50 */}
+              <div 
+                onClick={() => setSelectedPlan('monthly')}
+                className={`p-4 rounded-2xl border-2 cursor-pointer transition-all relative overflow-hidden ${
+                  selectedPlan === 'monthly' 
+                    ? 'border-cyan-400 bg-gradient-to-br from-cyan-950/70 via-blue-950/60 to-indigo-950/80 shadow-lg shadow-cyan-500/25' 
+                    : 'border-zinc-800 bg-zinc-900/60 hover:border-zinc-700'
+                }`}
+              >
+                <p className="text-xs font-bold text-cyan-300 uppercase tracking-wider">Monthly Pass</p>
+                <div className="flex items-baseline gap-1 mt-1">
+                  <span className="text-3xl font-black text-white">$0.50</span>
+                  <span className="text-xs text-zinc-400 font-semibold">/ month</span>
+                </div>
+                <p className="text-[11px] text-zinc-300 mt-2">
+                  Affordable monthly pass. Cancel or renew whenever you want.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* 4. "Cash App: $ZaelLac" (Greyish block, hover mouse over to fade out and reveal censored stuff) */}
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-zinc-300 flex items-center gap-1.5">
+                <span>Payment Destination:</span>
+                <span className="text-[10px] text-zinc-500">(Hover grey block to uncover)</span>
+              </span>
+              <span className="text-[10px] text-emerald-400 font-bold">Verified Cashtag</span>
+            </div>
+
+            {/* THE GREYISH CENSORED CASH APP BLOCK */}
+            <div 
+              className="relative group overflow-hidden rounded-2xl bg-zinc-800/90 border border-zinc-700/80 p-4 transition-all duration-300 shadow-xl cursor-pointer"
+              title="Hover to uncover Cashtag"
+            >
+              {/* Uncensored Inner Content (Visible on Hover) */}
+              <div className="flex items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-[#00D632] flex items-center justify-center text-white font-black text-xl shadow-lg shadow-[#00D632]/30">
+                    $
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-base font-black text-white tracking-wide">
+                        Cash App: <span className="text-[#00D632] font-black">$ZaelLac</span>
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-zinc-400">
+                      Send {selectedPlan === 'forever' ? '$1.00' : '$0.50'} • Include your username in the note
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleCopyCashApp}
+                  className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1.5 transition-colors shadow-md shadow-emerald-600/30 shrink-0"
+                >
+                  {copiedCashApp ? <Check size={14} /> : <Copy size={14} />}
+                  <span>{copiedCashApp ? 'Copied $ZaelLac' : 'Copy'}</span>
+                </button>
+              </div>
+
+              {/* The Greyish Cover Block (Fades out when hovered) */}
+              <div className="absolute inset-0 bg-zinc-700/95 dark:bg-zinc-800/95 backdrop-blur-sm flex items-center justify-center transition-all duration-500 ease-out group-hover:opacity-0 group-hover:pointer-events-none select-none z-10 border border-zinc-600">
+                <div className="flex items-center gap-2 text-zinc-300 font-bold text-xs tracking-wider">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+                  <span>🔒 Hover your cursor here to reveal Cash App</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Instant Activation Button */}
+          <div className="pt-2">
+            <button
+              onClick={handleActivatePro}
+              disabled={isActivating}
+              className="w-full py-3.5 bg-gradient-to-r from-cyan-500 via-blue-600 to-indigo-600 hover:opacity-95 text-white font-black text-sm tracking-wider uppercase rounded-2xl shadow-[0_0_30px_rgba(6,182,212,0.4)] flex items-center justify-center gap-2 transition-transform active:scale-[0.98] disabled:opacity-50"
+            >
+              <Rocket size={18} />
+              <span>
+                {isActivating ? 'Activating Cosmic Pass...' : justActivated ? '✨ CentralPro Active!' : `Activate CentralPro (${selectedPlan === 'forever' ? '$1 Forever' : '$0.50 Monthly'})`}
+              </span>
+            </button>
+            {justActivated && (
+              <p className="text-center text-xs text-emerald-400 font-bold mt-2 animate-bounce">
+                🎉 Congratulations! Your CentralPro badge, banner and fonts are active!
+              </p>
+            )}
+          </div>
+
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+

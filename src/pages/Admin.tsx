@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { useAppStore } from '../store';
-import { getUsers, getReports, saveReports, getAppeals, saveAppeals, getAuditLogs, saveAuditLogs, saveUsers, getVideos, saveVideos, getAppSettings, saveAppSettings, saveNotifications, getNotifications, getAnnouncements, saveAnnouncement, deleteAnnouncement, subscribeToAnnouncements, subscribeToVerificationRequests, voteOnVerificationRequest, updateVerificationRequestStatus, updateUserVerificationStatus, subscribeToSuggestions, getVerificationRequests, updateDoc, doc, db } from '../lib/db';
+import { getUsers, getReports, saveReports, getAppeals, saveAppeals, getAuditLogs, saveAuditLogs, saveUsers, getVideos, saveVideos, getAppSettings, saveAppSettings, saveNotifications, getNotifications, getAnnouncements, saveAnnouncement, deleteAnnouncement, subscribeToAnnouncements, subscribeToVerificationRequests, voteOnVerificationRequest, updateVerificationRequestStatus, updateUserVerificationStatus, subscribeToSuggestions, getVerificationRequests, updateDoc, doc, db, wipeUserFromSystem } from '../lib/db';
 import { User, Report, Appeal, AuditLog, Video, AppNotification, Announcement, VerificationRequest, AppSuggestion } from '../types';
-import { ShieldAlert, AlertTriangle, Users, FileText, CheckCircle, XCircle, Trash2, Ban, Search, Filter, RotateCcw, Loader2, Power, Gamepad2, Settings, Megaphone, Plus, Calendar, Palette, Maximize, Target, Layout as LayoutIcon, Ghost, X, Lightbulb, UserCheck } from 'lucide-react';
+import { ShieldAlert, AlertTriangle, Users, FileText, CheckCircle, XCircle, Trash2, Ban, Search, Filter, RotateCcw, Loader2, Power, Gamepad2, Settings, Megaphone, Plus, Calendar, Palette, Maximize, Target, Layout as LayoutIcon, Ghost, X, Lightbulb, UserCheck, HelpCircle } from 'lucide-react';
 import { getDeviceId } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
 import { GAMES, APPS } from '../data/games';
@@ -116,24 +116,32 @@ export function Admin() {
     if (!tempBanModal.user || !tempBanReason.trim()) return;
     setTempBanLoading(true);
     try {
-      const durationMs = calculateDurationMs(tempBanAmount, tempBanUnit);
-      const until = Date.now() + durationMs;
-      const allUsers = await getUsers();
-      const idx = allUsers.findIndex(u => u.id === tempBanModal.user!.id);
-      if (idx !== -1) {
-        allUsers[idx].banStatus = {
-          type: 'temp',
-          until,
-          reason: tempBanReason.trim(),
-          bannedBy: currentUser!.id,
-          bannedAt: Date.now()
-        };
-        await saveUsers(allUsers);
-        setUsers(allUsers);
-        await logAction('ban_user', tempBanModal.user.id, `Banned user (temp) for ${tempBanAmount} ${tempBanUnit}. Reason: ${tempBanReason.trim()}`);
+      if (wipeSystemCheck) {
+        await wipeUserFromSystem(tempBanModal.user.id);
+        const freshUsers = await getUsers();
+        setUsers(freshUsers);
+        await logAction('ban_user', tempBanModal.user.id, `SYSTEM WIPE BAN (temp): Completely wiped @${tempBanModal.user.handle} out of system. Reason: ${tempBanReason.trim()}`);
+      } else {
+        const durationMs = calculateDurationMs(tempBanAmount, tempBanUnit);
+        const until = Date.now() + durationMs;
+        const allUsers = await getUsers();
+        const idx = allUsers.findIndex(u => u.id === tempBanModal.user!.id);
+        if (idx !== -1) {
+          allUsers[idx].banStatus = {
+            type: 'temp',
+            until,
+            reason: tempBanReason.trim(),
+            bannedBy: currentUser!.id,
+            bannedAt: Date.now()
+          };
+          await saveUsers(allUsers);
+          setUsers(allUsers);
+          await logAction('ban_user', tempBanModal.user.id, `Banned user (temp) for ${tempBanAmount} ${tempBanUnit}. Reason: ${tempBanReason.trim()}`);
+        }
       }
       setTempBanModal({ isOpen: false, user: null });
       setTempBanReason('');
+      setWipeSystemCheck(false);
     } catch (err) {
       console.error(err);
     } finally {
@@ -166,13 +174,31 @@ export function Admin() {
   const [confirmModal, setConfirmModal] = useState<{
     isOpen: boolean;
     title: string;
-    action: (reason: string) => Promise<void>;
+    action: (reason: string, wipeSystem?: boolean) => Promise<void>;
     requireReason: boolean;
     reasonLabel?: string;
     reasonPlaceholder?: string;
     loading?: boolean;
+    isBanAction?: boolean;
+    targetUserId?: string;
   }>({ isOpen: false, title: '', action: async () => {}, requireReason: false });
   const [actionReason, setActionReason] = useState('');
+  const [wipeSystemCheck, setWipeSystemCheck] = useState(false);
+  const [binaryCode, setBinaryCode] = useState('01000100 01000101 01001100 01000101 01010100 01000101');
+
+  // Animated binary typewriter cycle
+  useEffect(() => {
+    const chars = '01';
+    const interval = setInterval(() => {
+      let result = '';
+      for (let i = 0; i < 48; i++) {
+        if (i > 0 && i % 8 === 0) result += ' ';
+        result += chars.charAt(Math.floor(Math.random() * chars.length));
+      }
+      setBinaryCode(result);
+    }, 150);
+    return () => clearInterval(interval);
+  }, []);
   
   const isOwner = currentUser?.role === 'owner';
   const isMod = isOwner || currentUser?.role === 'staff';
@@ -344,19 +370,24 @@ export function Admin() {
 
   const executeWithConfirm = (
     title: string, 
-    action: (reason: string) => Promise<void>, 
+    action: (reason: string, wipeSystem?: boolean) => Promise<void>, 
     requireReason = true,
     reasonLabel?: string,
-    reasonPlaceholder?: string
+    reasonPlaceholder?: string,
+    isBanAction?: boolean,
+    targetUserId?: string
   ) => {
     setActionReason('');
+    setWipeSystemCheck(false);
     setConfirmModal({
       isOpen: true,
       title,
       requireReason,
       reasonLabel,
       reasonPlaceholder,
-      action
+      action,
+      isBanAction,
+      targetUserId
     });
   };
 
@@ -364,9 +395,10 @@ export function Admin() {
     if (confirmModal.requireReason && !actionReason.trim()) return;
     setConfirmModal(prev => ({ ...prev, loading: true }));
     try {
-      await confirmModal.action(actionReason.trim());
+      await confirmModal.action(actionReason.trim(), wipeSystemCheck);
       setConfirmModal({ isOpen: false, title: '', action: async () => {}, requireReason: false, loading: false });
       setActionReason('');
+      setWipeSystemCheck(false);
     } catch (err) {
       console.error(err);
       setConfirmModal(prev => ({ ...prev, loading: false }));
@@ -447,7 +479,15 @@ export function Admin() {
     
     executeWithConfirm(
       title, 
-      async (reason) => {
+      async (reason, shouldWipe) => {
+        if (shouldWipe) {
+          await wipeUserFromSystem(user.id);
+          const freshUsers = await getUsers();
+          setUsers(freshUsers);
+          await logAction('ban_user', user.id, `SYSTEM WIPE BAN (${type}): Completely wiped @${user.handle} out of system. Reason: ${reason}`);
+          return;
+        }
+
         const allUsers = await getUsers();
         const idx = allUsers.findIndex(u => u.id === user.id);
         if (idx !== -1) {
@@ -468,7 +508,9 @@ export function Admin() {
       },
       true,
       'Reason for Ban (Mandatory for staff/owner)',
-      'Specify the guideline violation or reason why this user is being banned...'
+      'Specify the guideline violation or reason why this user is being banned...',
+      true,
+      user.id
     );
   };
 
@@ -1915,6 +1957,52 @@ export function Admin() {
                   className="w-full bg-zinc-100 dark:bg-zinc-800 rounded-lg p-3 border border-transparent focus:border-pink-500 focus:outline-none resize-none min-h-[100px]"
                   placeholder={confirmModal.reasonPlaceholder || 'Provide a detailed reason for this action...'}
                 />
+
+                {confirmModal.isBanAction && (
+                  <div className="mt-4 p-3.5 rounded-xl bg-black/40 border border-emerald-500/30">
+                    <div className="flex items-center justify-between">
+                      <label className="flex items-center gap-2.5 cursor-pointer select-none">
+                        <input 
+                          type="checkbox"
+                          checked={wipeSystemCheck}
+                          onChange={e => setWipeSystemCheck(e.target.checked)}
+                          className="w-4 h-4 rounded border-emerald-500 text-emerald-500 focus:ring-emerald-400 focus:ring-offset-0 bg-zinc-900 cursor-pointer accent-emerald-500"
+                        />
+                        <span className="text-emerald-400 font-mono font-black text-xs tracking-wider uppercase drop-shadow-[0_0_8px_rgba(52,211,153,0.5)]">
+                          Completely WIPE OUT OF SYSTEM
+                        </span>
+                      </label>
+                      
+                      <div className="relative group">
+                        <button
+                          type="button"
+                          className="w-5 h-5 rounded-full bg-emerald-500/20 hover:bg-emerald-500/40 border border-emerald-500/50 text-emerald-300 font-black text-xs flex items-center justify-center transition-all"
+                        >
+                          !
+                        </button>
+                        <div className="absolute right-0 bottom-full mb-2 w-64 p-2.5 bg-zinc-950/95 backdrop-blur-md border border-emerald-500/40 rounded-xl text-[11px] text-zinc-200 shadow-2xl opacity-0 group-hover:opacity-100 pointer-events-none transition-all z-50 leading-relaxed font-sans">
+                          Remove this user from the system and it will delete them from the firebase, no one will be able to see that person again.
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Animated Typewriter Binary */}
+                    <div className="mt-2 font-mono text-[9px] text-emerald-500/70 overflow-hidden whitespace-nowrap tracking-widest select-none flex items-center gap-1">
+                      <span>&gt;&gt;</span>
+                      <motion.span
+                        animate={{ opacity: [0.6, 1, 0.6] }}
+                        transition={{ duration: 1.2, repeat: Infinity }}
+                      >
+                        {wipeSystemCheck ? 'SYS_PURGE_ENGAGED: ' + binaryCode : binaryCode}
+                      </motion.span>
+                      <motion.span
+                        animate={{ opacity: [0, 1, 0] }}
+                        transition={{ duration: 0.8, repeat: Infinity }}
+                        className="w-1.5 h-3 bg-emerald-400 inline-block"
+                      />
+                    </div>
+                  </div>
+                )}
               </div>
             ) : (
               <p className="text-zinc-500 mb-6">Are you sure you want to perform this action?</p>
@@ -1985,6 +2073,49 @@ export function Admin() {
                 className="w-full bg-zinc-100 dark:bg-zinc-800 rounded-lg p-3 border border-transparent focus:border-pink-500 focus:outline-none resize-none min-h-[100px]"
                 placeholder="Specify the violation or reason for temporary ban..."
               />
+
+              <div className="mt-4 p-3.5 rounded-xl bg-black/40 border border-emerald-500/30">
+                <div className="flex items-center justify-between">
+                  <label className="flex items-center gap-2.5 cursor-pointer select-none">
+                    <input 
+                      type="checkbox"
+                      checked={wipeSystemCheck}
+                      onChange={e => setWipeSystemCheck(e.target.checked)}
+                      className="w-4 h-4 rounded border-emerald-500 text-emerald-500 focus:ring-emerald-400 focus:ring-offset-0 bg-zinc-900 cursor-pointer accent-emerald-500"
+                    />
+                    <span className="text-emerald-400 font-mono font-black text-xs tracking-wider uppercase drop-shadow-[0_0_8px_rgba(52,211,153,0.5)]">
+                      Completely WIPE OUT OF SYSTEM
+                    </span>
+                  </label>
+                  
+                  <div className="relative group">
+                    <button
+                      type="button"
+                      className="w-5 h-5 rounded-full bg-emerald-500/20 hover:bg-emerald-500/40 border border-emerald-500/50 text-emerald-300 font-black text-xs flex items-center justify-center transition-all"
+                    >
+                      !
+                    </button>
+                    <div className="absolute right-0 bottom-full mb-2 w-64 p-2.5 bg-zinc-950/95 backdrop-blur-md border border-emerald-500/40 rounded-xl text-[11px] text-zinc-200 shadow-2xl opacity-0 group-hover:opacity-100 pointer-events-none transition-all z-50 leading-relaxed font-sans">
+                      Remove this user from the system and it will delete them from the firebase, no one will be able to see that person again.
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-2 font-mono text-[9px] text-emerald-500/70 overflow-hidden whitespace-nowrap tracking-widest select-none flex items-center gap-1">
+                  <span>&gt;&gt;</span>
+                  <motion.span
+                    animate={{ opacity: [0.6, 1, 0.6] }}
+                    transition={{ duration: 1.2, repeat: Infinity }}
+                  >
+                    {wipeSystemCheck ? 'SYS_PURGE_ENGAGED: ' + binaryCode : binaryCode}
+                  </motion.span>
+                  <motion.span
+                    animate={{ opacity: [0, 1, 0] }}
+                    transition={{ duration: 0.8, repeat: Infinity }}
+                    className="w-1.5 h-3 bg-emerald-400 inline-block"
+                  />
+                </div>
+              </div>
             </div>
 
             <div className="flex gap-3">

@@ -242,6 +242,39 @@ export const updateUserGame = async (userId: string, gameTitle: string | null) =
   return updateUser(userId, { currentGame: gameTitle });
 };
 
+export const wipeUserFromSystem = async (userId: string) => {
+  try {
+    // 1. Mark user as completely wiped in users collection so search & profile reflect deleted state
+    const docRef = doc(db, 'users', userId);
+    await updateDoc(docRef, {
+      isSystemWiped: true,
+      username: 'Account Deleted',
+      handle: `deleted_${userId.slice(-6)}`,
+      avatarUrl: '',
+      bio: 'This account has been completely wiped from the system.',
+      banStatus: {
+        type: 'perm',
+        reason: 'SYSTEM WIPE: Removed from the system permanently.',
+        bannedAt: Date.now()
+      }
+    });
+
+    // 2. Also remove their videos
+    const videos = await getVideos();
+    const userVideos = videos.filter(v => v.userId === userId);
+    for (const v of userVideos) {
+      try {
+        await deleteDoc(doc(db, 'videos', v.id));
+      } catch (e) {
+        console.warn("Error deleting video during wipe:", e);
+      }
+    }
+  } catch (err) {
+    console.error("Error wiping user from system:", err);
+    throw err;
+  }
+};
+
 export const getVideos = () => fetchCollection<Video>('videos');
 export const saveVideos = (videos: Video[]) => saveCollection('videos', videos);
 

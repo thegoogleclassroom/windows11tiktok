@@ -13,10 +13,10 @@ import { compressImage } from '../lib/imageUtils';
 import { 
   Settings, Play, Edit3, Grid, Heart, X, Upload, Bookmark, Flag, 
   Hammer, Wrench, Check, Trash2, HelpCircle, Users, Lock, Image as ImageIcon, LogOut,
-  AlertTriangle, Send, ShieldCheck, Trophy, Phone, Video as VideoIcon, Eye, EyeOff, Key, User as UserIcon, Sparkles
+  AlertTriangle, Send, ShieldCheck, Trophy, Phone, Video as VideoIcon, Eye, EyeOff, Key, User as UserIcon, Sparkles, FileX
 } from 'lucide-react';
 import { VideoItem } from './Home';
-import { HolographicBadge } from '../components/UIPolish';
+import { HolographicBadge, CentralProBadge } from '../components/UIPolish';
 
 // Helper for cropping
 const getCroppedImg = async (imageSrc: string, pixelCrop: any): Promise<string> => {
@@ -189,26 +189,57 @@ export function Profile() {
     <div className="w-full h-full overflow-y-auto hide-scrollbar pb-24 md:pb-0">
       <div className="max-w-4xl mx-auto border-x border-zinc-200 dark:border-zinc-800 min-h-screen">
         
+        {/* Profile Banner (CentralPro or custom) */}
+        {profileUser.profileBannerUrl && !profileUser.isSystemWiped && (
+          <div className="w-full h-36 md:h-48 overflow-hidden relative">
+            <img 
+              src={profileUser.profileBannerUrl} 
+              alt="Banner" 
+              className="w-full h-full object-cover"
+            />
+            <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
+          </div>
+        )}
+
         {/* Profile Header */}
-        <div className="px-4 pt-12 pb-6 flex flex-col md:flex-row items-center md:items-start gap-6 border-b border-zinc-200 dark:border-zinc-800">
+        <div className={`px-4 pb-6 flex flex-col md:flex-row items-center md:items-start gap-6 border-b border-zinc-200 dark:border-zinc-800 ${profileUser.profileBannerUrl && !profileUser.isSystemWiped ? 'pt-4 -mt-12 relative z-10' : 'pt-12'}`}>
           <div className="relative group">
-            {profileUser.avatarUrl ? (
-              <img src={profileUser.avatarUrl} alt={profileUser.username} className="w-28 h-28 rounded-full border-2 border-zinc-200 dark:border-zinc-800 object-cover" />
+            {profileUser.isSystemWiped ? (
+              /* Wiped Out Avatar: White background with a folded paper corner on top right and an X on the paper */
+              <div 
+                className="w-28 h-28 rounded-3xl bg-white border-2 border-zinc-300 dark:border-zinc-600 shadow-2xl relative flex items-center justify-center overflow-hidden"
+                title="Account Deleted"
+              >
+                {/* Folded corner top-right */}
+                <div className="absolute top-0 right-0 w-8 h-8 bg-zinc-200 dark:bg-zinc-300 border-b border-l border-zinc-400 shadow-sm" style={{ clipPath: 'polygon(0 0, 100% 100%, 0 100%)' }} />
+                <div className="absolute top-0 right-0 w-8 h-8 bg-zinc-100 dark:bg-zinc-950" style={{ clipPath: 'polygon(0 0, 100% 0, 100% 100%)' }} />
+                
+                {/* Paper with X */}
+                <div className="flex flex-col items-center justify-center text-zinc-800">
+                  <div className="relative">
+                    <FileX size={44} className="text-zinc-700 stroke-[2.2]" />
+                  </div>
+                  <span className="text-[9px] font-black tracking-widest uppercase text-red-600 mt-0.5">WIPED</span>
+                </div>
+              </div>
+            ) : profileUser.avatarUrl ? (
+              <img src={profileUser.avatarUrl} alt={profileUser.username} className="w-28 h-28 rounded-full border-2 border-zinc-200 dark:border-zinc-800 object-cover shadow-lg bg-zinc-900" />
             ) : (
               <div className="w-28 h-28 rounded-full border-2 border-zinc-200 dark:border-zinc-800 bg-zinc-800 flex items-center justify-center">
                 <span className="text-zinc-500 font-bold text-2xl">{profileUser.username.charAt(0)}</span>
               </div>
             )}
-            {profileUser.currentGame && profileUser.showActivityStatus !== false && (
+            {!profileUser.isSystemWiped && profileUser.currentGame && profileUser.showActivityStatus !== false && (
               <div className="absolute -bottom-1 -right-1 bg-green-500 w-5 h-5 rounded-full border-4 border-white dark:border-zinc-950 animate-pulse" title={`Playing ${profileUser.currentGame}`} />
             )}
           </div>
           
           <div className="flex-1 text-center md:text-left">
             <div className="flex items-center justify-center md:justify-start gap-2 mb-1 flex-wrap">
-              <h1 className="text-2xl font-bold flex items-center gap-1.5">
-                {profileUser.username}
-                {profileUser.isVerified && <HolographicBadge />}
+              <h1 className={`text-2xl font-bold flex items-center gap-1.5 ${profileUser.isSystemWiped ? 'text-zinc-400 font-mono tracking-tight' : profileUser.displayNameFont || ''}`}>
+                {profileUser.isSystemWiped ? 'Account Deleted' : profileUser.username}
+                {profileUser.isVerified && !profileUser.isSystemWiped && <HolographicBadge />}
+                {profileUser.isCentralPro && !profileUser.isSystemWiped && <CentralProBadge />}
               </h1>
               {areFriends && !isOwnProfile && (
                 <span className="px-2.5 py-0.5 bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 rounded-full text-xs font-bold flex items-center gap-1">
@@ -751,6 +782,8 @@ function EditProfileModal({ user, onClose }: { user: User, onClose: () => void }
   const [showActivityStatus, setShowActivityStatus] = useState(user.showActivityStatus !== false);
   const [isGhostMode, setIsGhostMode] = useState(user.isGhostMode || false);
   const [themeStyle, setThemeStyle] = useState(user.themeStyle || 'cyber');
+  const [profileBannerUrl, setProfileBannerUrl] = useState(user.profileBannerUrl || '');
+  const [displayNameFont, setDisplayNameFont] = useState(user.displayNameFont || '');
   const [showLockInfo, setShowLockInfo] = useState(false);
 
   const isEligible = user.isVerified || user.role === 'staff' || user.role === 'owner' || (user.badges || []).includes('Tradient');
@@ -786,7 +819,9 @@ function EditProfileModal({ user, onClose }: { user: User, onClose: () => void }
         password,
         showActivityStatus,
         isGhostMode,
-        themeStyle
+        themeStyle,
+        profileBannerUrl,
+        displayNameFont
       };
       
       await updateUser(user.id, updateData);
@@ -908,6 +943,96 @@ function EditProfileModal({ user, onClose }: { user: User, onClose: () => void }
                 >
                   <div className={`absolute top-1 left-1 bg-white w-4 h-4 rounded-full transition-transform ${isPrivate ? 'translate-x-6' : 'translate-x-0'}`} />
                 </button>
+              </div>
+
+              <div className="pt-4 border-t border-zinc-200 dark:border-zinc-800 space-y-4">
+                <div className="flex items-center justify-between">
+                  <label className="text-sm font-bold flex items-center gap-2">
+                    <Sparkles size={16} className="text-cyan-500" /> CentralPro Features
+                  </label>
+                  {user.isCentralPro ? (
+                    <span className="text-[10px] px-2 py-0.5 bg-gradient-to-r from-cyan-500 to-blue-600 text-white font-black rounded-full shadow-sm">
+                      PRO UNLOCKED
+                    </span>
+                  ) : (
+                    <span className="text-[10px] text-zinc-500 font-semibold">
+                      Requires CentralPro
+                    </span>
+                  )}
+                </div>
+
+                {/* Display Name Font */}
+                <div>
+                  <label className="block text-xs font-semibold mb-1 text-zinc-600 dark:text-zinc-400">
+                    Display Name Font Style
+                  </label>
+                  <div className="grid grid-cols-2 gap-2">
+                    {[
+                      { id: '', label: 'Standard Sans', preview: 'font-sans' },
+                      { id: 'font-mono tracking-wider text-cyan-400 font-bold', label: 'Cyber Mono', preview: 'font-mono text-cyan-400' },
+                      { id: 'font-serif italic font-extrabold text-amber-300 tracking-wide', label: 'Royal Serif', preview: 'font-serif italic text-amber-300' },
+                      { id: 'font-mono uppercase font-black tracking-[0.2em] text-blue-400', label: 'Glitch Tech', preview: 'font-mono uppercase text-blue-400' },
+                      { id: 'italic font-bold tracking-wide text-pink-400', label: 'Neon Script', preview: 'italic text-pink-400' }
+                    ].map(f => (
+                      <button
+                        key={f.id}
+                        type="button"
+                        disabled={!user.isCentralPro && user.role !== 'owner' && user.role !== 'staff'}
+                        onClick={() => setDisplayNameFont(f.id)}
+                        className={`p-2.5 rounded-xl border text-left text-xs font-bold transition-all ${
+                          displayNameFont === f.id
+                            ? 'border-cyan-500 bg-cyan-500/15 text-cyan-400'
+                            : 'border-zinc-200 dark:border-zinc-800 hover:border-zinc-400 text-zinc-700 dark:text-zinc-300'
+                        } ${(!user.isCentralPro && user.role !== 'owner' && user.role !== 'staff') ? 'opacity-50 cursor-not-allowed' : ''}`}
+                      >
+                        <p className="text-[10px] text-zinc-400">{f.label}</p>
+                        <p className={`text-sm truncate mt-0.5 ${f.id || 'font-sans'}`}>{username || 'Preview'}</p>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Background Profile Banner */}
+                <div>
+                  <label className="block text-xs font-semibold mb-1 text-zinc-600 dark:text-zinc-400">
+                    Background Profile Banner
+                  </label>
+                  <input
+                    type="text"
+                    disabled={!user.isCentralPro && user.role !== 'owner' && user.role !== 'staff'}
+                    value={profileBannerUrl}
+                    onChange={e => setProfileBannerUrl(e.target.value)}
+                    placeholder="Image URL or pick cosmic preset below"
+                    className={`w-full bg-zinc-100 dark:bg-zinc-800 border-transparent focus:bg-white dark:focus:bg-zinc-900 focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500 rounded-lg px-4 py-2 outline-none text-xs transition-all ${(!user.isCentralPro && user.role !== 'owner' && user.role !== 'staff') ? 'opacity-50 cursor-not-allowed' : ''}`}
+                  />
+                  <div className="flex gap-2 mt-2 overflow-x-auto pb-1">
+                    {[
+                      { name: 'Deep Space', url: 'https://images.unsplash.com/photo-1506703719100-a0f3a48c0f86?w=1200&q=80' },
+                      { name: 'Neon Cyber', url: 'https://images.unsplash.com/photo-1550745165-9bc0b252726f?w=1200&q=80' },
+                      { name: 'Synthwave', url: 'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?w=1200&q=80' },
+                      { name: 'Midnight', url: 'https://images.unsplash.com/photo-1538370965046-79c0d6907d47?w=1200&q=80' },
+                    ].map(preset => (
+                      <button
+                        key={preset.name}
+                        type="button"
+                        disabled={!user.isCentralPro && user.role !== 'owner' && user.role !== 'staff'}
+                        onClick={() => setProfileBannerUrl(preset.url)}
+                        className="px-2.5 py-1 text-[10px] font-bold rounded-lg bg-zinc-200 dark:bg-zinc-800 hover:bg-cyan-500/20 hover:text-cyan-400 transition-colors shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {preset.name}
+                      </button>
+                    ))}
+                    {profileBannerUrl && (
+                      <button
+                        type="button"
+                        onClick={() => setProfileBannerUrl('')}
+                        className="px-2 py-1 text-[10px] font-bold rounded-lg text-red-500 hover:bg-red-500/10 transition-colors shrink-0"
+                      >
+                        Clear
+                      </button>
+                    )}
+                  </div>
+                </div>
               </div>
 
               <div className="pt-4 border-t border-zinc-200 dark:border-zinc-800">
