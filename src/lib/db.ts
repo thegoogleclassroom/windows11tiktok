@@ -1,7 +1,7 @@
 import { collection, doc, getDocs, setDoc, updateDoc, writeBatch, arrayUnion, getDoc, onSnapshot, deleteDoc } from 'firebase/firestore';
 import { db, auth } from './firebase';
 export { db, doc, updateDoc, getDoc };
-import { User, Video, Message, AppNotification, Report, Appeal, AuditLog, Comment, Story, FAQCategory, FAQPost, ForumEditRequest, GroupChat, UserStatus, GameData, WatchParty, Announcement, Call, VerificationRequest, AppSuggestion, SneakPeek } from '../types';
+import { User, Video, Message, AppNotification, Report, Appeal, AuditLog, Comment, Story, FAQCategory, FAQPost, ForumEditRequest, GroupChat, UserStatus, GameData, WatchParty, Announcement, Call, VerificationRequest, AppSuggestion, SneakPeek, CentralProRequest } from '../types';
 
 export const submitSuggestion = async (suggestion: AppSuggestion) => {
   try {
@@ -620,6 +620,138 @@ export const deleteForumEditRequestFromDB = async (reqId: string) => {
     await deleteDoc(docRef);
   } catch (err) {
     console.error("Error deleting forum edit request:", err);
+  }
+};
+
+export const getCentralProRequests = () => fetchCollection<CentralProRequest>('centralpro_requests');
+export const saveCentralProRequests = (reqs: CentralProRequest[]) => saveCollection('centralpro_requests', reqs);
+
+export const requestCentralProVerification = async (user: User, plan: 'monthly' | 'forever') => {
+  try {
+    const reqId = `cp_req_${Date.now()}_${user.id}`;
+    const newReq: CentralProRequest = {
+      id: reqId,
+      userId: user.id,
+      username: user.username,
+      handle: user.handle,
+      userAvatar: user.avatarUrl,
+      plan,
+      status: 'pending',
+      timestamp: Date.now()
+    };
+
+    const existingReqs = await getCentralProRequests();
+    const updatedReqs = [newReq, ...existingReqs.filter(r => r.userId !== user.id)];
+    await saveCentralProRequests(updatedReqs);
+
+    // Update user status
+    await updateUser(user.id, {
+      centralProStatus: 'pending',
+      centralProPlan: plan
+    });
+
+    // Notify all staff and owners for priority support
+    const allUsers = await getUsers();
+    const admins = allUsers.filter(u => u.role === 'owner' || u.role === 'staff');
+    const notifs = await getNotifications();
+
+    admins.forEach(admin => {
+      notifs.push({
+        id: `notif_cp_pri_${Date.now()}_${admin.id}`,
+        userId: admin.id,
+        type: 'centralpro_update',
+        fromUserId: user.id,
+        title: '🚨 Priority Support: CentralPro Payment Verification',
+        message: `@${user.handle} submitted confirmation for ${plan === 'forever' ? '$1 Forever' : '$0.50 Monthly'}. Check Cash App $ZaelLac and verify note @${user.handle}.`,
+        read: false,
+        timestamp: Date.now(),
+        isImportant: true,
+        actionButton: {
+          text: 'Review in Moderation',
+          action: 'open_admin_centralpro'
+        }
+      });
+    });
+
+    await saveNotifications(notifs);
+    return newReq;
+  } catch (err) {
+    console.error("Error requesting CentralPro verification:", err);
+    throw err;
+  }
+};
+
+export const approveCentralProPayment = async (requestId: string, adminUser: User) => {
+  try {
+    const reqs = await getCentralProRequests();
+    const req = reqs.find(r => r.id === requestId);
+    if (!req) return;
+
+    req.status = 'accepted';
+    req.reviewedBy = adminUser.id;
+    req.reviewedAt = Date.now();
+    await saveCentralProRequests(reqs);
+
+    // Update user in Firestore
+    await updateUser(req.userId, {
+      isCentralPro: true,
+      centralProStatus: 'active',
+      centralProPlan: req.plan
+    });
+
+    // Notify user with welcome message and perks
+    const notifs = await getNotifications();
+    notifs.push({
+      id: `notif_cp_welcome_${Date.now()}_${req.userId}`,
+      userId: req.userId,
+      type: 'centralpro_update',
+      fromUserId: adminUser.id,
+      title: '🚀 CentralPro Activated!',
+      message: 'Your part of the CentralPro Community Welcome!!, Heres your perks: Custom Profile Banner, Multiple Display Name Fonts, All Verified Perks, and the Cosmic CentralPro Rocket Badge!',
+      read: false,
+      timestamp: Date.now(),
+      isImportant: true
+    });
+    await saveNotifications(notifs);
+  } catch (err) {
+    console.error("Error approving CentralPro payment:", err);
+    throw err;
+  }
+};
+
+export const declineCentralProPayment = async (requestId: string, adminUser: User) => {
+  try {
+    const reqs = await getCentralProRequests();
+    const req = reqs.find(r => r.id === requestId);
+    if (!req) return;
+
+    req.status = 'declined';
+    req.reviewedBy = adminUser.id;
+    req.reviewedAt = Date.now();
+    await saveCentralProRequests(reqs);
+
+    // Update user status
+    await updateUser(req.userId, {
+      centralProStatus: 'declined'
+    });
+
+    // Notify user that payment was declined
+    const notifs = await getNotifications();
+    notifs.push({
+      id: `notif_cp_declined_${Date.now()}_${req.userId}`,
+      userId: req.userId,
+      type: 'centralpro_update',
+      fromUserId: adminUser.id,
+      title: '⚠️ CentralPro Payment Declined',
+      message: 'Your CentralPro payment was declined. We could not verify your Cash App payment. Please ensure you put your username in the note or contact support.',
+      read: false,
+      timestamp: Date.now(),
+      isImportant: true
+    });
+    await saveNotifications(notifs);
+  } catch (err) {
+    console.error("Error declining CentralPro payment:", err);
+    throw err;
   }
 };
 

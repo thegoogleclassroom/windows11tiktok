@@ -1,11 +1,11 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { Home, Compass, PlusSquare, MessageSquare, User, Moon, Sun, LogIn, ShieldAlert, X, HelpCircle, Bell, Gamepad2, ShieldCheck, Info, Rocket, Sparkles, Check, Copy, Flame } from 'lucide-react';
+import { Home, Compass, PlusSquare, MessageSquare, User, Moon, Sun, LogIn, ShieldAlert, X, HelpCircle, Bell, Gamepad2, ShieldCheck, Info, Rocket, Sparkles, Check, Copy, Flame, AlertTriangle } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAppStore } from '../store';
 import { AuthModal } from './AuthModal';
 import { MiniPlayer } from './MiniPlayer';
-import { saveReports, getMessages, getUsers, getNotifications, markNotificationAsRead, getFAQPosts, subscribeToNotifications, saveGameData, getGameData, subscribeToIncomingCalls, subscribeToMessages, updateUser } from '../lib/db';
+import { saveReports, getMessages, getUsers, getNotifications, markNotificationAsRead, getFAQPosts, subscribeToNotifications, saveGameData, getGameData, subscribeToIncomingCalls, subscribeToMessages, updateUser, requestCentralProVerification } from '../lib/db';
 import { TradientInfoModal } from './TradientInfoModal';
 import { HolographicBadge, CentralProBadge } from './UIPolish';
 import * as Types from '../types';
@@ -774,13 +774,16 @@ function CentralProModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => 
   const [selectedBanner, setSelectedBanner] = useState(currentUser?.profileBannerUrl || 'https://images.unsplash.com/photo-1506703719100-a0f3a48c0f86?w=1200&q=80');
   const [explosionKey, setExplosionKey] = useState(0);
   const [copiedCashApp, setCopiedCashApp] = useState(false);
-  const [isActivating, setIsActivating] = useState(false);
-  const [justActivated, setJustActivated] = useState(false);
+  const [isCashAppHovered, setIsCashAppHovered] = useState(false);
+  const [showCopyWarningModal, setShowCopyWarningModal] = useState(false);
+  const [submittingConfirmation, setSubmittingConfirmation] = useState(false);
+
+  const isPending = currentUser?.centralProStatus === 'pending';
+  const isAlreadyActive = currentUser?.isCentralPro;
 
   useEffect(() => {
     if (isOpen) {
       setExplosionKey(prev => prev + 1);
-      setJustActivated(false);
     }
   }, [isOpen]);
 
@@ -801,36 +804,35 @@ function CentralProModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => 
     { name: 'Midnight Galaxy', url: 'https://images.unsplash.com/photo-1538370965046-79c0d6907d47?w=1200&q=80' }
   ];
 
-  const handleCopyCashApp = (e: React.MouseEvent) => {
-    e.stopPropagation();
+  const handleCopyCashApp = (e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
     navigator.clipboard.writeText('$ZaelLac');
     setCopiedCashApp(true);
+    setShowCopyWarningModal(true);
     setTimeout(() => setCopiedCashApp(false), 2500);
   };
 
-  const handleActivatePro = async () => {
+  const handleConfirmPayment = async () => {
     if (!currentUser) {
       onClose();
       setShowAuthModal(true);
       return;
     }
-    setIsActivating(true);
+    setSubmittingConfirmation(true);
     try {
-      const updateData = {
-        isCentralPro: true,
+      await requestCentralProVerification(currentUser, selectedPlan);
+      setCurrentUser({
+        ...currentUser,
+        centralProStatus: 'pending',
         centralProPlan: selectedPlan,
         displayNameFont: selectedFont,
         profileBannerUrl: selectedBanner
-      };
-      await updateUser(currentUser.id, updateData);
-      setCurrentUser({ ...currentUser, ...updateData });
-      setJustActivated(true);
-      setExplosionKey(prev => prev + 1);
+      });
     } catch (err) {
       console.error(err);
-      alert('Could not activate CentralPro. Please try again.');
+      alert('Failed to submit payment confirmation. Please try again.');
     } finally {
-      setIsActivating(false);
+      setSubmittingConfirmation(false);
     }
   };
 
@@ -1246,15 +1248,18 @@ function CentralProModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => 
               <span className="text-[10px] text-emerald-400 font-bold">Verified Cashtag</span>
             </div>
 
-            {/* THE GREYISH CENSORED CASH APP BLOCK */}
+            {/* THE GREYISH CENSORED CASH APP BLOCK (Working Hover Fade + Click to Reveal) */}
             <div 
-              className="relative group overflow-hidden rounded-2xl bg-zinc-800/90 border border-zinc-700/80 p-4 transition-all duration-300 shadow-xl cursor-pointer"
-              title="Hover to uncover Cashtag"
+              onMouseEnter={() => setIsCashAppHovered(true)}
+              onMouseLeave={() => setIsCashAppHovered(false)}
+              onClick={() => setIsCashAppHovered(prev => !prev)}
+              className="relative overflow-hidden rounded-2xl bg-zinc-800/90 border border-zinc-700/80 p-4 transition-all duration-300 shadow-xl cursor-pointer"
+              title="Hover or click to uncover Cashtag"
             >
-              {/* Uncensored Inner Content (Visible on Hover) */}
+              {/* Uncensored Inner Content */}
               <div className="flex items-center justify-between gap-4">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-[#00D632] flex items-center justify-center text-white font-black text-xl shadow-lg shadow-[#00D632]/30">
+                  <div className="w-10 h-10 rounded-xl bg-[#00D632] flex items-center justify-center text-white font-black text-xl shadow-lg shadow-[#00D632]/30 shrink-0">
                     $
                   </div>
                   <div>
@@ -1279,32 +1284,102 @@ function CentralProModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => 
                 </button>
               </div>
 
-              {/* The Greyish Cover Block (Fades out when hovered) */}
-              <div className="absolute inset-0 bg-zinc-700/95 dark:bg-zinc-800/95 backdrop-blur-sm flex items-center justify-center transition-all duration-500 ease-out group-hover:opacity-0 group-hover:pointer-events-none select-none z-10 border border-zinc-600">
+              {/* The Greyish Cover Block (Fades out when hovered or clicked) */}
+              <div 
+                style={{
+                  opacity: isCashAppHovered ? 0 : 1,
+                  pointerEvents: isCashAppHovered ? 'none' : 'auto',
+                  transition: 'opacity 0.4s ease-out'
+                }}
+                className="absolute inset-0 bg-zinc-700/95 dark:bg-zinc-800/95 backdrop-blur-sm flex items-center justify-center select-none z-10 border border-zinc-600"
+              >
                 <div className="flex items-center gap-2 text-zinc-300 font-bold text-xs tracking-wider">
                   <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-                  <span>🔒 Hover your cursor here to reveal Cash App</span>
+                  <span>🔒 Hover cursor here to reveal Cash App</span>
                 </div>
               </div>
             </div>
           </div>
 
-          {/* Instant Activation Button */}
+          {/* Copy Warning Modal: Username in Note Notice */}
+          {showCopyWarningModal && (
+            <div className="fixed inset-0 z-[1400] flex items-center justify-center p-4 bg-black/85 backdrop-blur-sm animate-in fade-in duration-200">
+              <div className="bg-zinc-950 border-2 border-amber-500/80 rounded-3xl p-6 max-w-md w-full shadow-[0_0_50px_rgba(245,158,11,0.35)] text-center relative overflow-hidden">
+                <div className="w-14 h-14 rounded-2xl bg-amber-500/20 text-amber-400 flex items-center justify-center mx-auto mb-4 border border-amber-500/40">
+                  <AlertTriangle size={32} className="animate-bounce" />
+                </div>
+                <span className="text-[10px] font-black uppercase tracking-widest text-amber-400 bg-amber-500/10 px-3 py-1 rounded-full border border-amber-500/30">
+                  CRITICAL CASH APP REQUIREMENT
+                </span>
+                <h3 className="text-lg font-black text-white mt-3 mb-2">
+                  Payment Note Requirement
+                </h3>
+                <div className="p-4 bg-red-950/60 border-2 border-red-500/80 rounded-2xl my-3 text-red-200 text-sm font-black leading-relaxed shadow-lg shadow-red-950/50">
+                  "Make a note saying your username in centraltok, to confirm your purchase, if not THERE ARE NO REFUNDS!!"
+                </div>
+                <p className="text-xs text-zinc-400 mb-5 leading-relaxed">
+                  Cashtag <span className="text-emerald-400 font-bold">$ZaelLac</span> has been copied. In Cash App, make sure to write <span className="text-cyan-300 font-bold">@{currentUser?.handle || 'your_username'}</span> in the note field before sending payment.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setShowCopyWarningModal(false)}
+                  className="w-full py-3.5 bg-gradient-to-r from-amber-500 to-yellow-600 hover:from-amber-600 hover:to-yellow-700 text-black font-black uppercase tracking-wider text-xs rounded-xl shadow-lg shadow-amber-500/20 transition-all hover:scale-[1.02] active:scale-[0.98]"
+                >
+                  I Understand & Will Include Note
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Purchase Confirmation Flow */}
           <div className="pt-2">
-            <button
-              onClick={handleActivatePro}
-              disabled={isActivating}
-              className="w-full py-3.5 bg-gradient-to-r from-cyan-500 via-blue-600 to-indigo-600 hover:opacity-95 text-white font-black text-sm tracking-wider uppercase rounded-2xl shadow-[0_0_30px_rgba(6,182,212,0.4)] flex items-center justify-center gap-2 transition-transform active:scale-[0.98] disabled:opacity-50"
-            >
-              <Rocket size={18} />
-              <span>
-                {isActivating ? 'Activating Cosmic Pass...' : justActivated ? '✨ CentralPro Active!' : `Activate CentralPro (${selectedPlan === 'forever' ? '$1 Forever' : '$0.50 Monthly'})`}
-              </span>
-            </button>
-            {justActivated && (
-              <p className="text-center text-xs text-emerald-400 font-bold mt-2 animate-bounce">
-                🎉 Congratulations! Your CentralPro badge, banner and fonts are active!
-              </p>
+            {isAlreadyActive ? (
+              <div className="p-4 rounded-2xl bg-cyan-950/40 border border-cyan-400/50 text-center space-y-1">
+                <div className="flex items-center justify-center gap-2 text-cyan-300 font-black text-sm">
+                  <Sparkles size={16} className="text-cyan-400" />
+                  <span>Your CentralPro Membership is Active!</span>
+                </div>
+                <p className="text-xs text-zinc-400">
+                  You have all cosmic perks, banners, fonts, and the exclusive rocket badge unlocked.
+                </p>
+              </div>
+            ) : isPending ? (
+              <div className="p-5 rounded-2xl bg-gradient-to-b from-amber-950/40 to-zinc-950 border-2 border-amber-500/50 text-center space-y-2 shadow-xl shadow-amber-500/10 animate-in fade-in">
+                <div className="flex items-center justify-center gap-2 text-amber-400 font-black text-base">
+                  <div className="w-3 h-3 rounded-full bg-amber-400 animate-ping" />
+                  <span>Confirming If you paid</span>
+                </div>
+                <p className="text-xs text-zinc-400 font-mono font-medium">
+                  This might take an hour or even days
+                </p>
+                <div className="p-3 bg-black/40 rounded-xl border border-white/10 text-[11px] text-zinc-400 max-w-md mx-auto text-left space-y-1 mt-2">
+                  <p className="font-bold text-amber-300 flex items-center gap-1.5">
+                    <span>🚨 Priority Support Verification Ticket</span>
+                  </p>
+                  <p>• Staff and owners have been notified for priority support to review your transaction.</p>
+                  <p>• They are checking Cash App (<span className="text-emerald-400 font-bold">$ZaelLac</span>) for <span className="font-mono text-cyan-300">@{currentUser?.handle}</span> in the note.</p>
+                  <p>• If confirmed, you will receive a welcome notification and your perks will unlock immediately!</p>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <button
+                  type="button"
+                  onClick={handleConfirmPayment}
+                  disabled={submittingConfirmation}
+                  className="w-full py-4 bg-gradient-to-r from-cyan-500 via-blue-600 to-indigo-600 hover:opacity-95 text-white font-black text-sm tracking-wider uppercase rounded-2xl shadow-[0_0_30px_rgba(6,182,212,0.4)] flex items-center justify-center gap-2 transition-transform active:scale-[0.98] disabled:opacity-50"
+                >
+                  <Rocket size={18} />
+                  <span>
+                    {submittingConfirmation
+                      ? 'Submitting Confirmation...'
+                      : `I Paid / Confirm Purchase (${selectedPlan === 'forever' ? '$1 Forever' : '$0.50 Monthly'})`}
+                  </span>
+                </button>
+                <p className="text-[11px] text-zinc-500 text-center">
+                  Click after sending Cash App with your username in the note. Admins will verify your payment.
+                </p>
+              </div>
             )}
           </div>
 

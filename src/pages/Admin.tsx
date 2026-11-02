@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { useAppStore } from '../store';
-import { getUsers, getReports, saveReports, getAppeals, saveAppeals, getAuditLogs, saveAuditLogs, saveUsers, getVideos, saveVideos, getAppSettings, saveAppSettings, saveNotifications, getNotifications, getAnnouncements, saveAnnouncement, deleteAnnouncement, subscribeToAnnouncements, subscribeToVerificationRequests, voteOnVerificationRequest, updateVerificationRequestStatus, updateUserVerificationStatus, subscribeToSuggestions, getVerificationRequests, updateDoc, doc, db, wipeUserFromSystem } from '../lib/db';
-import { User, Report, Appeal, AuditLog, Video, AppNotification, Announcement, VerificationRequest, AppSuggestion } from '../types';
-import { ShieldAlert, AlertTriangle, Users, FileText, CheckCircle, XCircle, Trash2, Ban, Search, Filter, RotateCcw, Loader2, Power, Gamepad2, Settings, Megaphone, Plus, Calendar, Palette, Maximize, Target, Layout as LayoutIcon, Ghost, X, Lightbulb, UserCheck, HelpCircle } from 'lucide-react';
+import { getUsers, getReports, saveReports, getAppeals, saveAppeals, getAuditLogs, saveAuditLogs, saveUsers, getVideos, saveVideos, getAppSettings, saveAppSettings, saveNotifications, getNotifications, getAnnouncements, saveAnnouncement, deleteAnnouncement, subscribeToAnnouncements, subscribeToVerificationRequests, voteOnVerificationRequest, updateVerificationRequestStatus, updateUserVerificationStatus, subscribeToSuggestions, getVerificationRequests, updateDoc, doc, db, wipeUserFromSystem, getCentralProRequests, approveCentralProPayment, declineCentralProPayment } from '../lib/db';
+import { User, Report, Appeal, AuditLog, Video, AppNotification, Announcement, VerificationRequest, AppSuggestion, CentralProRequest } from '../types';
+import { ShieldAlert, AlertTriangle, Users, FileText, CheckCircle, XCircle, Trash2, Ban, Search, Filter, RotateCcw, Loader2, Power, Gamepad2, Settings, Megaphone, Plus, Calendar, Palette, Maximize, Target, Layout as LayoutIcon, Ghost, X, Lightbulb, UserCheck, HelpCircle, Rocket } from 'lucide-react';
 import { getDeviceId } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
 import { GAMES, APPS } from '../data/games';
@@ -10,7 +10,7 @@ import { ResponsiveContainer, BarChart, Bar, LineChart, Line, XAxis, YAxis, Cart
 
 export function Admin() {
   const { currentUser } = useAppStore();
-  const [activeTab, setActiveTab] = useState<'reports' | 'users' | 'appeals' | 'logs' | 'announcements' | 'verification' | 'suggestions' | 'settings' | 'analytics'>('reports');
+  const [activeTab, setActiveTab] = useState<'reports' | 'users' | 'appeals' | 'logs' | 'announcements' | 'verification' | 'centralpro' | 'suggestions' | 'settings' | 'analytics'>('reports');
   
   const [reports, setReports] = useState<Report[]>([]);
   const [users, setUsers] = useState<User[]>([]);
@@ -20,6 +20,8 @@ export function Admin() {
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [verificationRequests, setVerificationRequests] = useState<VerificationRequest[]>([]);
   const [suggestions, setSuggestions] = useState<AppSuggestion[]>([]);
+  const [centralProRequests, setCentralProRequests] = useState<CentralProRequest[]>([]);
+  const [centralProProcessing, setCentralProProcessing] = useState<string | null>(null);
   
   // Announcement Form State
   const [newAnnouncement, setNewAnnouncement] = useState<Partial<Announcement>>({
@@ -211,6 +213,7 @@ export function Admin() {
     setVideos(await getVideos());
     setAnnouncements(await getAnnouncements());
     setVerificationRequests(await getVerificationRequests());
+    setCentralProRequests(await getCentralProRequests());
     if (isOwner) {
       const settings = await getAppSettings();
       setAppSettings(settings);
@@ -681,19 +684,27 @@ export function Admin() {
         </div>
 
         <div className="flex gap-2 mb-6 border-b border-zinc-200 dark:border-zinc-800 overflow-x-auto pb-2">
-          {['reports', 'users', 'appeals', 'logs', 'announcements', 'verification', 'suggestions', 'settings', 'analytics'].map(tab => (
-            ((tab !== 'logs' && tab !== 'announcements' && tab !== 'verification' && tab !== 'suggestions' && tab !== 'settings' && tab !== 'analytics') || isOwner) && (
+          {['reports', 'users', 'appeals', 'centralpro', 'logs', 'announcements', 'verification', 'suggestions', 'settings', 'analytics'].map(tab => {
+            const isVisible = tab === 'centralpro' ? isMod : (((tab !== 'logs' && tab !== 'announcements' && tab !== 'verification' && tab !== 'suggestions' && tab !== 'settings' && tab !== 'analytics') || isOwner));
+            const pendingCpCount = centralProRequests.filter(r => r.status === 'pending').length;
+            if (!isVisible) return null;
+            return (
               <button 
                 key={tab}
                 onClick={() => setActiveTab(tab as any)}
-                className={`px-6 py-3 font-semibold rounded-t-lg transition-colors capitalize whitespace-nowrap ${
+                className={`px-6 py-3 font-semibold rounded-t-lg transition-colors capitalize whitespace-nowrap flex items-center gap-2 ${
                   activeTab === tab ? 'bg-zinc-200 dark:bg-zinc-800 text-pink-600' : 'hover:bg-zinc-100 dark:hover:bg-zinc-900'
                 }`}
               >
-                {tab}
+                <span>{tab === 'centralpro' ? 'CentralPro' : tab}</span>
+                {tab === 'centralpro' && pendingCpCount > 0 && (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-cyan-500 text-black animate-pulse">
+                    {pendingCpCount}
+                  </span>
+                )}
               </button>
-            )
-          ))}
+            );
+          })}
         </div>
 
         <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-6 shadow-sm min-h-[500px]">
@@ -1499,6 +1510,153 @@ export function Admin() {
                     <CheckCircle size={48} className="mx-auto mb-4 opacity-20" />
                     <p className="font-bold">Inbox Clear</p>
                     <p className="text-xs">No pending verification requests at this time.</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'centralpro' && isMod && (
+            <div className="space-y-6">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <Rocket className="text-cyan-500" size={24} />
+                    <h2 className="text-xl font-bold">CentralPro Payment Review (Priority Support)</h2>
+                  </div>
+                  <p className="text-sm text-zinc-500 mt-1">
+                    Verify student purchases on Cash App (<span className="text-emerald-500 font-bold">$ZaelLac</span>). Look for their CentralTok username in the payment note.
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="bg-cyan-500/10 text-cyan-400 border border-cyan-500/30 px-3.5 py-1.5 rounded-full text-xs font-bold flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-cyan-400 animate-ping" />
+                    <span>{centralProRequests.filter(r => r.status === 'pending').length} Pending Review</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Instructions banner for admins */}
+              <div className="p-4 rounded-2xl bg-gradient-to-r from-blue-950/40 via-cyan-950/30 to-indigo-950/40 border border-cyan-500/30 text-xs text-zinc-300 space-y-1">
+                <p className="font-bold text-cyan-300">How to process CentralPro requests:</p>
+                <p>1. Open Cash App on phone/web and check activity for payments sent to <span className="font-black text-emerald-400">$ZaelLac</span>.</p>
+                <p>2. Match the sender's note with their CentralTok username (e.g. "@username").</p>
+                <p>3. If they paid: Click <span className="font-bold text-emerald-400">Accept Payment</span>. CentralPro perks will be granted automatically and a welcome notification will be sent!</p>
+                <p>4. If they did not pay or note was missing: Click <span className="font-bold text-red-400">Decline</span>. They will be notified that their payment was declined.</p>
+              </div>
+
+              {/* Requests list */}
+              <div className="grid grid-cols-1 gap-4">
+                {centralProRequests.map(req => {
+                  const targetUser = users.find(u => u.id === req.userId);
+                  const isProcessing = centralProProcessing === req.id;
+
+                  return (
+                    <div 
+                      key={req.id} 
+                      className={`border rounded-2xl p-5 transition-all flex flex-col md:flex-row items-start md:items-center justify-between gap-4 ${
+                        req.status === 'pending'
+                          ? 'border-cyan-500/50 bg-cyan-950/20 shadow-lg shadow-cyan-500/10'
+                          : req.status === 'accepted'
+                          ? 'border-emerald-500/30 bg-emerald-950/10 opacity-75'
+                          : 'border-zinc-800 bg-zinc-900/40 opacity-60'
+                      }`}
+                    >
+                      <div className="flex items-center gap-4 min-w-0">
+                        <img 
+                          src={targetUser?.avatarUrl || req.userAvatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150'} 
+                          alt="" 
+                          className="w-14 h-14 rounded-2xl object-cover border border-cyan-400/40 shrink-0" 
+                        />
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-black text-base text-white truncate">
+                              {targetUser?.username || req.username}
+                            </span>
+                            <span className="text-xs text-zinc-400">@{targetUser?.handle || req.handle}</span>
+                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
+                              req.plan === 'forever' 
+                                ? 'bg-amber-400/20 text-amber-300 border border-amber-400/40' 
+                                : 'bg-cyan-400/20 text-cyan-300 border border-cyan-400/40'
+                            }`}>
+                              {req.plan === 'forever' ? '$1 Forever' : '$0.50 Monthly'}
+                            </span>
+                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
+                              req.status === 'pending' 
+                                ? 'bg-amber-500/20 text-amber-400 border border-amber-500/40 animate-pulse'
+                                : req.status === 'accepted'
+                                ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40'
+                                : 'bg-red-500/20 text-red-400 border border-red-500/40'
+                            }`}>
+                              {req.status === 'pending' ? 'Needs Review' : req.status === 'accepted' ? 'Approved' : 'Declined'}
+                            </span>
+                          </div>
+                          <p className="text-xs text-zinc-400 mt-1">
+                            Requested {new Date(req.timestamp).toLocaleString()} • Note to look for in Cash App: <span className="font-mono text-cyan-300 font-bold">@{req.handle}</span>
+                          </p>
+                        </div>
+                      </div>
+
+                      {req.status === 'pending' ? (
+                        <div className="flex items-center gap-2.5 shrink-0 w-full md:w-auto">
+                          <button
+                            disabled={isProcessing}
+                            onClick={async () => {
+                              setCentralProProcessing(req.id);
+                              try {
+                                await approveCentralProPayment(req.id, currentUser!);
+                                setCentralProRequests(prev => prev.map(r => r.id === req.id ? { ...r, status: 'accepted' } : r));
+                                const freshUsers = await getUsers();
+                                setUsers(freshUsers);
+                                await logAction('centralpro_approve', req.userId, `Approved CentralPro payment for @${req.handle} (${req.plan}).`);
+                              } catch (err) {
+                                console.error(err);
+                                alert("Failed to approve CentralPro payment.");
+                              } finally {
+                                setCentralProProcessing(null);
+                              }
+                            }}
+                            className="flex-1 md:flex-initial px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs uppercase tracking-wider shadow-lg shadow-emerald-600/30 flex items-center justify-center gap-1.5 transition-all hover:scale-[1.02] disabled:opacity-50"
+                          >
+                            <CheckCircle size={16} />
+                            <span>{isProcessing ? 'Approving...' : 'Accept Payment'}</span>
+                          </button>
+
+                          <button
+                            disabled={isProcessing}
+                            onClick={async () => {
+                              setCentralProProcessing(req.id);
+                              try {
+                                await declineCentralProPayment(req.id, currentUser!);
+                                setCentralProRequests(prev => prev.map(r => r.id === req.id ? { ...r, status: 'declined' } : r));
+                                await logAction('centralpro_decline', req.userId, `Declined CentralPro payment for @${req.handle}.`);
+                              } catch (err) {
+                                console.error(err);
+                                alert("Failed to decline CentralPro payment.");
+                              } finally {
+                                setCentralProProcessing(null);
+                              }
+                            }}
+                            className="flex-1 md:flex-initial px-4 py-2.5 rounded-xl bg-zinc-800 hover:bg-red-950/60 hover:text-red-400 text-zinc-300 font-bold text-xs uppercase tracking-wider border border-zinc-700 flex items-center justify-center gap-1.5 transition-colors disabled:opacity-50"
+                          >
+                            <XCircle size={16} />
+                            <span>Decline</span>
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="text-xs text-zinc-500 italic">
+                          Reviewed {req.reviewedAt ? new Date(req.reviewedAt).toLocaleDateString() : ''}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+
+                {centralProRequests.length === 0 && (
+                  <div className="py-20 text-center text-zinc-500 bg-zinc-50 dark:bg-zinc-950 rounded-3xl border-2 border-dashed border-zinc-200 dark:border-zinc-800">
+                    <Rocket size={48} className="mx-auto mb-4 opacity-20 text-cyan-500" />
+                    <p className="font-bold text-zinc-300">No CentralPro Requests Yet</p>
+                    <p className="text-xs text-zinc-500 mt-1">When users click Confirm Purchase, requests will appear here for verification.</p>
                   </div>
                 )}
               </div>

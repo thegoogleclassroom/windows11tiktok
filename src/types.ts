@@ -21,6 +21,7 @@ export type User = {
   isVerified?: boolean;
   isCentralPro?: boolean;
   centralProPlan?: 'monthly' | 'forever';
+  centralProStatus?: 'pending' | 'active' | 'declined' | 'none';
   profileBannerUrl?: string;
   displayNameFont?: string;
   isSystemWiped?: boolean;
@@ -250,7 +251,7 @@ export type UserStatus = {
 export type AppNotification = {
   id: string;
   userId: string; // The user receiving the notification
-  type: 'like' | 'mention' | 'message' | 'follow' | 'forum_announcement' | 'tradient_reward' | 'support_resolved' | 'call' | 'verification_update' | 'moderation';
+  type: 'like' | 'mention' | 'message' | 'follow' | 'forum_announcement' | 'tradient_reward' | 'support_resolved' | 'call' | 'verification_update' | 'moderation' | 'centralpro_update';
   fromUserId: string;
   videoId?: string;
   forumPostId?: string;
@@ -264,6 +265,19 @@ export type AppNotification = {
     text: string;
     action: string;
   };
+};
+
+export type CentralProRequest = {
+  id: string;
+  userId: string;
+  username: string;
+  handle: string;
+  userAvatar?: string;
+  plan: 'monthly' | 'forever';
+  status: 'pending' | 'accepted' | 'declined';
+  timestamp: number;
+  reviewedBy?: string;
+  reviewedAt?: number;
 };
 
 export type Call = {
