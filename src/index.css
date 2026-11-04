@@ -29,3 +29,28 @@
   cursor: pointer;
   box-shadow: 0 1px 3px rgba(0,0,0,0.5);
 }
+
+@keyframes marquee {
+  0% { transform: translateX(100%); }
+  100% { transform: translateX(-100%); }
+}
+
+.animate-marquee {
+  display: inline-block;
+  white-space: nowrap;
+  animation: marquee 12s linear infinite;
+}
+
+@keyframes float-note {
+  0% { opacity: 0; transform: translateY(0) scale(0.6) rotate(0deg); }
+  40% { opacity: 0.9; }
+  100% { opacity: 0; transform: translateY(-40px) scale(1.1) rotate(25deg); }
+}
+
+.animate-float-note-1 {
+  animation: float-note 2.6s ease-out infinite;
+}
+
+.animate-float-note-2 {
+  animation: float-note 2.6s ease-out infinite 1.3s;
+}

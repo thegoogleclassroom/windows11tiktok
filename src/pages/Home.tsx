@@ -622,7 +622,8 @@ export const VideoItem: React.FC<{
     isGameActive,
     setMiniPlayerActive,
     setMiniPlayerUrl,
-    setMiniPlayerTitle
+    setMiniPlayerTitle,
+    setShowAuthModal
   } = useAppStore();
   const videoRef = useRef<HTMLVideoElement>(null);
   const ytPlayerRef = useRef<any>(null);
@@ -1168,9 +1169,10 @@ export const VideoItem: React.FC<{
             />
           )}
 
-          {/* Right Action Bar (Glassmorphic) */}
-          <div className="absolute right-3 bottom-24 md:bottom-20 flex flex-col items-center gap-5 z-20 transition-opacity">
-            <div className="relative mb-2 group/user">
+          {/* Right Action Bar (TikTok Authentic Stack) */}
+          <div className="absolute right-3 bottom-24 md:bottom-20 flex flex-col items-center gap-4 z-20 transition-opacity">
+            {/* Creator Profile Picture + Follow Red Badge */}
+            <div className="relative mb-1 group/user">
               <ProfileHoverCard user={video.user} />
               <Link to={`/profile/${video.user?.handle || ''}`}>
                 {video.user?.avatarUrl ? (
@@ -1181,50 +1183,68 @@ export const VideoItem: React.FC<{
                   </div>
                 )}
               </Link>
-              <button className="absolute -bottom-2 left-1/2 -translate-x-1/2 bg-pink-600 text-white rounded-full w-5 h-5 flex items-center justify-center text-lg font-bold pb-0.5 shadow-lg transform transition-transform hover:scale-125">
-                +
-              </button>
+              {currentUser?.id !== video.user?.id && (
+                <button 
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    if (!currentUser) setShowAuthModal(true);
+                  }}
+                  className="absolute -bottom-2 left-1/2 -translate-x-1/2 bg-[#FE2C55] hover:bg-[#e0264a] text-white rounded-full w-5 h-5 flex items-center justify-center text-sm font-black shadow-lg transform transition-transform hover:scale-125"
+                  title="Follow"
+                >
+                  +
+                </button>
+              )}
             </div>
             
+            {/* Heart / Like Button (TikTok Red #FE2C55) */}
             <button className="flex flex-col items-center gap-1 group" onClick={(e) => handleLike(e)}>
-              <div className={`p-3 rounded-full backdrop-blur-md border border-white/10 transition-all duration-300 ${isLiked ? 'bg-pink-600/20 text-pink-600 border-pink-500/30' : 'bg-white/10 text-white hover:bg-white/20'}`}>
-                <Heart size={28} className={isLiked ? 'fill-current drop-shadow-[0_0_8px_rgba(236,72,153,0.6)]' : ''} />
+              <div className={`p-3 rounded-full backdrop-blur-md border border-white/10 transition-all duration-300 ${isLiked ? 'bg-[#FE2C55]/20 text-[#FE2C55] border-[#FE2C55]/40 scale-110' : 'bg-white/10 text-white hover:bg-white/20'}`}>
+                <Heart size={26} className={isLiked ? 'fill-current drop-shadow-[0_0_10px_rgba(254,44,85,0.8)]' : ''} />
               </div>
-              <span className="text-xs font-bold text-white drop-shadow-md">{likesCount}</span>
+              <span className="text-xs font-black text-white drop-shadow-md">
+                {likesCount > 1000 ? `${(likesCount / 1000).toFixed(1)}k` : likesCount}
+              </span>
             </button>
             
+            {/* Comment Bubble */}
             <button className="flex flex-col items-center gap-1 group" onClick={() => setShowComments(true)}>
               <div className="p-3 rounded-full bg-white/10 backdrop-blur-md border border-white/10 text-white hover:bg-white/20 transition-all">
-                <MessageCircle size={28} className="fill-current" />
+                <MessageCircle size={26} className="fill-current" />
               </div>
-              <span className="text-xs font-bold text-white drop-shadow-md">{video.comments?.length || 0}</span>
+              <span className="text-xs font-black text-white drop-shadow-md">{video.comments?.length || 0}</span>
             </button>
             
+            {/* Ask AI Button */}
             <button 
               className="flex flex-col items-center gap-1 group" 
               onClick={() => setShowAIChat(true)}
             >
-              <div className="px-3 py-2 rounded-2xl bg-white/20 hover:bg-white/30 backdrop-blur-xl border border-white/30 text-white shadow-[0_4px_16px_rgba(0,0,0,0.3)] flex items-center gap-1 transition-all group-hover:scale-105 active:scale-95 group-hover:border-pink-400/60">
-                <Sparkles size={16} className="text-pink-300 animate-pulse fill-pink-300" />
-                <span className="text-[10px] font-black tracking-widest text-white">AI</span>
+              <div className="px-2.5 py-1.5 rounded-2xl bg-white/20 hover:bg-white/30 backdrop-blur-xl border border-white/30 text-white shadow-[0_4px_16px_rgba(0,0,0,0.3)] flex items-center gap-1 transition-all group-hover:scale-105 active:scale-95 group-hover:border-cyan-400/60">
+                <Sparkles size={14} className="text-cyan-300 animate-pulse fill-cyan-300" />
+                <span className="text-[10px] font-black tracking-wider text-white">AI</span>
               </div>
-              <span className="text-[10px] font-bold text-pink-100 drop-shadow">Ask AI</span>
+              <span className="text-[10px] font-bold text-zinc-200 drop-shadow">Ask AI</span>
             </button>
             
+            {/* Save / Favorite */}
             <button className="flex flex-col items-center gap-1 group" onClick={handleFavorite}>
               <div className={`p-3 rounded-full backdrop-blur-md border border-white/10 transition-all duration-300 ${isFavorited ? 'bg-amber-500/20 text-yellow-400 border-yellow-500/30' : 'bg-white/10 text-white hover:bg-white/20'}`}>
-                <Bookmark size={28} className={isFavorited ? 'fill-current drop-shadow-[0_0_8px_rgba(245,158,11,0.6)]' : ''} />
+                <Bookmark size={26} className={isFavorited ? 'fill-current drop-shadow-[0_0_8px_rgba(245,158,11,0.6)]' : ''} />
               </div>
               <span className="text-xs font-bold text-white drop-shadow-md">Save</span>
             </button>
 
+            {/* Share */}
             <button className="flex flex-col items-center gap-1 group" onClick={handleShare}>
               <div className="p-3 rounded-full bg-white/10 backdrop-blur-md border border-white/10 text-white hover:bg-white/20 transition-all">
-                <Share2 size={28} className="fill-current" />
+                <Share2 size={26} className="fill-current" />
               </div>
               <span className="text-xs font-bold text-white drop-shadow-md">Share</span>
             </button>
 
+            {/* Minimize */}
             <button 
               className="flex flex-col items-center gap-1 group" 
               onClick={() => {
@@ -1235,10 +1255,10 @@ export const VideoItem: React.FC<{
                 if (onMinimize) onMinimize();
               }}
             >
-              <div className="p-3 rounded-full bg-white/10 backdrop-blur-md border border-white/10 text-white hover:bg-white/20 transition-all">
-                <Maximize2 size={28} className="fill-current" />
+              <div className="p-2.5 rounded-full bg-white/10 backdrop-blur-md border border-white/10 text-white hover:bg-white/20 transition-all">
+                <Maximize2 size={22} className="fill-current" />
               </div>
-              <span className="text-xs font-bold text-white drop-shadow-md">Minimize</span>
+              <span className="text-[10px] font-bold text-white drop-shadow-md">Mini</span>
             </button>
 
             {canDelete && (
@@ -1246,8 +1266,8 @@ export const VideoItem: React.FC<{
                 className="flex flex-col items-center gap-1 group" 
                 onClick={handleDeletePost}
               >
-                <div className="p-3 rounded-full bg-white/10 backdrop-blur-md border border-white/10 text-zinc-300 hover:bg-red-600/20 hover:text-red-500 transition-all">
-                  <Trash2 size={22} />
+                <div className="p-2.5 rounded-full bg-white/10 backdrop-blur-md border border-white/10 text-zinc-300 hover:bg-red-600/20 hover:text-red-500 transition-all">
+                  <Trash2 size={20} />
                 </div>
                 <span className="text-[10px] font-bold text-white drop-shadow-md">Delete</span>
               </button>
@@ -1256,17 +1276,36 @@ export const VideoItem: React.FC<{
             {currentUser && (
               <button className="flex flex-col items-center gap-1 group" onClick={() => setShowReport(true)}>
                 <div className="p-2 rounded-full bg-white/5 hover:bg-white/10 text-zinc-400 hover:text-red-400 transition-colors">
-                  <Flag size={18} />
+                  <Flag size={16} />
                 </div>
                 <span className="text-[9px] font-bold text-zinc-400">Report</span>
               </button>
             )}
+
+            {/* Spinning Vinyl Record Disc with Floating Musical Notes */}
+            <div className="relative mt-2 group/disc flex items-center justify-center">
+              <div className="absolute -top-3 -left-2 pointer-events-none text-cyan-300 font-bold text-xs animate-float-note-1 select-none">
+                ♪
+              </div>
+              <div className="absolute -top-4 right-0 pointer-events-none text-[#FE2C55] font-bold text-sm animate-float-note-2 select-none">
+                ♫
+              </div>
+              <div className="w-11 h-11 rounded-full bg-gradient-to-tr from-zinc-950 via-zinc-900 to-zinc-950 p-[5px] border-2 border-zinc-700/80 shadow-[0_4px_15px_rgba(0,0,0,0.6)] flex items-center justify-center animate-[spin_4s_linear_infinite] group-hover/disc:scale-110 transition-transform">
+                <div className="w-full h-full rounded-full border border-dashed border-zinc-600/60 p-[3px] flex items-center justify-center bg-black">
+                  <img 
+                    src={video.user?.avatarUrl || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100'} 
+                    alt="Music" 
+                    className="w-full h-full rounded-full object-cover" 
+                  />
+                </div>
+              </div>
+            </div>
           </div>
 
-          {/* Bottom Info Section (Polished) */}
-          <div className="absolute bottom-0 left-0 right-16 p-6 pt-20 bg-gradient-to-t from-black/90 via-black/40 to-transparent text-white pb-20 md:pb-8 pointer-events-none z-10">
+          {/* Bottom Info Section (TikTok Layout) */}
+          <div className="absolute bottom-0 left-0 right-16 p-5 pt-20 bg-gradient-to-t from-black/95 via-black/50 to-transparent text-white pb-20 md:pb-6 pointer-events-none z-10">
             <div className="flex items-center gap-2 flex-wrap">
-              <Link to={`/profile/${video.user?.handle}`} className="font-black text-xl pointer-events-auto hover:underline flex items-center gap-2 group/author">
+              <Link to={`/profile/${video.user?.handle}`} className="font-black text-lg pointer-events-auto hover:underline flex items-center gap-1.5 group/author">
                 @{video.user?.handle || 'unknown'}
                 <div className="flex gap-1">
                   {video.user?.isVerified && <HolographicBadge type="verified" />}
@@ -1285,17 +1324,24 @@ export const VideoItem: React.FC<{
                 </span>
               )}
             </div>
-            <p className="text-sm mt-2 mb-3 line-clamp-2 leading-relaxed opacity-90 drop-shadow">
+            
+            <p className="text-sm mt-1.5 mb-2.5 line-clamp-2 leading-relaxed opacity-95 drop-shadow">
               {video.description?.replace(/#shorts?\b/gi, '').replace(/#youtubeshorts?\b/gi, '').replace(/#youtube\b/gi, '').trim()}
             </p>
             
-            <div className="flex items-center gap-4 text-xs font-bold">
-              <div className="flex items-center gap-2 bg-white/10 backdrop-blur-md px-3 py-1.5 rounded-full border border-white/10 group/music cursor-pointer pointer-events-auto max-w-[200px]">
-                <Music size={14} className="animate-[spin_4s_linear_infinite] text-pink-400 shrink-0" />
-                <span className="truncate">{track ? `${track.name} - ${track.artist}` : 'Original Audio'}</span>
+            <div className="flex items-center gap-3 text-xs font-bold">
+              {/* Scrolling Music Ticker */}
+              <div className="flex items-center gap-2 bg-black/40 backdrop-blur-md px-3 py-1.5 rounded-full border border-white/10 group/music cursor-pointer pointer-events-auto max-w-[220px] overflow-hidden">
+                <Music size={13} className="animate-[spin_4s_linear_infinite] text-[#25F4EE] shrink-0" />
+                <div className="overflow-hidden relative w-full">
+                  <span className="inline-block animate-marquee whitespace-nowrap text-xs text-zinc-200">
+                    {track ? `${track.name} - ${track.artist}` : `original sound - @${video.user?.handle || 'creator'}`} • CentralTok
+                  </span>
+                </div>
               </div>
-              <div className="flex items-center gap-1.5 bg-black/40 px-3 py-1.5 rounded-full border border-white/5">
-                <Eye size={16} className="text-zinc-400" />
+
+              <div className="flex items-center gap-1 bg-black/40 px-2.5 py-1.5 rounded-full border border-white/5 text-zinc-300 text-xs">
+                <Eye size={14} className="text-zinc-400" />
                 <span>{views.toLocaleString()}</span>
               </div>
             </div>

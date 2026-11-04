@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { Home, Compass, PlusSquare, MessageSquare, User, Moon, Sun, LogIn, ShieldAlert, X, HelpCircle, Bell, Gamepad2, ShieldCheck, Info, Rocket, Sparkles, Check, Copy, Flame, AlertTriangle } from 'lucide-react';
+import { Home, Compass, PlusSquare, MessageSquare, User, Moon, Sun, LogIn, ShieldAlert, X, HelpCircle, Bell, Gamepad2, ShieldCheck, Info, Rocket, Sparkles, Check, Copy, Flame, AlertTriangle, Search, Users, Tv } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAppStore } from '../store';
 import { AuthModal } from './AuthModal';
@@ -62,6 +62,23 @@ export function Layout({ children }: { children: React.ReactNode }) {
   const location = useLocation();
   const navigate = useNavigate();
   const isIntro = location.pathname === '/' && introPhase !== 'done';
+  const [searchQuery, setSearchQuery] = useState('');
+  const [suggestedUsers, setSuggestedUsers] = useState<Types.User[]>([]);
+
+  useEffect(() => {
+    getUsers().then(users => {
+      setSuggestedUsers(users.slice(0, 4));
+    }).catch(() => {});
+  }, []);
+
+  const handleSearchSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (searchQuery.trim()) {
+      navigate(`/explore?q=${encodeURIComponent(searchQuery.trim())}`);
+    } else {
+      navigate('/explore');
+    }
+  };
 
   useEffect(() => {
     if (!currentUser) return;
@@ -289,161 +306,268 @@ export function Layout({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <div className="flex h-screen bg-white dark:bg-zinc-950 text-zinc-900 dark:text-zinc-50 overflow-hidden transition-colors">
+    <div className="flex flex-col h-screen bg-white dark:bg-zinc-950 text-zinc-900 dark:text-zinc-50 overflow-hidden transition-colors">
       <AnnouncementBanner />
-      {/* Sidebar - Desktop */}
+
+      {/* TikTok Desktop Top Navigation Header */}
       {!isIntro && (
-        <motion.div 
-          id="desktop-sidebar"
-          animate={{ 
-            x: isGameActive ? -256 : 0,
-            width: isGameActive ? 0 : 256,
-            opacity: isGameActive ? 0 : 1
-          }}
-          transition={{ duration: 0.5, ease: "easeInOut" }}
-          className="hidden md:flex flex-col border-r border-zinc-200/80 dark:border-zinc-800/80 p-4 shrink-0 h-full bg-white/80 dark:bg-zinc-950/80 backdrop-blur-2xl z-50 overflow-hidden shadow-[4px_0_24px_rgba(0,0,0,0.02)]"
-        >
-          <Link to="/" className="flex flex-col gap-1 mb-6 px-2 group">
-            <div className="flex items-center gap-3">
-              <div className="w-11 h-11 bg-gradient-to-tr from-pink-600 via-purple-600 to-indigo-600 text-white rounded-2xl flex items-center justify-center font-black text-2xl leading-none transform transition-transform group-hover:rotate-6 group-hover:scale-110 shadow-lg shadow-pink-500/20">C</div>
-              <div>
-                <span className="text-2xl font-black tracking-tighter">Central<span className="text-pink-600">Tok</span></span>
-                <span className="block text-[10px] font-bold uppercase tracking-widest text-zinc-400">Social Experience</span>
-              </div>
+        <header className="hidden md:flex items-center justify-between px-6 py-2 border-b border-zinc-200 dark:border-zinc-800/80 bg-white/95 dark:bg-zinc-950/95 backdrop-blur-xl shrink-0 z-40 select-none">
+          {/* Logo with TikTok Cyan/Red-Pink Chromatic Note */}
+          <Link to="/" className="flex items-center gap-2.5 group">
+            <div className="relative w-8 h-8 flex items-center justify-center">
+              <span className="absolute text-2xl font-black text-[#25F4EE] -translate-x-[2px] -translate-y-[1px] select-none opacity-90 transition-transform group-hover:-translate-x-[3px]">♪</span>
+              <span className="absolute text-2xl font-black text-[#FE2C55] translate-x-[2px] translate-y-[1px] select-none opacity-90 transition-transform group-hover:translate-x-[3px]">♪</span>
+              <span className="relative text-2xl font-black text-zinc-900 dark:text-white select-none">♪</span>
             </div>
+            <span className="text-2xl font-black tracking-tight text-zinc-900 dark:text-white">
+              Central<span className="text-[#FE2C55]">Tok</span>
+            </span>
           </Link>
 
-          <div className="text-[11px] text-zinc-500 mb-6 bg-gradient-to-br from-zinc-100/80 to-zinc-200/40 dark:from-zinc-900/80 dark:to-zinc-900/40 backdrop-blur-md p-3.5 rounded-2xl border border-zinc-200/80 dark:border-zinc-800/80 leading-relaxed shadow-sm">
-            <div className="flex items-center gap-2 mb-2">
-              <span className="bg-gradient-to-r from-pink-600 to-purple-600 text-white px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-widest shadow-sm">BETA v1.0</span>
-              <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.5)]" />
-              {currentUser && !currentUser.isVerified && (
+          {/* TikTok Capsule Search Bar */}
+          <div className="flex-1 max-w-md mx-8">
+            <form onSubmit={handleSearchSubmit} className="relative flex items-center bg-zinc-100 dark:bg-zinc-800/80 hover:bg-zinc-200/70 dark:hover:bg-zinc-800 rounded-full px-4 py-2 border border-transparent focus-within:border-zinc-300 dark:focus-within:border-zinc-600 transition-all">
+              <input 
+                type="text" 
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search accounts and videos" 
+                className="w-full bg-transparent text-sm outline-none placeholder:text-zinc-400 dark:placeholder:text-zinc-500 pr-2"
+              />
+              {searchQuery && (
                 <button 
-                  onClick={() => setShowVerificationModal(true)}
-                  className="ml-auto flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-blue-600 dark:text-blue-400 bg-blue-500/10 hover:bg-blue-500/20 px-2.5 py-1 rounded-xl transition-all hover:scale-105 active:scale-95 shadow-sm border border-blue-500/25"
+                  type="button" 
+                  onClick={() => setSearchQuery('')}
+                  className="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 p-1 mr-1"
                 >
-                  <ShieldCheck size={12} strokeWidth={3} /> Verify
+                  <X size={14} />
                 </button>
               )}
-            </div>
-            Bugs or feedback? Reach out to our <button onClick={() => setShowSupportModal(true)} className="text-blue-500 dark:text-blue-400 hover:underline font-bold inline">support desk</button>.
+              <div className="w-px h-4 bg-zinc-300 dark:bg-zinc-700 mx-2" />
+              <button type="submit" className="text-zinc-400 hover:text-zinc-900 dark:hover:text-white p-1">
+                <Search size={17} />
+              </button>
+            </form>
           </div>
-        
-          <nav className="flex-1 space-y-1.5 overflow-y-auto pr-1">
-            {navItems.map((item) => {
-              const isActive = location.pathname === item.path || (item.path === '/forum' && location.pathname.startsWith('/forum'));
-              const isMessages = item.label === 'Messages';
-              return (
-                <Link 
-                  key={item.label} 
-                  to={item.path}
-                  onClick={(e) => handleNavClick(e, item.path)}
-                  className={`flex items-center gap-4 px-4 py-3 rounded-2xl transition-all relative group ${isActive ? 'text-pink-600 dark:text-pink-500 font-black bg-pink-500/10 border border-pink-500/20 shadow-[0_4px_20px_rgba(236,72,153,0.15)]' : 'hover:bg-zinc-100 dark:hover:bg-white/5 font-bold text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'}`}
-                >
-                  <item.icon className={`transition-all ${isActive ? 'fill-current scale-110 drop-shadow-[0_0_8px_rgba(236,72,153,0.4)]' : 'group-hover:scale-110'}`} size={22} strokeWidth={isActive ? 3 : 2} />
-                  <span className="text-base tracking-tight">{item.label}</span>
-                  {isMessages && unreadCount > 0 && (
-                    <span className="ml-auto bg-pink-600 text-white text-[10px] font-black px-2 py-0.5 rounded-full shadow-[0_0_12px_rgba(236,72,153,0.5)] animate-bounce">
-                      {unreadCount}
-                    </span>
-                  )}
-                  {isActive && (
-                    <motion.div layoutId="nav-active" className="absolute left-0 w-1.5 h-7 bg-pink-600 rounded-r-full shadow-[0_0_8px_rgba(236,72,153,0.8)]" />
-                  )}
-                </Link>
-              );
-            })}
-          </nav>
-        
-          <div className="pt-4 border-t border-zinc-200/80 dark:border-zinc-800/80 space-y-3">
+
+          {/* Right Header Navigation */}
+          <div className="flex items-center gap-3">
             <Link 
               to="/upload"
               onClick={(e) => handleNavClick(e, '/upload')}
-              className="group relative flex items-center justify-center gap-2.5 w-full bg-gradient-to-r from-pink-600 via-purple-600 to-indigo-600 hover:opacity-95 text-white py-3.5 rounded-2xl font-black tracking-widest shadow-[0_8px_25px_rgba(236,72,153,0.35)] transition-all hover:scale-[1.02] active:scale-[0.98] overflow-hidden"
+              className="flex items-center gap-2 px-4 py-1.5 rounded-sm font-bold text-xs uppercase tracking-wider border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-900 transition-all text-zinc-800 dark:text-zinc-200 shadow-sm"
             >
-              <div className="absolute inset-0 bg-white/20 opacity-0 group-hover:opacity-100 transition-opacity" />
-              <PlusSquare size={20} strokeWidth={3} />
-              <span className="uppercase text-xs">Create Post</span>
+              <PlusSquare size={16} />
+              <span>Upload</span>
             </Link>
-            
+
+            <button
+              onClick={() => {
+                if (!currentUser) setShowAuthModal(true);
+                else navigate('/messages');
+              }}
+              className="relative p-2 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-full transition-colors"
+              title="Messages"
+            >
+              <MessageSquare size={20} />
+              {unreadCount > 0 && (
+                <span className="absolute top-1 right-1 bg-[#FE2C55] text-white text-[9px] font-black w-4 h-4 rounded-full flex items-center justify-center animate-pulse">
+                  {unreadCount}
+                </span>
+              )}
+            </button>
+
             <button 
               onClick={toggleTheme}
-              className="flex items-center justify-between w-full px-3.5 py-2.5 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-900 rounded-xl transition-colors font-semibold text-xs"
+              className="p-2 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-full transition-colors"
+              title="Appearance"
             >
-              <div className="flex items-center gap-2.5">
-                {theme === 'dark' ? <Sun size={18} className="text-amber-400" /> : <Moon size={18} className="text-indigo-600" />}
-                <span>Appearance</span>
-              </div>
-              <span className="text-[10px] uppercase font-bold text-zinc-400 bg-zinc-200/60 dark:bg-zinc-800 px-2 py-0.5 rounded-md">{theme}</span>
+              {theme === 'dark' ? <Sun size={20} className="text-amber-400" /> : <Moon size={20} className="text-indigo-600" />}
             </button>
-            
+
             {!currentUser ? (
               <button 
                 onClick={() => setShowAuthModal(true)}
-                className="flex items-center justify-center gap-2 w-full bg-pink-600 hover:bg-pink-700 text-white py-3 rounded-xl font-bold text-sm transition-colors shadow-lg shadow-pink-600/20"
+                className="px-6 py-2 rounded-md bg-[#FE2C55] hover:bg-[#e0264a] text-white font-bold text-sm shadow-md transition-all active:scale-95"
               >
-                <LogIn size={18} />
-                <span>Log in</span>
+                Log in
               </button>
             ) : (
               <div 
                 onClick={() => navigate(`/@${currentUser.handle}`)}
-                className="flex items-center gap-3 p-2.5 rounded-2xl hover:bg-zinc-100 dark:hover:bg-zinc-900 transition-colors cursor-pointer border border-zinc-200/60 dark:border-zinc-800/60 bg-zinc-50/50 dark:bg-zinc-900/50"
+                className="flex items-center gap-2 cursor-pointer p-1 rounded-full hover:bg-zinc-100 dark:hover:bg-zinc-900 transition-colors"
               >
-                <img src={currentUser.avatarUrl} alt={currentUser.username} className="w-10 h-10 rounded-xl object-cover border border-zinc-200 dark:border-zinc-800 shadow-sm" />
-                <div className="flex-1 min-w-0">
-                  <p className="font-bold text-sm truncate flex items-center gap-1">
-                    <span className={currentUser.displayNameFont || ''}>{currentUser.username}</span>
-                    {currentUser.isVerified && <HolographicBadge />}
-                    {currentUser.isCentralPro && <CentralProBadge />}
-                  </p>
-                  <p className="text-xs text-zinc-500 truncate">@{currentUser.handle}</p>
+                <img 
+                  src={currentUser.avatarUrl} 
+                  alt={currentUser.username} 
+                  className="w-8 h-8 rounded-full object-cover border border-zinc-300 dark:border-zinc-700" 
+                />
+                {currentUser.isCentralPro && <CentralProBadge />}
+              </div>
+            )}
+          </div>
+        </header>
+      )}
+
+      {/* Main Body: Desktop Sidebar + Content */}
+      <div className="flex-1 flex overflow-hidden">
+        {/* Sidebar - Desktop */}
+        {!isIntro && (
+          <motion.div 
+            id="desktop-sidebar"
+            animate={{ 
+              x: isGameActive ? -256 : 0,
+              width: isGameActive ? 0 : 256,
+              opacity: isGameActive ? 0 : 1
+            }}
+            transition={{ duration: 0.5, ease: "easeInOut" }}
+            className="hidden md:flex flex-col border-r border-zinc-200/80 dark:border-zinc-800/80 p-3 shrink-0 h-full bg-white dark:bg-zinc-950 z-30 overflow-y-auto hide-scrollbar select-none"
+          >
+            {/* Primary Navigation (TikTok Style) */}
+            <nav className="space-y-1 pb-3 border-b border-zinc-200/80 dark:border-zinc-800/80">
+              {navItems.map((item) => {
+                const isActive = location.pathname === item.path || (item.path === '/forum' && location.pathname.startsWith('/forum'));
+                const isMessages = item.label === 'Messages';
+                return (
+                  <Link 
+                    key={item.label} 
+                    to={item.path}
+                    onClick={(e) => handleNavClick(e, item.path)}
+                    className={`flex items-center gap-3.5 px-3 py-2.5 rounded-xl transition-all relative group ${
+                      isActive 
+                        ? 'text-[#FE2C55] font-black bg-[#FE2C55]/10' 
+                        : 'hover:bg-zinc-100 dark:hover:bg-zinc-900 font-bold text-zinc-700 dark:text-zinc-300'
+                    }`}
+                  >
+                    <item.icon className={`transition-all ${isActive ? 'fill-current scale-105' : 'group-hover:scale-105'}`} size={22} strokeWidth={isActive ? 2.5 : 2} />
+                    <span className="text-base tracking-tight">{item.label}</span>
+                    {isMessages && unreadCount > 0 && (
+                      <span className="ml-auto bg-[#FE2C55] text-white text-[10px] font-black px-2 py-0.5 rounded-full animate-bounce">
+                        {unreadCount}
+                      </span>
+                    )}
+                    {isActive && (
+                      <motion.div layoutId="nav-active" className="absolute left-0 w-1.5 h-6 bg-[#FE2C55] rounded-r-full" />
+                    )}
+                  </Link>
+                );
+              })}
+            </nav>
+
+            {/* Suggested Creators Section (Classic TikTok Sidebar) */}
+            {suggestedUsers.length > 0 && (
+              <div className="py-3 border-b border-zinc-200/80 dark:border-zinc-800/80">
+                <p className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider px-3 mb-2">
+                  Suggested Creators
+                </p>
+                <div className="space-y-1">
+                  {suggestedUsers.map(u => (
+                    <Link
+                      key={u.id}
+                      to={`/@${u.handle}`}
+                      className="flex items-center gap-2.5 px-3 py-1.5 rounded-xl hover:bg-zinc-100 dark:hover:bg-zinc-900 transition-colors group"
+                    >
+                      <img src={u.avatarUrl} alt="" className="w-7 h-7 rounded-full object-cover shrink-0" />
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs font-bold truncate text-zinc-800 dark:text-zinc-200 group-hover:text-[#FE2C55] flex items-center gap-1">
+                          <span>{u.username}</span>
+                          {u.isVerified && <HolographicBadge />}
+                        </p>
+                        <p className="text-[10px] text-zinc-400 truncate">@{u.handle}</p>
+                      </div>
+                    </Link>
+                  ))}
                 </div>
               </div>
             )}
 
-            {/* CentralPro Section below person profile frame */}
-            <div 
-              onClick={() => setShowCentralProModal(true)}
-              className="group relative cursor-pointer overflow-hidden rounded-2xl p-2.5 bg-gradient-to-r from-blue-950/80 via-slate-900/80 to-indigo-950/80 border border-cyan-500/40 hover:border-cyan-400 hover:shadow-[0_0_20px_rgba(6,182,212,0.35)] transition-all duration-300"
-            >
-              <div className="absolute inset-0 bg-gradient-to-r from-cyan-500/10 via-blue-500/10 to-indigo-500/10 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />
-              <div className="relative flex items-center justify-between">
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-cyan-400 via-blue-600 to-indigo-600 flex items-center justify-center text-white shadow-md shadow-blue-500/30 group-hover:scale-110 group-hover:rotate-6 transition-transform shrink-0">
-                    <Rocket size={16} className="animate-pulse" />
-                  </div>
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-xs font-black tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-cyan-300 via-blue-200 to-indigo-200">
-                        CENTRALPRO
-                      </span>
-                      {currentUser?.isCentralPro ? (
-                        <span className="text-[9px] px-1.5 py-0.2 bg-emerald-500/20 text-emerald-300 font-extrabold rounded-full border border-emerald-400/30">
-                          PRO
-                        </span>
-                      ) : (
-                        <span className="text-[9px] px-1.5 py-0.2 bg-cyan-500/20 text-cyan-300 font-extrabold rounded-full border border-cyan-400/30">
-                          $0.50
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-[10px] text-zinc-400 truncate group-hover:text-cyan-300 transition-colors">
-                      {currentUser?.isCentralPro ? 'Cosmic Perks Active' : 'Banners, Fonts & Perks'}
+            {/* Profile Frame & CentralPro Section */}
+            <div className="py-3 space-y-3">
+              {!currentUser ? (
+                <div className="p-3 rounded-2xl bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-center space-y-2">
+                  <p className="text-xs text-zinc-500">Log in to like videos, comment, and follow creators.</p>
+                  <button 
+                    onClick={() => setShowAuthModal(true)}
+                    className="w-full py-2 bg-[#FE2C55] hover:bg-[#e0264a] text-white font-bold text-xs rounded-xl shadow-md transition-all active:scale-95"
+                  >
+                    Log in
+                  </button>
+                </div>
+              ) : (
+                <div 
+                  onClick={() => navigate(`/@${currentUser.handle}`)}
+                  className="flex items-center gap-3 p-2 rounded-2xl hover:bg-zinc-100 dark:hover:bg-zinc-900 transition-colors cursor-pointer border border-zinc-200/60 dark:border-zinc-800/60 bg-zinc-50/50 dark:bg-zinc-900/50"
+                >
+                  <img src={currentUser.avatarUrl} alt={currentUser.username} className="w-10 h-10 rounded-xl object-cover border border-zinc-200 dark:border-zinc-800 shadow-sm" />
+                  <div className="flex-1 min-w-0">
+                    <p className="font-bold text-sm truncate flex items-center gap-1">
+                      <span className={currentUser.displayNameFont || ''}>{currentUser.username}</span>
+                      {currentUser.isVerified && <HolographicBadge />}
+                      {currentUser.isCentralPro && <CentralProBadge />}
                     </p>
+                    <p className="text-xs text-zinc-500 truncate">@{currentUser.handle}</p>
                   </div>
                 </div>
-                <Sparkles size={14} className="text-cyan-400 shrink-0 animate-spin" style={{ animationDuration: '6s' }} />
+              )}
+
+              {/* CentralPro Section below person profile frame */}
+              <div 
+                onClick={() => setShowCentralProModal(true)}
+                className="group relative cursor-pointer overflow-hidden rounded-2xl p-2.5 bg-gradient-to-r from-blue-950/80 via-slate-900/80 to-indigo-950/80 border border-cyan-500/40 hover:border-cyan-400 hover:shadow-[0_0_20px_rgba(6,182,212,0.35)] transition-all duration-300"
+              >
+                <div className="absolute inset-0 bg-gradient-to-r from-cyan-500/10 via-blue-500/10 to-indigo-500/10 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />
+                <div className="relative flex items-center justify-between">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-cyan-400 via-blue-600 to-indigo-600 flex items-center justify-center text-white shadow-md shadow-blue-500/30 group-hover:scale-110 group-hover:rotate-6 transition-transform shrink-0">
+                      <Rocket size={16} className="animate-pulse" />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs font-black tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-cyan-300 via-blue-200 to-indigo-200">
+                          CENTRALPRO
+                        </span>
+                        {currentUser?.isCentralPro ? (
+                          <span className="text-[9px] px-1.5 py-0.2 bg-emerald-500/20 text-emerald-300 font-extrabold rounded-full border border-emerald-400/30">
+                            PRO
+                          </span>
+                        ) : (
+                          <span className="text-[9px] px-1.5 py-0.2 bg-cyan-500/20 text-cyan-300 font-extrabold rounded-full border border-cyan-400/30">
+                            $0.50
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[10px] text-zinc-400 truncate group-hover:text-cyan-300 transition-colors">
+                        {currentUser?.isCentralPro ? 'Cosmic Perks Active' : 'Banners, Fonts & Perks'}
+                      </p>
+                    </div>
+                  </div>
+                  <Sparkles size={14} className="text-cyan-400 shrink-0 animate-spin" style={{ animationDuration: '6s' }} />
+                </div>
               </div>
             </div>
-          </div>
-        </motion.div>
-      )}
 
-      {/* Main Content */}
-      <main id="main-content" className={`flex-1 relative h-full overflow-hidden flex justify-center transition-all duration-500 ${isGameActive ? 'pl-0' : ''}`}>
-        {children}
-      </main>
+            {/* TikTok Desktop Footer Links */}
+            <div className="mt-auto pt-4 text-[11px] text-zinc-400 leading-relaxed border-t border-zinc-200/80 dark:border-zinc-800/80 space-y-2">
+              <div className="flex flex-wrap gap-x-2 gap-y-1">
+                <span className="hover:underline cursor-pointer">About</span>
+                <span className="hover:underline cursor-pointer">Newsroom</span>
+                <span className="hover:underline cursor-pointer">Contact</span>
+                <span className="hover:underline cursor-pointer">Careers</span>
+                <span className="hover:underline cursor-pointer">Community</span>
+                <span className="hover:underline cursor-pointer">Guidelines</span>
+                <span className="hover:underline cursor-pointer">Terms</span>
+                <span className="hover:underline cursor-pointer">Privacy</span>
+              </div>
+              <p className="text-[10px] text-zinc-500">© 2026 CentralTok</p>
+            </div>
+          </motion.div>
+        )}
+
+        {/* Main Content */}
+        <main id="main-content" className={`flex-1 relative h-full overflow-hidden flex justify-center transition-all duration-500 ${isGameActive ? 'pl-0' : ''}`}>
+          {children}
+        </main>
+      </div>
 
       <MiniPlayer />
 

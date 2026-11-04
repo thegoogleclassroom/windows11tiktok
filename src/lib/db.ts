@@ -639,8 +639,104 @@ export const deleteForumEditRequestFromDB = async (reqId: string) => {
   }
 };
 
-export const getCentralProRequests = () => fetchCollection<CentralProRequest>('centralpro_requests');
-export const saveCentralProRequests = (reqs: CentralProRequest[]) => saveCollection('centralpro_requests', reqs);
+export const getCentralProRequests = async (): Promise<CentralProRequest[]> => {
+  let reqs: CentralProRequest[] = [];
+  
+  // 1. Fetch from Firestore
+  try {
+    const snapshot = await getDocs(collection(db, 'centralpro_requests'));
+    reqs = snapshot.docs.map(doc => doc.data() as CentralProRequest);
+    if (reqs.length > 0) {
+      try {
+        localStorage.setItem('centralpro_all_requests', JSON.stringify(reqs));
+      } catch {}
+    }
+  } catch (err: any) {
+    // Firestore might be restricted or offline
+  }
+
+  // 2. Load from localStorage cache
+  try {
+    const cached = localStorage.getItem('centralpro_all_requests');
+    if (cached) {
+      const parsed: CentralProRequest[] = JSON.parse(cached);
+      parsed.forEach(p => {
+        const idx = reqs.findIndex(r => r.id === p.id || r.userId === p.userId);
+        if (idx === -1) {
+          reqs.push(p);
+        } else if (p.status !== 'pending' && reqs[idx].status === 'pending') {
+          reqs[idx] = p;
+        }
+      });
+    }
+  } catch {}
+
+  // 3. Cross-reference with ALL users from getUsers()!
+  // If ANY user has centralProStatus === 'pending', they MUST appear in the CentralPro requests list
+  try {
+    const users = await getUsers();
+    users.forEach(u => {
+      if (u.centralProStatus === 'pending') {
+        const existing = reqs.find(r => r.userId === u.id);
+        if (!existing) {
+          const synthesized: CentralProRequest = {
+            id: `cp_req_sync_${u.id}`,
+            userId: u.id,
+            username: u.username,
+            handle: u.handle,
+            userAvatar: u.avatarUrl,
+            plan: u.centralProPlan || 'forever',
+            status: 'pending',
+            timestamp: Date.now()
+          };
+          reqs.unshift(synthesized);
+        }
+      } else if (u.isCentralPro || u.centralProStatus === 'active') {
+        const existing = reqs.find(r => r.userId === u.id);
+        if (!existing) {
+          reqs.push({
+            id: `cp_req_sync_${u.id}`,
+            userId: u.id,
+            username: u.username,
+            handle: u.handle,
+            userAvatar: u.avatarUrl,
+            plan: u.centralProPlan || 'forever',
+            status: 'accepted',
+            timestamp: Date.now() - 3600000
+          });
+        }
+      }
+    });
+  } catch {}
+
+  // Sort: pending first, then by timestamp descending
+  return reqs.sort((a, b) => {
+    if (a.status === 'pending' && b.status !== 'pending') return -1;
+    if (b.status === 'pending' && a.status !== 'pending') return 1;
+    return (b.timestamp || 0) - (a.timestamp || 0);
+  });
+};
+
+export const saveCentralProRequests = async (reqs: CentralProRequest[]) => {
+  try {
+    localStorage.setItem('centralpro_all_requests', JSON.stringify(reqs));
+  } catch {}
+  try {
+    const batch = writeBatch(db);
+    reqs.forEach(req => {
+      const docRef = doc(db, 'centralpro_requests', req.id);
+      batch.set(docRef, deepClean(req), { merge: true });
+    });
+    await batch.commit();
+  } catch (err: any) {
+    for (const req of reqs) {
+      try {
+        const docRef = doc(db, 'centralpro_requests', req.id);
+        await setDoc(docRef, deepClean(req), { merge: true });
+      } catch (indErr) {}
+    }
+  }
+};
 
 export const requestCentralProVerification = async (user: User, plan: 'monthly' | 'forever') => {
   try {
@@ -661,7 +757,7 @@ export const requestCentralProVerification = async (user: User, plan: 'monthly' 
     await saveCentralProRequests(updatedReqs);
 
     try {
-      // Update user status
+      // Update user status in Firestore and locally
       await updateUser(user.id, {
         centralProStatus: 'pending',
         centralProPlan: plan

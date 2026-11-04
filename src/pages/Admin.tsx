@@ -205,20 +205,53 @@ export function Admin() {
   const isOwner = currentUser?.role === 'owner';
   const isMod = isOwner || currentUser?.role === 'staff';
 
+  const [isRefreshingCP, setIsRefreshingCP] = useState(false);
+
+  const refreshCentralProList = async () => {
+    setIsRefreshingCP(true);
+    try {
+      const [reqs, freshUsers] = await Promise.all([getCentralProRequests(), getUsers()]);
+      setUsers(freshUsers);
+      setCentralProRequests(reqs);
+    } catch (e) {
+      console.warn("Error refreshing CP:", e);
+    } finally {
+      setTimeout(() => setIsRefreshingCP(false), 400);
+    }
+  };
+
   const loadData = async () => {
-    setReports(await getReports());
-    setUsers(await getUsers());
-    setAppeals(await getAppeals());
-    setLogs(await getAuditLogs());
-    setVideos(await getVideos());
-    setAnnouncements(await getAnnouncements());
-    setVerificationRequests(await getVerificationRequests());
-    setCentralProRequests(await getCentralProRequests());
+    const [reps, usrs, apps, lgs, vids, anns, verifs, cpreqs] = await Promise.all([
+      getReports(),
+      getUsers(),
+      getAppeals(),
+      getAuditLogs(),
+      getVideos(),
+      getAnnouncements(),
+      getVerificationRequests(),
+      getCentralProRequests()
+    ]);
+    setReports(reps);
+    setUsers(usrs);
+    setAppeals(apps);
+    setLogs(lgs);
+    setVideos(vids);
+    setAnnouncements(anns);
+    setVerificationRequests(verifs);
+    setCentralProRequests(cpreqs);
     if (isOwner) {
       const settings = await getAppSettings();
       setAppSettings(settings);
     }
   };
+
+  useEffect(() => {
+    if (isMod && activeTab === 'centralpro') {
+      refreshCentralProList();
+      const interval = setInterval(refreshCentralProList, 4000);
+      return () => clearInterval(interval);
+    }
+  }, [isMod, activeTab]);
 
   const handleCreateAnnouncement = async () => {
     if (!newAnnouncement.text) return;
@@ -1529,6 +1562,15 @@ export function Admin() {
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
+                  <button
+                    onClick={refreshCentralProList}
+                    disabled={isRefreshingCP}
+                    className="px-3 py-1.5 rounded-full bg-zinc-800 hover:bg-zinc-700 text-xs font-semibold text-zinc-200 border border-zinc-700 flex items-center gap-1.5 transition-colors disabled:opacity-50"
+                    title="Refresh requests"
+                  >
+                    <RotateCcw size={14} className={isRefreshingCP ? 'animate-spin text-cyan-400' : ''} />
+                    <span>{isRefreshingCP ? 'Refreshing...' : 'Refresh'}</span>
+                  </button>
                   <div className="bg-cyan-500/10 text-cyan-400 border border-cyan-500/30 px-3.5 py-1.5 rounded-full text-xs font-bold flex items-center gap-2">
                     <span className="w-2 h-2 rounded-full bg-cyan-400 animate-ping" />
                     <span>{centralProRequests.filter(r => r.status === 'pending').length} Pending Review</span>
