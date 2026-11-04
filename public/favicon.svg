@@ -1,5 +1,17 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
-  <rect width="100" height="100" rx="20" fill="#000000"/>
-  <path d="M50 20 C60 20, 68 28, 70 38 C75 37, 80 39, 82 42 L82 50 C77 48, 72 47, 68 47 L68 68 C68 80, 58 90, 46 90 C34 90, 24 80, 24 68 C24 56, 34 46, 46 46 C48 46, 50 46.5, 52 47 L52 20 Z" fill="#EE1D52"/>
-  <path d="M46 24 C56 24, 64 32, 66 42 C71 41, 76 43, 78 46 L78 54 C73 52, 68 51, 64 51 L64 72 C64 84, 54 94, 42 94 C30 94, 20 84, 20 72 C20 60, 30 50, 42 50 C44 50, 46 50.5, 48 51 L48 24 Z" fill="#69C9D0" fill-opacity="0.7"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192">
+  <!-- Rounded Outer Border / Wood Chalk Frame -->
+  <rect x="12" y="24" width="168" height="144" rx="24" fill="#F4B400"/>
+  <!-- Dark Green Blackboard -->
+  <rect x="24" y="36" width="144" height="120" rx="14" fill="#137333"/>
+  <!-- Left Student (White Outline) -->
+  <circle cx="68" cy="84" r="11" fill="#FFFFFF"/>
+  <path d="M48 122 C48 106 58 102 68 102 C78 102 88 106 88 122" fill="none" stroke="#FFFFFF" stroke-width="5" stroke-linecap="round"/>
+  <!-- Right Student (White Outline) -->
+  <circle cx="124" cy="84" r="11" fill="#FFFFFF"/>
+  <path d="M104 122 C104 106 114 102 124 102 C134 102 144 106 144 122" fill="none" stroke="#FFFFFF" stroke-width="5" stroke-linecap="round"/>
+  <!-- Center Teacher (Yellow Chalk) -->
+  <circle cx="96" cy="74" r="14" fill="#F4B400"/>
+  <path d="M72 126 C72 108 82 100 96 100 C110 100 120 108 120 126" fill="none" stroke="#F4B400" stroke-width="6.5" stroke-linecap="round"/>
+  <!-- Chalk on tray -->
+  <rect x="134" y="142" width="18" height="6" rx="3" fill="#FFFFFF" opacity="0.9"/>
 </svg>

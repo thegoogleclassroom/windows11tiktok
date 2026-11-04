@@ -160,6 +160,10 @@ function AuthWrapper({ children }: { children: React.ReactNode }) {
 }
 
 export default function App() {
+  useEffect(() => {
+    document.title = "Home- Classroom";
+  }, []);
+
   return (
     <AppProvider>
       <HashRouter>

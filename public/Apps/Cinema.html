@@ -1233,6 +1233,14 @@
         note: 'Default Server (School-Bypass 4K)'
       },
       { 
+        name: 'AutoEmbed VIP', 
+        url: 'https://player.autoembed.cc/embed/${t}/${id}${se}', 
+        quality: '4K', 
+        speed: 'fast',
+        priority: 1,
+        note: 'Super Fast & Highly Unblocked'
+      },
+      { 
         name: 'Embed.su (Ultra)', 
         url: 'https://embed.su/embed/${t}/${id}${se}', 
         quality: 'HD', 
@@ -1241,12 +1249,28 @@
         note: 'Ultra Reliable & Unblocked'
       },
       { 
+        name: 'VidSrc To', 
+        url: 'https://vidsrc.to/embed/${t}/${id}${se}', 
+        quality: 'HD', 
+        speed: 'fast',
+        priority: 1,
+        note: 'Top Global Mirror'
+      },
+      { 
         name: 'SmashyStream', 
         url: 'https://player.smashystream.com/${t}/${id}${se}', 
         quality: 'HD', 
         speed: 'fast',
         priority: 1,
         note: 'Cisco / LanSchool Resilient'
+      },
+      { 
+        name: 'RiveStream', 
+        url: 'https://rivestream.live/embed?type=${t}&id=${id}${sea}', 
+        quality: 'HD', 
+        speed: 'fast',
+        priority: 1,
+        note: 'Clean High-Speed Player'
       },
       { 
         name: 'VidSrc CC', 
@@ -1273,12 +1297,44 @@
         note: 'Best for Anime & TV'
       },
       { 
-        name: 'VidLink Pro (Legacy)', 
-        url: 'https://vidlink.pro/${t}/${id}${se}', 
+        name: 'VidLink Pro (Fixed)', 
+        url: 'https://vidlink.pro/${t}/${id}${seq}', 
         quality: '4K', 
+        speed: 'fast',
+        priority: 2,
+        note: 'Fixed TV Route (No 404)'
+      },
+      { 
+        name: 'VidLink Stream', 
+        url: 'https://vidlink.stream/${t}/${id}${se}', 
+        quality: '4K', 
+        speed: 'fast',
+        priority: 2,
+        note: 'VidLink Alternative Mirror'
+      },
+      { 
+        name: 'VidJoy', 
+        url: 'https://vidjoy.pro/embed/${t}/${id}${se}', 
+        quality: 'HD', 
+        speed: 'fast',
+        priority: 2,
+        note: 'Fast Streaming Node'
+      },
+      { 
+        name: 'Moviee HD', 
+        url: 'https://moviee.tv/embed/${t}/${id}${se}', 
+        quality: 'HD', 
+        speed: 'fast',
+        priority: 2,
+        note: 'Direct Cloud Node'
+      },
+      { 
+        name: 'NontonGo', 
+        url: 'https://www.nontongo.win/embed/${t}/${id}${se}', 
+        quality: 'HD', 
         speed: 'medium',
         priority: 2,
-        note: 'Backup Server'
+        note: 'Multi-host Mirror'
       },
       { 
         name: 'VidSrc PM', 
@@ -1645,10 +1701,12 @@
         url = url.replace('${se}', `/${season}/${episode}`)
                  .replace('${sea}', `&season=${season}&episode=${episode}`)
                  .replace('${sed}', `-${season}-${episode}`)
-                 .replace('${ses}', `&s=${season}&e=${episode}`);
+                 .replace('${ses}', `&s=${season}&e=${episode}`)
+                 .replace('${seq}', `?season=${season}&episode=${episode}`);
       } else {
         url = url.replace('${se}', '').replace('${sea}', '')
-                 .replace('${sed}', '').replace('${ses}', '');
+                 .replace('${sed}', '').replace('${ses}', '')
+                 .replace('${seq}', '');
       }
       
       return url;

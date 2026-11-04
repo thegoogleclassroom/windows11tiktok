@@ -1248,13 +1248,13 @@ function CentralProModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => 
               <span className="text-[10px] text-emerald-400 font-bold">Verified Cashtag</span>
             </div>
 
-            {/* THE GREYISH CENSORED CASH APP BLOCK (Working Hover Fade + Click to Reveal) */}
+            {/* THE GREYISH CENSORED CASH APP BLOCK (Smooth Hover Fade + Copy on Click) */}
             <div 
               onMouseEnter={() => setIsCashAppHovered(true)}
               onMouseLeave={() => setIsCashAppHovered(false)}
-              onClick={() => setIsCashAppHovered(prev => !prev)}
-              className="relative overflow-hidden rounded-2xl bg-zinc-800/90 border border-zinc-700/80 p-4 transition-all duration-300 shadow-xl cursor-pointer"
-              title="Hover or click to uncover Cashtag"
+              onClick={handleCopyCashApp}
+              className="group relative overflow-hidden rounded-2xl bg-zinc-800/90 border border-zinc-700/80 p-4 transition-all duration-300 shadow-xl cursor-pointer hover:border-emerald-500/50"
+              title="Click or hover to reveal & copy $ZaelLac"
             >
               {/* Uncensored Inner Content */}
               <div className="flex items-center justify-between gap-4">
@@ -1277,7 +1277,7 @@ function CentralProModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => 
                 <button
                   type="button"
                   onClick={handleCopyCashApp}
-                  className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1.5 transition-colors shadow-md shadow-emerald-600/30 shrink-0"
+                  className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1.5 transition-colors shadow-md shadow-emerald-600/30 shrink-0 z-20"
                 >
                   {copiedCashApp ? <Check size={14} /> : <Copy size={14} />}
                   <span>{copiedCashApp ? 'Copied $ZaelLac' : 'Copy'}</span>
@@ -1286,12 +1286,9 @@ function CentralProModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => 
 
               {/* The Greyish Cover Block (Fades out when hovered or clicked) */}
               <div 
-                style={{
-                  opacity: isCashAppHovered ? 0 : 1,
-                  pointerEvents: isCashAppHovered ? 'none' : 'auto',
-                  transition: 'opacity 0.4s ease-out'
-                }}
-                className="absolute inset-0 bg-zinc-700/95 dark:bg-zinc-800/95 backdrop-blur-sm flex items-center justify-center select-none z-10 border border-zinc-600"
+                className={`absolute inset-0 bg-zinc-700/95 dark:bg-zinc-800/95 backdrop-blur-sm flex items-center justify-center select-none z-10 border border-zinc-600 pointer-events-none transition-opacity duration-300 ease-out ${
+                  isCashAppHovered ? 'opacity-0' : 'opacity-100 group-hover:opacity-0'
+                }`}
               >
                 <div className="flex items-center gap-2 text-zinc-300 font-bold text-xs tracking-wider">
                   <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
