@@ -4,6 +4,35 @@
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
   <title>Echo Flix - Ultimate Streaming</title>
+  <script>
+    // 1. Anti-Console-Wipe Shield: Neutralize disable-devtool.js so console history is preserved
+    try {
+      Object.defineProperty(window.console, 'clear', {
+        value: function() {
+          console.warn('[Cinema Shield] Blocked disable-devtool from clearing console history.');
+        },
+        writable: false,
+        configurable: false
+      });
+    } catch(e) {
+      window.console.clear = function() {
+        console.warn('[Cinema Shield] Intercepted console.clear().');
+      };
+    }
+
+    // 2. Anti-Ad Popup Shield: Intercept unwanted window.open spam popups on video player clicks
+    window._blockPopups = true;
+    try {
+      const origOpen = window.open;
+      window.open = function(url, target, features) {
+        if (window._blockPopups) {
+          console.warn('[Cinema Popup Shield] Blocked ad/redirect popup to:', url);
+          return null;
+        }
+        return origOpen.call(window, url, target, features);
+      };
+    } catch(e) {}
+  </script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
@@ -767,8 +796,6 @@
       .disclaimer-card { padding: 32px 24px; margin: 20px; }
     }
   </style>
-<base target="_blank">
-<base target="_blank">
 </head>
 <body>
 
@@ -947,6 +974,21 @@
             </div>
           </div>
 
+          <!-- Popup & Anti-Ad Shield -->
+          <div class="sidebar-section">
+            <div class="sidebar-title">Ad & Popup Shield <span style="color: var(--success); font-size: 10px;">[ACTIVE]</span></div>
+            <div class="skip-toggle active" id="popupShieldToggle" onclick="togglePopupShield()">
+              <div class="skip-info">
+                <div class="skip-label">
+                  Block Ad Popups
+                  <span class="skip-badge" style="background: rgba(34, 197, 94, 0.2); color: var(--success);">Protected</span>
+                </div>
+                <div class="skip-desc">Blocks popups on play & keeps console history</div>
+              </div>
+              <div class="toggle-switch"></div>
+            </div>
+          </div>
+
           <!-- NEW: Skip Options Section for TV Shows -->
           <div class="sidebar-section" id="tvSkipSection" style="display: none;">
             <div class="sidebar-title">Skip Options <span style="color: var(--warning); font-size: 10px;">[TESTING ONLY - Won't Work Sometimes]</span></div>
@@ -1110,6 +1152,11 @@
         direct(url) {
           const frame = document.getElementById('videoFrame');
           frame.src = 'about:blank';
+          if (window._blockPopups) {
+            frame.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-forms allow-presentation allow-encrypted-media');
+          } else {
+            frame.removeAttribute('sandbox');
+          }
           setTimeout(() => { 
             frame.src = url; 
             UnblockEngine.startLoadTimer(); 
@@ -1120,10 +1167,10 @@
         aboutblank(url) {
           const frame = document.getElementById('videoFrame');
           frame.src = 'about:blank';
-          
+          const sbox = window._blockPopups ? 'sandbox="allow-scripts allow-same-origin allow-forms allow-presentation allow-encrypted-media"' : '';
           const html = `<!DOCTYPE html>
 <html><head><meta charset="UTF-8"><style>html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;}iframe{width:100%;height:100%;border:none;}</style></head>
-<body><iframe src="${url}" allowfullscreen allow="fullscreen; autoplay; encrypted-media; picture-in-picture; clipboard-write"></iframe></body></html>`;
+<body><iframe src="${url}" ${sbox} allowfullscreen allow="fullscreen; autoplay; encrypted-media; picture-in-picture; clipboard-write"></iframe></body></html>`;
           
           setTimeout(() => {
             try {
@@ -1141,9 +1188,10 @@
 
         datauri(url) {
           const frame = document.getElementById('videoFrame');
+          const sbox = window._blockPopups ? 'sandbox="allow-scripts allow-same-origin allow-forms allow-presentation allow-encrypted-media"' : '';
           const html = `<!DOCTYPE html>
 <html><head><meta charset="UTF-8"><style>html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;}iframe{width:100%;height:100%;border:none;}</style></head>
-<body><iframe src="${url}" allowfullscreen allow="fullscreen; autoplay; encrypted-media; picture-in-picture; clipboard-write"></iframe></body></html>`;
+<body><iframe src="${url}" ${sbox} allowfullscreen allow="fullscreen; autoplay; encrypted-media; picture-in-picture; clipboard-write"></iframe></body></html>`;
           
           const base64 = btoa(unescape(encodeURIComponent(html)));
           frame.src = `data:text/html;base64,${base64}`;
@@ -1153,9 +1201,10 @@
 
         blob(url) {
           const frame = document.getElementById('videoFrame');
+          const sbox = window._blockPopups ? 'sandbox="allow-scripts allow-same-origin allow-forms allow-presentation allow-encrypted-media"' : '';
           const html = `<!DOCTYPE html>
 <html><head><meta charset="UTF-8"><style>html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;}iframe{width:100%;height:100%;border:none;}</style></head>
-<body><iframe src="${url}" allowfullscreen allow="fullscreen; autoplay; encrypted-media; picture-in-picture; clipboard-write"></iframe></body></html>`;
+<body><iframe src="${url}" ${sbox} allowfullscreen allow="fullscreen; autoplay; encrypted-media; picture-in-picture; clipboard-write"></iframe></body></html>`;
           
           if (frame._currentBlob) {
             URL.revokeObjectURL(frame._currentBlob);
@@ -1225,20 +1274,12 @@
     
     const VideoSources = [
       { 
-        name: 'VidSrc VIP (Unblocked)', 
-        url: 'https://vidsrc.vip/embed/${t}/${id}${se}', 
-        quality: '4K', 
-        speed: 'fast',
-        priority: 1,
-        note: 'Default Server (School-Bypass 4K)'
-      },
-      { 
         name: 'AutoEmbed VIP', 
         url: 'https://player.autoembed.cc/embed/${t}/${id}${se}', 
         quality: '4K', 
         speed: 'fast',
         priority: 1,
-        note: 'Super Fast & Highly Unblocked'
+        note: 'Super Fast, Zero Popups'
       },
       { 
         name: 'Embed.su (Ultra)', 
@@ -1246,23 +1287,7 @@
         quality: 'HD', 
         speed: 'fast',
         priority: 1,
-        note: 'Ultra Reliable & Unblocked'
-      },
-      { 
-        name: 'VidSrc To', 
-        url: 'https://vidsrc.to/embed/${t}/${id}${se}', 
-        quality: 'HD', 
-        speed: 'fast',
-        priority: 1,
-        note: 'Top Global Mirror'
-      },
-      { 
-        name: 'SmashyStream', 
-        url: 'https://player.smashystream.com/${t}/${id}${se}', 
-        quality: 'HD', 
-        speed: 'fast',
-        priority: 1,
-        note: 'Cisco / LanSchool Resilient'
+        note: 'Ultra Reliable & Clean HTML5'
       },
       { 
         name: 'RiveStream', 
@@ -1273,11 +1298,43 @@
         note: 'Clean High-Speed Player'
       },
       { 
+        name: 'VidLink Pro (Fixed)', 
+        url: 'https://vidlink.pro/${t}/${id}${seq}', 
+        quality: '4K', 
+        speed: 'fast',
+        priority: 1,
+        note: 'Fast 4K, Fixed TV Route'
+      },
+      { 
+        name: 'VidSrc VIP (Unblocked)', 
+        url: 'https://vidsrc.vip/embed/${t}/${id}${se}', 
+        quality: '4K', 
+        speed: 'fast',
+        priority: 1,
+        note: 'Default Server (School-Bypass 4K)'
+      },
+      { 
+        name: 'SmashyStream', 
+        url: 'https://player.smashystream.com/${t}/${id}${se}', 
+        quality: 'HD', 
+        speed: 'fast',
+        priority: 1,
+        note: 'Cisco / LanSchool Resilient'
+      },
+      { 
+        name: 'VidSrc To (Shielded)', 
+        url: 'https://vidsrc.to/embed/${t}/${id}${se}', 
+        quality: 'HD', 
+        speed: 'fast',
+        priority: 2,
+        note: 'Top Mirror (Shield Blocks Popups)'
+      },
+      { 
         name: 'VidSrc CC', 
         url: 'https://vidsrc.cc/v2/embed/${t}/${id}${se}', 
         quality: 'HD', 
         speed: 'fast',
-        priority: 1,
+        priority: 2,
         note: 'High Speed'
       },
       { 
@@ -1824,6 +1881,26 @@
           toggle.classList.add('active');
         }
       });
+    }
+
+    // Popup & Ad Shield Logic
+    function togglePopupShield() {
+      window._blockPopups = !window._blockPopups;
+      const toggle = document.getElementById('popupShieldToggle');
+      if (toggle) {
+        toggle.classList.toggle('active', window._blockPopups);
+        const titleSpan = toggle.parentElement.querySelector('span');
+        if (titleSpan) {
+          titleSpan.textContent = window._blockPopups ? '[ACTIVE]' : '[OFF]';
+          titleSpan.style.color = window._blockPopups ? 'var(--success)' : 'var(--danger)';
+        }
+      }
+      if (currentItem && VideoSources[currentServer]) {
+        const isTv = currentItem.media_type === 'tv' || currentItem.first_air_date;
+        const s = isTv ? DOM.seasonSelect?.value : null;
+        const e = isTv ? DOM.episodeSelect?.value : null;
+        loadVideo(VideoSources[currentServer], currentItem, s, e);
+      }
     }
 
     // Mini Player Logic

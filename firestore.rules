@@ -118,5 +118,10 @@ service cloud.firestore {
     match /app_suggestions/{suggestionId} {
       allow read, write: if true;
     }
+
+    // CentralPro Requests
+    match /centralpro_requests/{requestId} {
+      allow read, write: if true;
+    }
   }
 }

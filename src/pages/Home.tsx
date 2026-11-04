@@ -972,15 +972,13 @@ export const VideoItem: React.FC<{
     }
   };
 
-  const currentOrigin = typeof window !== 'undefined' && window.location.origin ? window.location.origin : undefined;
   const opts: YouTubeProps['opts'] = {
     height: '100%',
     width: '100%',
     playerVars: {
       autoplay: 1,
       enablejsapi: 1,
-      origin: currentOrigin,
-      widget_referrer: currentOrigin,
+      origin: typeof window !== 'undefined' ? window.location.origin : undefined,
       mute: 0,
       controls: 0,
       rel: 0,
@@ -1033,7 +1031,7 @@ export const VideoItem: React.FC<{
                     <YouTube 
                       videoId={video.youtubeId || video.videoId || ''} 
                       opts={opts} 
-                      host="https://www.youtube.com"
+                      host="https://www.youtube-nocookie.com"
                       onReady={handleYtReady}
                       onStateChange={handleYtStateChange}
                       onError={(event) => {

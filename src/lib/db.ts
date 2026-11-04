@@ -186,15 +186,31 @@ export const initDb = async () => {};
 const fetchCollection = async <T>(collName: string): Promise<T[]> => {
   try {
     const snapshot = await getDocs(collection(db, collName));
-    return snapshot.docs.map(doc => doc.data() as T);
-  } catch (err) {
-    console.error("Error fetching collection:", collName, err);
+    const items = snapshot.docs.map(doc => doc.data() as T);
+    try {
+      localStorage.setItem(`ct_cache_${collName}`, JSON.stringify(items));
+    } catch {}
+    return items;
+  } catch (err: any) {
+    const msg = err?.message || String(err);
+    if (!msg.includes('Missing or insufficient permissions') && !msg.includes('permission-denied')) {
+      console.warn(`Note on fetching ${collName}:`, msg);
+    }
+    try {
+      const cached = localStorage.getItem(`ct_cache_${collName}`);
+      if (cached) {
+        return JSON.parse(cached) as T[];
+      }
+    } catch {}
     return [];
   }
 };
 
 const saveCollection = async <T extends { id: string }>(collName: string, items: T[]) => {
   if (!items || items.length === 0) return;
+  try {
+    localStorage.setItem(`ct_cache_${collName}`, JSON.stringify(items));
+  } catch {}
   try {
     const batch = writeBatch(db);
     items.forEach(item => {
@@ -644,36 +660,45 @@ export const requestCentralProVerification = async (user: User, plan: 'monthly' 
     const updatedReqs = [newReq, ...existingReqs.filter(r => r.userId !== user.id)];
     await saveCentralProRequests(updatedReqs);
 
-    // Update user status
-    await updateUser(user.id, {
-      centralProStatus: 'pending',
-      centralProPlan: plan
-    });
-
-    // Notify all staff and owners for priority support
-    const allUsers = await getUsers();
-    const admins = allUsers.filter(u => u.role === 'owner' || u.role === 'staff');
-    const notifs = await getNotifications();
-
-    admins.forEach(admin => {
-      notifs.push({
-        id: `notif_cp_pri_${Date.now()}_${admin.id}`,
-        userId: admin.id,
-        type: 'centralpro_update',
-        fromUserId: user.id,
-        title: '🚨 Priority Support: CentralPro Payment Verification',
-        message: `@${user.handle} submitted confirmation for ${plan === 'forever' ? '$1 Forever' : '$0.50 Monthly'}. Check Cash App $ZaelLac and verify note @${user.handle}.`,
-        read: false,
-        timestamp: Date.now(),
-        isImportant: true,
-        actionButton: {
-          text: 'Review in Moderation',
-          action: 'open_admin_centralpro'
-        }
+    try {
+      // Update user status
+      await updateUser(user.id, {
+        centralProStatus: 'pending',
+        centralProPlan: plan
       });
-    });
+    } catch (userErr) {
+      console.warn("Note updating user centralProStatus in Firestore:", userErr);
+    }
 
-    await saveNotifications(notifs);
+    try {
+      // Notify all staff and owners for priority support
+      const allUsers = await getUsers();
+      const admins = allUsers.filter(u => u.role === 'owner' || u.role === 'staff');
+      const notifs = await getNotifications();
+
+      admins.forEach(admin => {
+        notifs.push({
+          id: `notif_cp_pri_${Date.now()}_${admin.id}`,
+          userId: admin.id,
+          type: 'centralpro_update',
+          fromUserId: user.id,
+          title: '🚨 Priority Support: CentralPro Payment Verification',
+          message: `@${user.handle} submitted confirmation for ${plan === 'forever' ? '$1 Forever' : '$0.50 Monthly'}. Check Cash App $ZaelLac and verify note @${user.handle}.`,
+          read: false,
+          timestamp: Date.now(),
+          isImportant: true,
+          actionButton: {
+            text: 'Review in Moderation',
+            action: 'open_admin_centralpro'
+          }
+        });
+      });
+
+      await saveNotifications(notifs);
+    } catch (notifErr) {
+      console.warn("Note dispatching priority support notification:", notifErr);
+    }
+
     return newReq;
   } catch (err) {
     console.error("Error requesting CentralPro verification:", err);
