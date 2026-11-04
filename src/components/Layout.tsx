@@ -394,7 +394,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
               </button>
             ) : (
               <div 
-                onClick={() => navigate(`/@${currentUser.handle}`)}
+                onClick={() => navigate(`/profile/${currentUser.handle}`)}
                 className="flex items-center gap-2 cursor-pointer p-1 rounded-full hover:bg-zinc-100 dark:hover:bg-zinc-900 transition-colors"
               >
                 <img 
@@ -464,7 +464,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
                   {suggestedUsers.map(u => (
                     <Link
                       key={u.id}
-                      to={`/@${u.handle}`}
+                      to={`/profile/${u.handle}`}
                       className="flex items-center gap-2.5 px-3 py-1.5 rounded-xl hover:bg-zinc-100 dark:hover:bg-zinc-900 transition-colors group"
                     >
                       <img src={u.avatarUrl} alt="" className="w-7 h-7 rounded-full object-cover shrink-0" />
@@ -495,7 +495,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
                 </div>
               ) : (
                 <div 
-                  onClick={() => navigate(`/@${currentUser.handle}`)}
+                  onClick={() => navigate(`/profile/${currentUser.handle}`)}
                   className="flex items-center gap-3 p-2 rounded-2xl hover:bg-zinc-100 dark:hover:bg-zinc-900 transition-colors cursor-pointer border border-zinc-200/60 dark:border-zinc-800/60 bg-zinc-50/50 dark:bg-zinc-900/50"
                 >
                   <img src={currentUser.avatarUrl} alt={currentUser.username} className="w-10 h-10 rounded-xl object-cover border border-zinc-200 dark:border-zinc-800 shadow-sm" />
