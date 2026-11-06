@@ -6,7 +6,7 @@ import { X, Send } from 'lucide-react';
 import { HolographicBadge } from './UIPolish';
 
 export function Comments({ video, onClose }: { video: Video, onClose: () => void }) {
-  const { currentUser } = useAppStore();
+  const { currentUser, setShowAuthModal } = useAppStore();
   const [comments, setComments] = useState<Comment[]>(video.comments || []);
   const [users, setUsers] = useState<User[]>([]);
   const [newComment, setNewComment] = useState('');
@@ -18,7 +18,11 @@ export function Comments({ video, onClose }: { video: Video, onClose: () => void
 
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!currentUser || !newComment.trim()) return;
+    if (!currentUser) {
+      setShowAuthModal(true);
+      return;
+    }
+    if (!newComment.trim()) return;
 
     const comment: Comment = {
       id: Math.random().toString(36).substr(2, 9),
@@ -125,10 +129,10 @@ export function Comments({ video, onClose }: { video: Video, onClose: () => void
           value={newComment}
           onChange={e => setNewComment(e.target.value)}
           placeholder={currentUser ? "Add comment..." : "Log in to comment..."}
-          disabled={!currentUser}
-          className="flex-1 bg-zinc-100 dark:bg-zinc-800 rounded-full px-4 py-2.5 outline-none text-sm disabled:opacity-50"
+          onClick={() => { if (!currentUser) setShowAuthModal(true); }}
+          className="flex-1 bg-zinc-100 dark:bg-zinc-800 rounded-full px-4 py-2.5 outline-none text-sm text-zinc-900 dark:text-white placeholder:text-zinc-400 dark:placeholder:text-zinc-500 select-text cursor-text"
         />
-        <button type="submit" disabled={!newComment.trim()} className="text-pink-600 p-2.5 disabled:opacity-50"><Send size={20}/></button>
+        <button type="submit" disabled={!newComment.trim()} className="text-pink-600 p-2.5 disabled:opacity-50 cursor-pointer"><Send size={20}/></button>
       </form>
     </div>
   )

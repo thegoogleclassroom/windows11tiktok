@@ -327,9 +327,9 @@ export function Layout({ children }: { children: React.ReactNode }) {
 
       {/* TikTok Desktop Top Navigation Header */}
       {!isIntro && (
-        <header className="hidden md:flex items-center justify-between px-6 py-2 border-b border-zinc-200 dark:border-zinc-800/80 bg-white/95 dark:bg-zinc-950/95 backdrop-blur-xl shrink-0 z-40 select-none">
+        <header className="hidden md:flex items-center justify-between px-6 py-2 border-b border-zinc-200 dark:border-zinc-800/80 bg-white/95 dark:bg-zinc-950/95 backdrop-blur-xl shrink-0 z-40">
           {/* Logo with TikTok Cyan/Red-Pink Chromatic Note */}
-          <Link to="/" className="flex items-center gap-2.5 group">
+          <Link to="/" className="flex items-center gap-2.5 group select-none">
             <div className="relative w-8 h-8 flex items-center justify-center">
               <span className="absolute text-2xl font-black text-[#25F4EE] -translate-x-[2px] -translate-y-[1px] select-none opacity-90 transition-transform group-hover:-translate-x-[3px]">♪</span>
               <span className="absolute text-2xl font-black text-[#FE2C55] translate-x-[2px] translate-y-[1px] select-none opacity-90 transition-transform group-hover:translate-x-[3px]">♪</span>
@@ -341,14 +341,14 @@ export function Layout({ children }: { children: React.ReactNode }) {
           </Link>
 
           {/* TikTok Capsule Search Bar */}
-          <div className="flex-1 max-w-md mx-8">
-            <form onSubmit={handleSearchSubmit} className="relative flex items-center bg-zinc-100 dark:bg-zinc-800/80 hover:bg-zinc-200/70 dark:hover:bg-zinc-800 rounded-full px-4 py-2 border border-transparent focus-within:border-zinc-300 dark:focus-within:border-zinc-600 transition-all">
+          <div className="flex-1 max-w-md mx-8 select-text">
+            <form onSubmit={handleSearchSubmit} className="relative flex items-center bg-zinc-100 dark:bg-zinc-800/80 hover:bg-zinc-200/70 dark:hover:bg-zinc-800 rounded-full px-4 py-2 border border-transparent focus-within:border-zinc-300 dark:focus-within:border-zinc-600 transition-all select-text">
               <input 
                 type="text" 
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search accounts and videos" 
-                className="w-full bg-transparent text-sm outline-none placeholder:text-zinc-400 dark:placeholder:text-zinc-500 pr-2"
+                className="w-full bg-transparent text-sm outline-none text-zinc-900 dark:text-white placeholder:text-zinc-400 dark:placeholder:text-zinc-500 pr-2 select-text cursor-text pointer-events-auto"
               />
               {searchQuery && (
                 <button 

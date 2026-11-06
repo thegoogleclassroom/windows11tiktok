@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Gamepad2, Rocket, Stars, Sparkles, AlertCircle, Play, Info, Square, LayoutGrid, Users, Lightbulb, X, Send, AlertTriangle } from 'lucide-react';
+import { Gamepad2, Rocket, Stars, Sparkles, AlertCircle, Play, Info, Square, LayoutGrid, Users, Lightbulb, X, Send, AlertTriangle, Search } from 'lucide-react';
 import { subscribeToAppSettings, getUsers, updateUserGame, submitSuggestion } from '../lib/db';
 import { useAppStore } from '../store';
 import { User, AppSuggestion } from '../types';
@@ -32,6 +32,7 @@ export function GamesApps() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [gtaFlowStep, setGtaFlowStep] = useState<'idle' | 'video' | 'bookmark_warning'>('idle');
   const [bookmarkCountdown, setBookmarkCountdown] = useState(5);
+  const [gameSearchQuery, setGameSearchQuery] = useState('');
 
   useEffect(() => {
     const unsub = subscribeToAppSettings((settings) => {
@@ -229,7 +230,28 @@ export function GamesApps() {
             <p className="text-zinc-500 dark:text-zinc-400 font-bold">Discover exclusive games and tools built for you.</p>
           </div>
 
-          <div className="flex items-center gap-4">
+          <div className="flex flex-wrap items-center gap-4">
+            {/* Direct Game & App Search Bar */}
+            <div className="relative flex-1 min-w-[200px] max-w-xs">
+              <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-400 pointer-events-none" />
+              <input
+                type="text"
+                value={gameSearchQuery}
+                onChange={(e) => setGameSearchQuery(e.target.value)}
+                placeholder="Search games & apps..."
+                className="w-full bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl pl-10 pr-9 py-2.5 text-xs font-bold text-zinc-900 dark:text-white placeholder:text-zinc-400 dark:placeholder:text-zinc-500 outline-none focus:ring-2 focus:ring-pink-500 shadow-sm transition-all select-text cursor-text"
+              />
+              {gameSearchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setGameSearchQuery('')}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 p-0.5"
+                >
+                  <X size={14} />
+                </button>
+              )}
+            </div>
+
             <div className="flex bg-zinc-200/50 dark:bg-zinc-900/50 p-1 rounded-2xl border border-zinc-200 dark:border-zinc-800 backdrop-blur-xl">
               <button 
                 onClick={() => setActiveTab('games')}
@@ -279,6 +301,12 @@ export function GamesApps() {
           {(() => {
             const baseList = activeTab === 'games' ? GAMES : APPS;
             const currentList = baseList.filter(item => {
+              if (gameSearchQuery.trim()) {
+                const q = gameSearchQuery.toLowerCase();
+                const matchesTitle = item.title.toLowerCase().includes(q);
+                const matchesCategory = item.category?.toLowerCase().includes(q);
+                if (!matchesTitle && !matchesCategory) return false;
+              }
               if (activeTab === 'apps') return true;
               if (selectedCategory === 'All') return true;
               return item.category?.toLowerCase() === selectedCategory.toLowerCase();
@@ -421,11 +449,11 @@ export function GamesApps() {
                 <div>
                   <label className="block text-[10px] font-black uppercase text-zinc-400 mb-1">Name of the {suggestionData.type}</label>
                   <input 
-                    type="text"
+                    type="text" 
                     placeholder="e.g. Minecraft, Discord..."
                     value={suggestionData.name}
                     onChange={e => setSuggestionData(prev => ({ ...prev, name: e.target.value }))}
-                    className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl p-4 outline-none focus:border-amber-500 font-bold dark:text-white"
+                    className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl p-4 outline-none focus:border-amber-500 font-bold text-zinc-900 dark:text-white select-text cursor-text"
                   />
                 </div>
 
@@ -435,7 +463,7 @@ export function GamesApps() {
                     placeholder="Tell us why we should add this..."
                     value={suggestionData.description}
                     onChange={e => setSuggestionData(prev => ({ ...prev, description: e.target.value }))}
-                    className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl p-4 outline-none focus:border-amber-500 h-32 resize-none dark:text-white"
+                    className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl p-4 outline-none focus:border-amber-500 h-32 resize-none text-zinc-900 dark:text-white select-text cursor-text"
                   />
                 </div>
 

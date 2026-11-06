@@ -18,7 +18,7 @@ import { CameraDeviceSelector } from '../components/CameraDeviceSelector';
 
 export function Chat() {
   const { handle, groupId } = useParams<{ handle?: string, groupId?: string }>();
-  const { currentUser, setIsCalling, setCallData, selectedCameraId } = useAppStore();
+  const { currentUser, setIsCalling, setCallData, selectedCameraId, setShowAuthModal } = useAppStore();
   const navigate = useNavigate();
   
   const [otherUser, setOtherUser] = useState<User | null>(null);
@@ -254,6 +254,10 @@ export function Chat() {
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
     if (isUploading) return;
+    if (!currentUser) {
+      setShowAuthModal(true);
+      return;
+    }
     await sendMessage(newMessage);
   };
 
@@ -609,8 +613,8 @@ export function Chat() {
               type="text" 
               value={newMessage}
               onChange={e => handleInputChange(e.target.value)}
-              placeholder="Send a message..."
-              className="flex-1 bg-zinc-100 dark:bg-zinc-900 rounded-full px-4 py-2.5 outline-none focus:ring-2 focus:ring-pink-500 transition-all"
+              placeholder={currentUser ? "Send a message..." : "Type a message (or login to chat)..."}
+              className="flex-1 bg-zinc-100 dark:bg-zinc-900 rounded-full px-4 py-2.5 outline-none focus:ring-2 focus:ring-pink-500 transition-all text-zinc-900 dark:text-white placeholder:text-zinc-400 dark:placeholder:text-zinc-500 select-text cursor-text"
               disabled={isUploading}
             />
           )}
