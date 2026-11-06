@@ -11,6 +11,7 @@ import { HolographicBadge, CentralProBadge } from './UIPolish';
 import * as Types from '../types';
 
 import AnnouncementBanner from './AnnouncementBanner';
+import { BookmarkBanner } from './BookmarkBanner';
 import { IncomingCallModal } from './IncomingCallModal';
 
 import { VerificationModal } from './VerificationModal';
@@ -323,6 +324,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="flex flex-col h-screen bg-white dark:bg-zinc-950 text-zinc-900 dark:text-zinc-50 overflow-hidden transition-colors">
+      <BookmarkBanner />
       <AnnouncementBanner />
 
       {/* TikTok Desktop Top Navigation Header */}
@@ -426,7 +428,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
       )}
 
       {/* Main Body: Desktop Sidebar + Content */}
-      <div className="flex-1 flex overflow-hidden">
+      <div className="flex-1 min-h-0 h-full flex overflow-hidden">
         {/* Sidebar - Desktop */}
         {!isIntro && (
           <motion.div 
@@ -585,7 +587,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
         )}
 
         {/* Main Content */}
-        <main id="main-content" className={`flex-1 relative h-full overflow-hidden flex justify-center transition-all duration-500 ${isGameActive ? 'pl-0' : ''}`}>
+        <main id="main-content" className={`flex-1 min-h-0 relative h-full max-h-full overflow-hidden flex justify-center transition-all duration-500 ${isGameActive ? 'pl-0' : ''}`}>
           {children}
         </main>
       </div>

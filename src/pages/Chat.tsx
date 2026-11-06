@@ -388,9 +388,9 @@ export function Chat() {
   if (!currentUser || (!otherUser && !group)) return null;
 
   return (
-    <div className="w-full max-w-2xl mx-auto border-x border-zinc-200 dark:border-zinc-800 h-full max-h-full flex flex-col bg-white dark:bg-zinc-950 relative overflow-hidden">
+    <div className="w-full max-w-2xl mx-auto border-x border-zinc-200 dark:border-zinc-800 h-full max-h-full min-h-0 flex-1 flex flex-col bg-white dark:bg-zinc-950 relative overflow-hidden">
       {/* Header */}
-      <div className="p-4 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between bg-white/80 dark:bg-zinc-950/80 backdrop-blur-md sticky top-0 z-10">
+      <div className="p-4 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between bg-white/80 dark:bg-zinc-950/80 backdrop-blur-md shrink-0 z-10">
         <div className="flex items-center gap-4">
           <button onClick={() => navigate('/messages')} className="p-2 hover:bg-zinc-100 dark:hover:bg-zinc-900 rounded-full transition-colors">
             <ArrowLeft size={24} />
@@ -581,7 +581,7 @@ export function Chat() {
       </div>
       
       {/* Input */}
-      <div className="shrink-0 p-3 sm:p-4 border-t border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 z-20">
+      <div className="shrink-0 sticky bottom-0 p-3 sm:p-4 border-t border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 z-20 w-full shadow-lg">
         <form onSubmit={handleSend} className="flex items-center gap-2 relative">
           <input type="file" ref={fileInputRef} onChange={handleFileChange} accept="image/*,video/*" className="hidden" />
           <button type="button" onClick={() => fileInputRef.current?.click()} className="p-2.5 text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 transition-colors">

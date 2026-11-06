@@ -150,7 +150,6 @@ function AuthWrapper({ children }: { children: React.ReactNode }) {
 
   return (
     <>
-      <BookmarkBanner />
       {children}
       <InterestsModal />
       <GlobalStoryViewer />

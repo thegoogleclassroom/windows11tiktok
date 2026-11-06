@@ -9,7 +9,7 @@ export function BookmarkBanner() {
   const url = 'https://domain-central.github.io/domain/';
 
   return (
-    <div className="fixed top-0 left-0 right-0 z-[3000] bg-blue-600 text-white py-1.5 px-4 text-xs md:text-sm font-medium flex items-center justify-between shadow-md">
+    <div className="w-full bg-blue-600 text-white py-1.5 px-4 text-xs md:text-sm font-medium flex items-center justify-between shadow-md shrink-0 z-[3000]">
       <div className="flex-1 text-center pr-6 truncate">
         Bookmark{' '}
         <a 
