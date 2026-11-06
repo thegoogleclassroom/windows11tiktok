@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { Home, Compass, PlusSquare, MessageSquare, User, Moon, Sun, LogIn, ShieldAlert, X, HelpCircle, Bell, Gamepad2, ShieldCheck, Info, Rocket, Sparkles, Check, Copy, Flame, AlertTriangle, Search, Users, Tv } from 'lucide-react';
+import { Home, Compass, PlusSquare, MessageSquare, User, Moon, Sun, LogIn, ShieldAlert, X, HelpCircle, Bell, Gamepad2, ShieldCheck, Info, Rocket, Sparkles, Check, Copy, Flame, AlertTriangle, Search, Users, UserCheck, Tv } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAppStore } from '../store';
 import { AuthModal } from './AuthModal';
@@ -16,6 +16,13 @@ import { IncomingCallModal } from './IncomingCallModal';
 import { VerificationModal } from './VerificationModal';
 import { ForumChooserModal } from './ForumChooserModal';
 import { GlobalMusicBubble } from './GlobalMusicBubble';
+
+export const LiveBroadcastIcon = ({ size = 22, className = '' }: { size?: number; className?: string }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+    <circle cx="12" cy="12" r="2" fill="currentColor" />
+    <path d="M16.24 7.76a6 6 0 0 1 0 8.49m-8.48-.01a6 6 0 0 1 0-8.49m11.31-2.82a10 10 0 0 1 0 14.14m-14.14 0a10 10 0 0 1 0-14.14" />
+  </svg>
+);
 
 export function Layout({ children }: { children: React.ReactNode }) {
   const { 
@@ -36,6 +43,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
   const [showForumChooser, setShowForumChooser] = useState(false);
   const [showVerificationModal, setShowVerificationModal] = useState(false);
   const [showCentralProModal, setShowCentralProModal] = useState(false);
+  const [showLiveComingSoon, setShowLiveComingSoon] = useState(false);
   const [supportMessage, setSupportMessage] = useState('');
   const [supportType, setSupportType] = useState<'support' | 'bug' | null>(null);
   const [supportSent, setSupportSent] = useState(false);
@@ -279,12 +287,15 @@ export function Layout({ children }: { children: React.ReactNode }) {
     }, 2000);
   };
 
-  const navItems = [
+  const navItems: { icon: any; label: string; path: string; badge?: string }[] = [
     { icon: Home, label: 'For You', path: '/' },
+    { icon: Users, label: 'Following', path: '/?feed=following' },
+    { icon: UserCheck, label: 'Friends', path: '/?feed=friends' },
     { icon: Compass, label: 'Explore', path: '/explore' },
+    { icon: LiveBroadcastIcon, label: 'LIVE', path: '/live', badge: 'LIVE' },
     { icon: MessageSquare, label: 'Messages', path: '/messages' },
     { icon: User, label: 'Profile', path: currentUser ? `/profile/${currentUser.handle}` : '#' },
-    { icon: HelpCircle, label: 'Forums', path: '/forum' },
+    { icon: HelpCircle, label: 'Forum', path: '/forum' },
     { icon: Gamepad2, label: 'Games & Apps', path: '/games-apps' },
   ];
 
@@ -293,6 +304,11 @@ export function Layout({ children }: { children: React.ReactNode }) {
   }
 
   const handleNavClick = (e: React.MouseEvent, path: string) => {
+    if (path === '/live') {
+      e.preventDefault();
+      setShowLiveComingSoon(true);
+      return;
+    }
     if (path === '#' || (['/messages', '/upload'].includes(path) && !currentUser)) {
       e.preventDefault();
       setShowAuthModal(true);
@@ -439,8 +455,13 @@ export function Layout({ children }: { children: React.ReactNode }) {
                         : 'hover:bg-zinc-100 dark:hover:bg-zinc-900 font-bold text-zinc-700 dark:text-zinc-300'
                     }`}
                   >
-                    <item.icon className={`transition-all ${isActive ? 'fill-current scale-105' : 'group-hover:scale-105'}`} size={22} strokeWidth={isActive ? 2.5 : 2} />
+                    <item.icon className={`transition-all ${isActive ? 'fill-current scale-105 text-[#FE2C55]' : 'group-hover:scale-105'}`} size={22} strokeWidth={isActive ? 2.5 : 2} />
                     <span className="text-base tracking-tight">{item.label}</span>
+                    {item.badge === 'LIVE' && (
+                      <span className="ml-auto bg-[#FE2C55] text-white text-[10px] font-black px-1.5 py-0.5 rounded tracking-wider shadow-[0_0_8px_rgba(254,44,85,0.6)] animate-pulse">
+                        LIVE
+                      </span>
+                    )}
                     {isMessages && unreadCount > 0 && (
                       <span className="ml-auto bg-[#FE2C55] text-white text-[10px] font-black px-2 py-0.5 rounded-full animate-bounce">
                         {unreadCount}
@@ -458,7 +479,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
             {suggestedUsers.length > 0 && (
               <div className="py-3 border-b border-zinc-200/80 dark:border-zinc-800/80">
                 <p className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider px-3 mb-2">
-                  Suggested Creators
+                  SUGGESTED ACCOUNTS
                 </p>
                 <div className="space-y-1">
                   {suggestedUsers.map(u => (
@@ -800,6 +821,80 @@ export function Layout({ children }: { children: React.ReactNode }) {
       <GlobalMusicBubble />
       <IframeDomainNotice />
       <CentralProModal isOpen={showCentralProModal} onClose={() => setShowCentralProModal(false)} />
+      <LiveComingSoonModal isOpen={showLiveComingSoon} onClose={() => setShowLiveComingSoon(false)} />
+    </div>
+  );
+}
+
+export function LiveComingSoonModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 z-[1500] flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-in fade-in duration-200">
+      <div className="relative w-full max-w-md bg-gradient-to-b from-[#14080b] via-[#0d0407] to-black border border-red-950/80 rounded-3xl p-6 sm:p-8 text-center text-white shadow-[0_0_60px_rgba(254,44,85,0.25)] overflow-hidden">
+        {/* Glow Effects */}
+        <div className="absolute -top-20 -right-20 w-48 h-48 bg-[#FE2C55]/20 rounded-full blur-3xl pointer-events-none" />
+        <div className="absolute -bottom-20 -left-20 w-48 h-48 bg-cyan-500/10 rounded-full blur-3xl pointer-events-none" />
+
+        {/* Close Button */}
+        <button 
+          onClick={onClose}
+          className="absolute top-4 right-4 p-2 text-zinc-400 hover:text-white rounded-full bg-white/5 hover:bg-white/10 transition-colors"
+        >
+          <X size={20} />
+        </button>
+
+        {/* Pulsing Live Radar / Broadcast Graphic */}
+        <div className="relative w-24 h-24 mx-auto mb-4 flex items-center justify-center">
+          <div className="absolute inset-0 rounded-full border-2 border-[#FE2C55]/30 animate-ping" style={{ animationDuration: '2s' }} />
+          <div className="absolute inset-2 rounded-full border border-[#FE2C55]/50 animate-pulse" />
+          <div className="w-16 h-16 rounded-full bg-gradient-to-tr from-[#FE2C55] via-red-600 to-pink-500 flex items-center justify-center shadow-lg shadow-[#FE2C55]/40 text-white">
+            <LiveBroadcastIcon size={32} />
+          </div>
+          <span className="absolute -bottom-1 px-2.5 py-0.5 rounded-full bg-black text-[10px] font-black tracking-widest text-[#FE2C55] border border-[#FE2C55]/60 uppercase shadow">
+            LIVE
+          </span>
+        </div>
+
+        <div className="inline-block px-3 py-1 rounded-full bg-[#FE2C55]/15 border border-[#FE2C55]/30 text-[#FE2C55] text-xs font-black uppercase tracking-wider mb-2">
+          CentralTok Broadcasts
+        </div>
+
+        <h3 className="text-2xl font-black tracking-tight text-white mb-2">
+          Coming Soon..
+        </h3>
+
+        <p className="text-xs text-zinc-400 leading-relaxed mb-6">
+          LIVE streaming features are currently in active development. Verified creators, staff, and students will soon be able to start real-time broadcasts, stream gameplay, and chat live!
+        </p>
+
+        {/* Feature Preview Pills */}
+        <div className="grid grid-cols-2 gap-2 mb-6 text-left">
+          <div className="p-2.5 rounded-xl bg-zinc-900/90 border border-zinc-800 text-[11px] text-zinc-300 flex items-center gap-2">
+            <span>🎮</span>
+            <span className="font-semibold">Game Streaming</span>
+          </div>
+          <div className="p-2.5 rounded-xl bg-zinc-900/90 border border-zinc-800 text-[11px] text-zinc-300 flex items-center gap-2">
+            <span>💬</span>
+            <span className="font-semibold">Real-Time Chat</span>
+          </div>
+          <div className="p-2.5 rounded-xl bg-zinc-900/90 border border-zinc-800 text-[11px] text-zinc-300 flex items-center gap-2">
+            <span>🎁</span>
+            <span className="font-semibold">Live Reactions</span>
+          </div>
+          <div className="p-2.5 rounded-xl bg-zinc-900/90 border border-zinc-800 text-[11px] text-zinc-300 flex items-center gap-2">
+            <span>🎙️</span>
+            <span className="font-semibold">Classroom Rooms</span>
+          </div>
+        </div>
+
+        <button
+          onClick={onClose}
+          className="w-full py-3.5 bg-gradient-to-r from-[#FE2C55] to-red-600 hover:from-[#e0264a] hover:to-red-700 text-white font-black text-xs uppercase tracking-wider rounded-xl shadow-lg shadow-[#FE2C55]/30 transition-all hover:scale-[1.02] active:scale-[0.98]"
+        >
+          Back to CentralTok
+        </button>
+      </div>
     </div>
   );
 }
