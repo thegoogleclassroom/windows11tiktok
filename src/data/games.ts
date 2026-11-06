@@ -5,9 +5,23 @@ export interface GameItem {
   category: string;
   color: string;
   icon?: string;
+  isNew?: boolean;
+  frameColor?: string;
+  badge?: string;
 }
 
 export const GAMES: GameItem[] = [
+  { 
+    id: 'gta-5-6', 
+    title: 'GTA 5/6', 
+    url: 'https://gta5-87g.pages.dev/?low=1&fps=30&res=1280x720', 
+    category: 'Action', 
+    color: 'yellow', 
+    icon: 'https://cdn.jsdelivr.net/gh/Arcticons-Team/Arcticons/icons/black/gta_v.svg',
+    isNew: true,
+    frameColor: 'yellow',
+    badge: 'New!!'
+  },
   { id: '2048-merge', title: '2048 Merge Run', url: 'Games/2048 Merge Run.html', category: 'Puzzle', color: 'orange', icon: 'https://cdn.jsdelivr.net/gh/Arcticons-Team/Arcticons/icons/black/merge_master.svg' },
   { id: 'adofai', title: 'A Dance of Fire and Ice', url: 'Games/A Dance of Fire and Ice.html', category: 'Rhythm', color: 'red', icon: 'https://cdn.jsdelivr.net/gh/Arcticons-Team/Arcticons/icons/black/dance_of_fire_and_ice.svg' },
   { id: 'adventure-cap', title: 'Adventure Capatalist', url: 'Games/Adventure Capatalist.html', category: 'Idle', color: 'green', icon: 'https://cdn.jsdelivr.net/gh/Arcticons-Team/Arcticons/icons/black/adventure_capitalist.svg' },
