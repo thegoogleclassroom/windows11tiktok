@@ -4,7 +4,7 @@ import {
   PhoneOff, Mic, MicOff, Volume2, VolumeX, 
   Settings, Monitor, Camera, Grid, 
   UserPlus, MessageSquare, Video, VideoOff,
-  Phone, X, Check
+  Phone, X, Check, Maximize2, Minimize2, Tv, Sparkles
 } from 'lucide-react';
 import { useAppStore } from '../store';
 import { createCall, updateCall, addIceCandidate, subscribeToCall, deleteCall, getUsers, db } from '../lib/db';
@@ -16,8 +16,8 @@ const servers: RTCConfiguration = {
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
     { urls: 'stun:stun2.l.google.com:19302' },
-    { urls: 'stun:stun3.l.google.com:19302' },
-    { urls: 'stun:stun4.l.google.com:19302' },
+    { urls: 'stun:global.stun.twilio.com:3478' },
+    { urls: 'stun:stun.cloudflare.com:3478' },
   ],
   iceCandidatePoolSize: 10,
 };
@@ -80,6 +80,12 @@ function setupAudioAnalyzer(stream: MediaStream, onSpeakingChange: (speaking: bo
   }
 }
 
+const getAvatarUrl = (user?: { avatarUrl?: string; username?: string }) => {
+  if (user?.avatarUrl && user.avatarUrl.trim().length > 0) return user.avatarUrl;
+  const seed = encodeURIComponent(user?.username || 'user');
+  return `https://api.dicebear.com/7.x/avataaars/svg?seed=${seed}`;
+};
+
 export function CallOverlay() {
   const { isCalling, setIsCalling, callData, currentUser, setCallData, selectedCameraId } = useAppStore();
   const [isMuted, setIsMuted] = useState(false);
@@ -89,15 +95,27 @@ export function CallOverlay() {
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [remoteIsSpeaking, setRemoteIsSpeaking] = useState(false);
   const [callStatus, setCallStatus] = useState<'idle' | 'calling' | 'ringing' | 'active'>('idle');
+  const [remoteMedia, setRemoteMedia] = useState<'none' | 'camera' | 'screen'>('none');
+  const [hasRemoteVideo, setHasRemoteVideo] = useState(false);
   const [showCameraSettings, setShowCameraSettings] = useState(false);
+  const [isFullscreenStage, setIsFullscreenStage] = useState(false);
   
   const pc = useRef<RTCPeerConnection | null>(null);
-  const localStream = useRef<MediaStream | null>(null);
+  const localAudioTrack = useRef<MediaStreamTrack | null>(null);
+  const localCameraStream = useRef<MediaStream | null>(null);
+  const localScreenStream = useRef<MediaStream | null>(null);
   const remoteStream = useRef<MediaStream | null>(null);
+
   const localVideoRef = useRef<HTMLVideoElement>(null);
+  const localScreenRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
   const remoteAudioRef = useRef<HTMLAudioElement>(null);
+  
+  const audioTransceiverRef = useRef<RTCRtpTransceiver | null>(null);
+  const videoTransceiverRef = useRef<RTCRtpTransceiver | null>(null);
+  
   const callIdRef = useRef<string | null>(null);
+  const isCallerRef = useRef<boolean>(false);
 
   const callUnsubRef = useRef<(() => void) | null>(null);
   const isSettingRemoteDesc = useRef<boolean>(false);
@@ -107,13 +125,19 @@ export function CallOverlay() {
   const localAnalyzerCleanupRef = useRef<(() => void) | null>(null);
   const remoteAnalyzerCleanupRef = useRef<(() => void) | null>(null);
 
-  // Helper to attach and play remote audio
+  // Helper to attach and play remote audio without interrupting existing playback
   const attachRemoteAudio = () => {
     if (remoteAudioRef.current && remoteStream.current) {
-      remoteAudioRef.current.srcObject = remoteStream.current;
-      remoteAudioRef.current.play().catch(e => {
-        console.warn("Auto-play blocked or waiting for user interaction:", e);
-      });
+      if (remoteAudioRef.current.srcObject !== remoteStream.current) {
+        remoteAudioRef.current.srcObject = remoteStream.current;
+      }
+      if (remoteAudioRef.current.paused) {
+        remoteAudioRef.current.play().catch(e => {
+          if (e.name !== 'AbortError') {
+            console.warn("Auto-play waiting for user interaction:", e);
+          }
+        });
+      }
     }
   };
 
@@ -139,6 +163,7 @@ export function CallOverlay() {
               const users = await getUsers();
               const caller = users.find(u => u.id === data.callerId);
               if (caller) {
+                isCallerRef.current = false;
                 setCallData({ user: caller, type: data.type || 'voice' });
                 setIsCalling(true);
                 setCallStatus('ringing');
@@ -176,6 +201,7 @@ export function CallOverlay() {
     if (callStatus === 'idle') {
       const isCaller = !callIdRef.current;
       if (isCaller) {
+        isCallerRef.current = true;
         setCallStatus('calling');
         startCall();
       }
@@ -192,9 +218,10 @@ export function CallOverlay() {
         callUnsubRef.current = null;
       }
 
-      // Generate a unique session call ID to completely prevent collisions with previous calls
+      // Generate a unique session call ID
       const sessionCallId = `call_${currentUser!.id}_${callData!.user.id}_${Date.now()}`;
       callIdRef.current = sessionCallId;
+      isCallerRef.current = true;
       processedCandidates.current.clear();
       candidatesQueue.current = [];
       isSettingRemoteDesc.current = false;
@@ -203,38 +230,80 @@ export function CallOverlay() {
       pc.current = newPc;
       remoteStream.current = new MediaStream();
 
-      try {
-        const videoConstraints = selectedCameraId ? { deviceId: { exact: selectedCameraId } } : true;
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: isCameraOn ? videoConstraints : false });
-        localStream.current = stream;
-        stream.getTracks().forEach((track) => {
-          newPc.addTrack(track, stream);
-        });
+      // Pre-add transceivers for both audio and video
+      // This is the critical WebRTC requirement: ensures m=audio and m=video are in the initial SDP
+      // so replaceTrack() for camera and screenshare works in real-time without renegotiation!
+      const audioTransceiver = newPc.addTransceiver('audio', { direction: 'sendrecv' });
+      const videoTransceiver = newPc.addTransceiver('video', { direction: 'sendrecv' });
+      audioTransceiverRef.current = audioTransceiver;
+      videoTransceiverRef.current = videoTransceiver;
 
-        // Setup real voice activity analyzer
-        localAnalyzerCleanupRef.current?.();
-        localAnalyzerCleanupRef.current = setupAudioAnalyzer(stream, setIsSpeaking);
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+        const audioTrack = stream.getAudioTracks()[0];
+        if (audioTrack) {
+          localAudioTrack.current = audioTrack;
+          await audioTransceiver.sender.replaceTrack(audioTrack);
+
+          // Setup real voice activity analyzer
+          localAnalyzerCleanupRef.current?.();
+          localAnalyzerCleanupRef.current = setupAudioAnalyzer(new MediaStream([audioTrack]), setIsSpeaking);
+        }
       } catch (err) {
         console.error("Microphone error:", err);
       }
 
+      // If initial call type is video, attempt to turn on camera right away
+      if (callData!.type === 'video') {
+        try {
+          const videoConstraints = selectedCameraId ? { deviceId: { exact: selectedCameraId } } : true;
+          const camStream = await navigator.mediaDevices.getUserMedia({ video: videoConstraints });
+          const camTrack = camStream.getVideoTracks()[0];
+          if (camTrack) {
+            localCameraStream.current = camStream;
+            await videoTransceiver.sender.replaceTrack(camTrack);
+            setIsCameraOn(true);
+            if (localVideoRef.current) {
+              localVideoRef.current.srcObject = camStream;
+              localVideoRef.current.play().catch(() => {});
+            }
+          }
+        } catch (camErr) {
+          console.warn("Initial camera activation failed:", camErr);
+        }
+      }
+
       newPc.ontrack = (event) => {
-        if (event.streams && event.streams[0]) {
-          remoteStream.current = event.streams[0];
-        } else if (event.track) {
+        if (event.track.kind === 'video') {
           if (!remoteStream.current) remoteStream.current = new MediaStream();
+          // Remove old video tracks and attach latest
+          remoteStream.current.getVideoTracks().forEach(t => remoteStream.current?.removeTrack(t));
           remoteStream.current.addTrack(event.track);
-        }
 
-        attachRemoteAudio();
+          if (remoteVideoRef.current) {
+            remoteVideoRef.current.srcObject = remoteStream.current;
+            remoteVideoRef.current.play().catch(() => {});
+          }
+          setHasRemoteVideo(true);
 
-        if (remoteVideoRef.current && remoteStream.current) {
-          remoteVideoRef.current.srcObject = remoteStream.current;
-        }
+          event.track.onmute = () => setHasRemoteVideo(false);
+          event.track.onunmute = () => {
+            setHasRemoteVideo(true);
+            if (remoteVideoRef.current) {
+              remoteVideoRef.current.srcObject = remoteStream.current;
+              remoteVideoRef.current.play().catch(() => {});
+            }
+          };
+          event.track.onended = () => setHasRemoteVideo(false);
+        } else if (event.track.kind === 'audio') {
+          if (!remoteStream.current) remoteStream.current = new MediaStream();
+          remoteStream.current.getAudioTracks().forEach(t => remoteStream.current?.removeTrack(t));
+          remoteStream.current.addTrack(event.track);
 
-        if (remoteStream.current) {
+          attachRemoteAudio();
+
           remoteAnalyzerCleanupRef.current?.();
-          remoteAnalyzerCleanupRef.current = setupAudioAnalyzer(remoteStream.current, setRemoteIsSpeaking);
+          remoteAnalyzerCleanupRef.current = setupAudioAnalyzer(new MediaStream([event.track]), setRemoteIsSpeaking);
         }
       };
 
@@ -248,16 +317,28 @@ export function CallOverlay() {
         console.log("Caller ICE connection state:", newPc.iceConnectionState);
         if (newPc.iceConnectionState === 'connected' || newPc.iceConnectionState === 'completed') {
           attachRemoteAudio();
+        } else if (newPc.iceConnectionState === 'failed') {
+          newPc.restartIce?.();
         }
       };
 
       const offerDescription = await newPc.createOffer();
       await newPc.setLocalDescription(offerDescription);
 
-      await createCall(sessionCallId, currentUser!.id, callData!.user.id, {
-        type: offerDescription.type,
-        sdp: offerDescription.sdp,
-      });
+      await createCall(
+        sessionCallId, 
+        currentUser!.id, 
+        callData!.user.id, 
+        { type: offerDescription.type, sdp: offerDescription.sdp },
+        {
+          callerMedia: isCameraOn ? 'camera' : 'none',
+          receiverMedia: 'none',
+          callerName: currentUser!.username,
+          callerAvatar: currentUser!.avatarUrl || '',
+          receiverName: callData!.user.username,
+          receiverAvatar: callData!.user.avatarUrl || ''
+        }
+      );
 
       // Subscribe to signaling updates
       const unsub = subscribeToCall(sessionCallId, async (data) => {
@@ -270,6 +351,10 @@ export function CallOverlay() {
 
         if (data.status === 'active' && callStatus !== 'active') {
           setCallStatus('active');
+        }
+
+        if (data.receiverMedia) {
+          setRemoteMedia(data.receiverMedia);
         }
 
         // Set remote answer description safely without race conditions
@@ -323,18 +408,35 @@ export function CallOverlay() {
     }
   }, [isCalling, callData, currentUser, callStatus]);
 
-  // Synchronize media video elements
+  // Synchronize local preview video element
   useEffect(() => {
-    if (callStatus === 'active' || isCameraOn) {
-      if (localStream.current && localVideoRef.current) {
-        localVideoRef.current.srcObject = localStream.current;
-      }
-      if (remoteStream.current) {
-        if (remoteVideoRef.current) remoteVideoRef.current.srcObject = remoteStream.current;
-        attachRemoteAudio();
+    if (isCameraOn && localCameraStream.current && localVideoRef.current) {
+      if (localVideoRef.current.srcObject !== localCameraStream.current) {
+        localVideoRef.current.srcObject = localCameraStream.current;
+        localVideoRef.current.play().catch(() => {});
       }
     }
-  }, [callStatus, isCameraOn, isCalling]);
+  }, [isCameraOn, callStatus]);
+
+  // Synchronize local screenshare preview video element
+  useEffect(() => {
+    if (isScreenSharing && localScreenStream.current && localScreenRef.current) {
+      if (localScreenRef.current.srcObject !== localScreenStream.current) {
+        localScreenRef.current.srcObject = localScreenStream.current;
+        localScreenRef.current.play().catch(() => {});
+      }
+    }
+  }, [isScreenSharing, callStatus]);
+
+  // Synchronize remote video element
+  useEffect(() => {
+    if (remoteStream.current && remoteVideoRef.current) {
+      if (remoteVideoRef.current.srcObject !== remoteStream.current) {
+        remoteVideoRef.current.srcObject = remoteStream.current;
+        remoteVideoRef.current.play().catch(() => {});
+      }
+    }
+  }, [hasRemoteVideo, remoteMedia, callStatus]);
 
   const acceptCall = async () => {
     const sessionCallId = callIdRef.current;
@@ -350,6 +452,7 @@ export function CallOverlay() {
     }
 
     setCallStatus('active');
+    isCallerRef.current = false;
     processedCandidates.current.clear();
     candidatesQueue.current = [];
     isSettingRemoteDesc.current = false;
@@ -358,38 +461,56 @@ export function CallOverlay() {
     pc.current = newPc;
     remoteStream.current = new MediaStream();
 
-    try {
-      const videoConstraints = selectedCameraId ? { deviceId: { exact: selectedCameraId } } : true;
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: isCameraOn ? videoConstraints : false });
-      localStream.current = stream;
-      stream.getTracks().forEach((track) => {
-        newPc.addTrack(track, stream);
-      });
+    // Pre-create transceivers for both audio and video on receiver side too
+    const audioTransceiver = newPc.addTransceiver('audio', { direction: 'sendrecv' });
+    const videoTransceiver = newPc.addTransceiver('video', { direction: 'sendrecv' });
+    audioTransceiverRef.current = audioTransceiver;
+    videoTransceiverRef.current = videoTransceiver;
 
-      // Setup real voice activity analyzer
-      localAnalyzerCleanupRef.current?.();
-      localAnalyzerCleanupRef.current = setupAudioAnalyzer(stream, setIsSpeaking);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+      const audioTrack = stream.getAudioTracks()[0];
+      if (audioTrack) {
+        localAudioTrack.current = audioTrack;
+        await audioTransceiver.sender.replaceTrack(audioTrack);
+
+        localAnalyzerCleanupRef.current?.();
+        localAnalyzerCleanupRef.current = setupAudioAnalyzer(new MediaStream([audioTrack]), setIsSpeaking);
+      }
     } catch (err) {
-      console.error("Media error:", err);
+      console.error("Receiver Media error:", err);
     }
 
     newPc.ontrack = (event) => {
-      if (event.streams && event.streams[0]) {
-        remoteStream.current = event.streams[0];
-      } else if (event.track) {
+      if (event.track.kind === 'video') {
         if (!remoteStream.current) remoteStream.current = new MediaStream();
+        remoteStream.current.getVideoTracks().forEach(t => remoteStream.current?.removeTrack(t));
         remoteStream.current.addTrack(event.track);
-      }
 
-      attachRemoteAudio();
+        if (remoteVideoRef.current) {
+          remoteVideoRef.current.srcObject = remoteStream.current;
+          remoteVideoRef.current.play().catch(() => {});
+        }
+        setHasRemoteVideo(true);
 
-      if (remoteVideoRef.current && remoteStream.current) {
-        remoteVideoRef.current.srcObject = remoteStream.current;
-      }
+        event.track.onmute = () => setHasRemoteVideo(false);
+        event.track.onunmute = () => {
+          setHasRemoteVideo(true);
+          if (remoteVideoRef.current) {
+            remoteVideoRef.current.srcObject = remoteStream.current;
+            remoteVideoRef.current.play().catch(() => {});
+          }
+        };
+        event.track.onended = () => setHasRemoteVideo(false);
+      } else if (event.track.kind === 'audio') {
+        if (!remoteStream.current) remoteStream.current = new MediaStream();
+        remoteStream.current.getAudioTracks().forEach(t => remoteStream.current?.removeTrack(t));
+        remoteStream.current.addTrack(event.track);
 
-      if (remoteStream.current) {
+        attachRemoteAudio();
+
         remoteAnalyzerCleanupRef.current?.();
-        remoteAnalyzerCleanupRef.current = setupAudioAnalyzer(remoteStream.current, setRemoteIsSpeaking);
+        remoteAnalyzerCleanupRef.current = setupAudioAnalyzer(new MediaStream([event.track]), setRemoteIsSpeaking);
       }
     };
 
@@ -403,6 +524,8 @@ export function CallOverlay() {
       console.log("Receiver ICE connection state:", newPc.iceConnectionState);
       if (newPc.iceConnectionState === 'connected' || newPc.iceConnectionState === 'completed') {
         attachRemoteAudio();
+      } else if (newPc.iceConnectionState === 'failed') {
+        newPc.restartIce?.();
       }
     };
 
@@ -412,6 +535,10 @@ export function CallOverlay() {
       if (data.status === 'ended') {
         handleEndCall(false);
         return;
+      }
+
+      if (data.callerMedia) {
+        setRemoteMedia(data.callerMedia);
       }
 
       // Process offer only when in 'stable' state and not already processing
@@ -424,7 +551,8 @@ export function CallOverlay() {
 
           await updateCall(sessionCallId, {
             answer: { type: answer.type, sdp: answer.sdp },
-            status: 'active'
+            status: 'active',
+            receiverMedia: isCameraOn ? 'camera' : 'none'
           });
 
           attachRemoteAudio();
@@ -502,9 +630,17 @@ export function CallOverlay() {
     }
     
     // Stop and release all tracks
-    if (localStream.current) {
-      localStream.current.getTracks().forEach(t => t.stop());
-      localStream.current = null;
+    if (localAudioTrack.current) {
+      localAudioTrack.current.stop();
+      localAudioTrack.current = null;
+    }
+    if (localCameraStream.current) {
+      localCameraStream.current.getTracks().forEach(t => t.stop());
+      localCameraStream.current = null;
+    }
+    if (localScreenStream.current) {
+      localScreenStream.current.getTracks().forEach(t => t.stop());
+      localScreenStream.current = null;
     }
     if (remoteStream.current) {
       remoteStream.current.getTracks().forEach(t => t.stop());
@@ -519,6 +655,8 @@ export function CallOverlay() {
       pc.current = null;
     }
 
+    audioTransceiverRef.current = null;
+    videoTransceiverRef.current = null;
     isSettingRemoteDesc.current = false;
     processedCandidates.current.clear();
     candidatesQueue.current = [];
@@ -531,44 +669,74 @@ export function CallOverlay() {
     setIsScreenSharing(false);
     setIsSpeaking(false);
     setRemoteIsSpeaking(false);
+    setRemoteMedia('none');
+    setHasRemoteVideo(false);
   };
 
   const toggleCamera = async () => {
     if (!isCameraOn) {
       try {
-        const videoConstraints = selectedCameraId ? { deviceId: { exact: selectedCameraId } } : true;
-        const stream = await navigator.mediaDevices.getUserMedia({ video: videoConstraints });
-        const videoTrack = stream.getVideoTracks()[0];
-        if (localStream.current) {
-          localStream.current.addTrack(videoTrack);
-        } else {
-          localStream.current = stream;
+        // If screen sharing was on, stop screen sharing first
+        if (isScreenSharing) {
+          await stopScreenShare();
         }
-        if (pc.current) {
-          const sender = pc.current.getSenders().find(s => s.track?.kind === 'video');
+
+        const videoConstraints = selectedCameraId ? { deviceId: { exact: selectedCameraId } } : true;
+        const camStream = await navigator.mediaDevices.getUserMedia({ video: videoConstraints });
+        const camTrack = camStream.getVideoTracks()[0];
+        if (!camTrack) return;
+
+        localCameraStream.current = camStream;
+
+        // Show local preview immediately
+        if (localVideoRef.current) {
+          localVideoRef.current.srcObject = camStream;
+          localVideoRef.current.play().catch(() => {});
+        }
+
+        // Transmit video track to remote peer via video transceiver
+        if (videoTransceiverRef.current) {
+          await videoTransceiverRef.current.sender.replaceTrack(camTrack);
+        } else if (pc.current) {
+          const sender = pc.current.getSenders().find(s => s.track?.kind === 'video' || (s as any).kind === 'video');
           if (sender) {
-            sender.replaceTrack(videoTrack);
+            await sender.replaceTrack(camTrack);
           } else {
-            pc.current.addTrack(videoTrack, localStream.current);
+            pc.current.addTrack(camTrack, camStream);
           }
         }
-        if (localVideoRef.current && localStream.current) {
-          localVideoRef.current.srcObject = localStream.current;
-        }
+
         setIsCameraOn(true);
+
+        // Update Firestore so remote peer immediately knows camera is active
+        if (callIdRef.current) {
+          const side = isCallerRef.current ? 'caller' : 'receiver';
+          await updateCall(callIdRef.current, { [`${side}Media`]: 'camera' });
+        }
       } catch (err) {
         console.error("Camera error:", err);
       }
     } else {
-      const videoTrack = localStream.current?.getVideoTracks()[0];
-      if (videoTrack) {
-        videoTrack.stop();
-        localStream.current?.removeTrack(videoTrack);
-        if (pc.current) {
-          const sender = pc.current.getSenders().find(s => s.track?.kind === 'video');
-          if (sender) sender.replaceTrack(null);
-        }
-        setIsCameraOn(false);
+      if (localCameraStream.current) {
+        localCameraStream.current.getTracks().forEach(t => t.stop());
+        localCameraStream.current = null;
+      }
+      if (localVideoRef.current) {
+        localVideoRef.current.srcObject = null;
+      }
+
+      if (videoTransceiverRef.current) {
+        await videoTransceiverRef.current.sender.replaceTrack(null);
+      } else if (pc.current) {
+        const sender = pc.current.getSenders().find(s => s.track?.kind === 'video' || (s as any).kind === 'video');
+        if (sender) await sender.replaceTrack(null);
+      }
+
+      setIsCameraOn(false);
+
+      if (callIdRef.current) {
+        const side = isCallerRef.current ? 'caller' : 'receiver';
+        await updateCall(callIdRef.current, { [`${side}Media`]: 'none' });
       }
     }
   };
@@ -576,39 +744,95 @@ export function CallOverlay() {
   const toggleScreenShare = async () => {
     if (!isScreenSharing) {
       try {
-        const stream = await (navigator.mediaDevices as any).getDisplayMedia({ video: true });
-        const screenTrack = stream.getVideoTracks()[0];
-        screenTrack.onended = () => {
-          setIsScreenSharing(false);
-          if (pc.current) {
-            const sender = pc.current.getSenders().find(s => s.track?.kind === 'video');
-            if (sender) sender.replaceTrack(null);
+        // If camera is on, stop camera before sharing screen
+        if (isCameraOn) {
+          if (localCameraStream.current) {
+            localCameraStream.current.getTracks().forEach(t => t.stop());
+            localCameraStream.current = null;
           }
+          if (localVideoRef.current) {
+            localVideoRef.current.srcObject = null;
+          }
+          setIsCameraOn(false);
+        }
+
+        const stream = await (navigator.mediaDevices as any).getDisplayMedia({ 
+          video: { cursor: 'always' }, 
+          audio: true 
+        });
+        const screenTrack = stream.getVideoTracks()[0];
+        if (!screenTrack) return;
+
+        localScreenStream.current = stream;
+
+        // Auto-handle when user stops screen share from browser floating toolbar
+        screenTrack.onended = () => {
+          stopScreenShare();
         };
-        if (pc.current) {
-          const sender = pc.current.getSenders().find(s => s.track?.kind === 'video');
+
+        // Attach local preview so YOU can see your own shared screen
+        if (localScreenRef.current) {
+          localScreenRef.current.srcObject = stream;
+          localScreenRef.current.play().catch(() => {});
+        }
+
+        // Transmit screen track to remote peer via video transceiver
+        if (videoTransceiverRef.current) {
+          await videoTransceiverRef.current.sender.replaceTrack(screenTrack);
+        } else if (pc.current) {
+          const sender = pc.current.getSenders().find(s => s.track?.kind === 'video' || (s as any).kind === 'video');
           if (sender) {
-            sender.replaceTrack(screenTrack);
-          } else if (localStream.current) {
-            pc.current.addTrack(screenTrack, localStream.current);
+            await sender.replaceTrack(screenTrack);
+          } else {
+            pc.current.addTrack(screenTrack, stream);
           }
         }
+
         setIsScreenSharing(true);
-      } catch (err) {
-        console.error("Screenshare error:", err);
+
+        // Update Firestore so remote peer immediately switches to Screen Share Stage Mode!
+        if (callIdRef.current) {
+          const side = isCallerRef.current ? 'caller' : 'receiver';
+          await updateCall(callIdRef.current, { [`${side}Media`]: 'screen' });
+        }
+      } catch (err: any) {
+        if (err.name !== 'NotAllowedError') {
+          console.error("Screenshare error:", err);
+        }
       }
     } else {
-      setIsScreenSharing(false);
-      if (pc.current) {
-        const sender = pc.current.getSenders().find(s => s.track?.kind === 'video');
-        if (sender) sender.replaceTrack(null);
-      }
-      if (isCameraOn) toggleCamera();
+      await stopScreenShare();
+    }
+  };
+
+  const stopScreenShare = async () => {
+    if (localScreenStream.current) {
+      localScreenStream.current.getTracks().forEach(t => t.stop());
+      localScreenStream.current = null;
+    }
+    if (localScreenRef.current) {
+      localScreenRef.current.srcObject = null;
+    }
+
+    if (videoTransceiverRef.current) {
+      await videoTransceiverRef.current.sender.replaceTrack(null);
+    } else if (pc.current) {
+      const sender = pc.current.getSenders().find(s => s.track?.kind === 'video' || (s as any).kind === 'video');
+      if (sender) await sender.replaceTrack(null);
+    }
+
+    setIsScreenSharing(false);
+
+    if (callIdRef.current) {
+      const side = isCallerRef.current ? 'caller' : 'receiver';
+      await updateCall(callIdRef.current, { [`${side}Media`]: 'none' });
     }
   };
 
   useEffect(() => {
-    localStream.current?.getAudioTracks().forEach(t => t.enabled = !isMuted);
+    if (localAudioTrack.current) {
+      localAudioTrack.current.enabled = !isMuted;
+    }
   }, [isMuted]);
 
   useEffect(() => {
@@ -619,89 +843,396 @@ export function CallOverlay() {
 
   if (!isCalling || !callData) return null;
 
+  // Determine active view mode:
+  // Is anyone sharing their screen?
+  const isSomeoneScreenSharing = isScreenSharing || (hasRemoteVideo && remoteMedia === 'screen');
+
   return (
     <AnimatePresence>
       <motion.div 
         initial={{ opacity: 0, y: 50 }}
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, y: 100 }}
-        className="fixed inset-0 z-[3000] bg-[#1E1F22] flex flex-col overflow-hidden font-sans"
+        className="fixed inset-0 z-[3000] bg-[#111214] flex flex-col overflow-hidden font-sans select-none"
       >
+        {/* Hidden Audio element for crystal clear remote voice */}
         <audio ref={remoteAudioRef} autoPlay playsInline />
         
-        <div className="h-12 border-b border-black/20 flex items-center justify-between px-4 bg-[#313338]">
-          <div className="flex items-center gap-2">
-            <div className={`w-2 h-2 ${callStatus === 'active' ? 'bg-[#23A559]' : 'bg-yellow-500'} rounded-full animate-pulse`} />
-            <span className="text-white font-bold text-sm tracking-tight">
-              {callStatus === 'ringing' ? 'Incoming Call...' : callStatus === 'calling' ? 'Calling...' : `In Call: ${callData.user.username}`}
-            </span>
+        {/* Top Header Bar */}
+        <div className="h-14 border-b border-white/10 flex items-center justify-between px-4 sm:px-6 bg-[#1E1F22]/95 backdrop-blur-md shrink-0">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className={`w-3 h-3 ${callStatus === 'active' ? 'bg-[#23A559]' : 'bg-amber-400'} rounded-full animate-pulse shrink-0`} />
+            <div className="min-w-0">
+              <span className="text-white font-extrabold text-sm sm:text-base tracking-tight truncate block">
+                {callStatus === 'ringing' ? 'Incoming Call...' : callStatus === 'calling' ? `Calling ${callData.user.username}...` : `In Call: ${callData.user.username}`}
+              </span>
+              <p className="text-[11px] text-zinc-400 font-medium truncate">
+                {callStatus === 'active' 
+                  ? (isSomeoneScreenSharing ? '🖥️ Live Screen Share Active' : (isCameraOn || hasRemoteVideo ? '📹 Video Call Active' : '🎙️ Voice Connected (Encrypted)'))
+                  : 'Connecting peer-to-peer...'}
+              </p>
+            </div>
           </div>
-          <div className="flex items-center gap-3">
-             <button className="text-[#B5BAC1] hover:text-white transition-colors p-1"><UserPlus size={20} /></button>
-             <button className="text-[#B5BAC1] hover:text-white transition-colors p-1"><MessageSquare size={20} /></button>
-             <button className="text-[#B5BAC1] hover:text-white transition-colors p-1"><Grid size={20} /></button>
-             <button className="text-[#B5BAC1] hover:text-white transition-colors p-1"><Settings size={20} /></button>
+
+          <div className="flex items-center gap-2 shrink-0">
+            {isSomeoneScreenSharing && (
+              <button 
+                onClick={() => setIsFullscreenStage(!isFullscreenStage)}
+                className="text-zinc-300 hover:text-white p-2 rounded-xl hover:bg-white/10 transition-colors flex items-center gap-1.5 text-xs font-bold"
+                title="Toggle Fullscreen Screen Share"
+              >
+                {isFullscreenStage ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
+                <span className="hidden sm:inline">{isFullscreenStage ? 'Exit Fullscreen' : 'Fullscreen'}</span>
+              </button>
+            )}
+
+            <button 
+              onClick={() => setShowCameraSettings(!showCameraSettings)}
+              className="text-zinc-300 hover:text-white p-2 rounded-xl hover:bg-white/10 transition-colors"
+              title="Camera & Audio Settings"
+            >
+              <Settings size={20} />
+            </button>
           </div>
         </div>
 
-        <div className="flex-1 relative bg-[#2B2D31] flex items-center justify-center p-4">
+        {/* Camera Device Settings Popover */}
+        {showCameraSettings && (
+          <div className="absolute top-16 right-4 z-50 bg-[#2B2D31] border border-white/10 p-4 rounded-2xl shadow-2xl w-80 text-white animate-in fade-in duration-150">
+            <div className="flex items-center justify-between mb-3 border-b border-white/10 pb-2">
+              <span className="text-xs font-black uppercase tracking-wider text-pink-400">Call Settings</span>
+              <button onClick={() => setShowCameraSettings(false)} className="text-zinc-400 hover:text-white">
+                <X size={16} />
+              </button>
+            </div>
+            <CameraDeviceSelector />
+          </div>
+        )}
+
+        {/* Main Content Area */}
+        <div className="flex-1 min-h-0 relative bg-[#1E1F22] flex flex-col items-center justify-center p-3 sm:p-6 overflow-hidden">
           {callStatus === 'ringing' ? (
-            <div className="flex flex-col items-center gap-8">
-              <div className="w-32 h-32 rounded-full overflow-hidden border-4 border-[#23A559] shadow-2xl relative">
-                <img src={callData.user.avatarUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${callData.user.username}`} alt="" className="w-full h-full object-cover" />
-                <div className="absolute inset-0 bg-black/20 animate-pulse" />
+            /* Incoming Ringing Screen with Big Crisp Profile Picture */
+            <div className="flex flex-col items-center gap-6 my-auto text-center animate-in zoom-in-95 duration-200">
+              <div className="relative">
+                <div className="w-36 h-36 sm:w-44 sm:h-44 rounded-full overflow-hidden border-4 border-[#23A559] shadow-[0_0_40px_rgba(35,165,89,0.4)] relative">
+                  <img 
+                    src={getAvatarUrl(callData.user)} 
+                    alt={callData.user.username} 
+                    className="w-full h-full object-cover"
+                    onError={(e) => {
+                      const fallback = `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(callData.user.username)}`;
+                      if (e.currentTarget.src !== fallback) e.currentTarget.src = fallback;
+                    }}
+                  />
+                  <div className="absolute inset-0 bg-[#23A559]/10 animate-ping rounded-full pointer-events-none" />
+                </div>
+                <div className="absolute -bottom-1 -right-1 w-9 h-9 rounded-full bg-[#23A559] border-4 border-[#1E1F22] flex items-center justify-center text-white shadow-lg animate-bounce">
+                  <Phone size={16} />
+                </div>
               </div>
-              <div className="text-center">
-                <h2 className="text-3xl font-black text-white mb-2">{callData.user.username}</h2>
-                <p className="text-[#B5BAC1] font-medium uppercase tracking-widest text-xs">Incoming Voice Call</p>
+
+              <div>
+                <h2 className="text-3xl sm:text-4xl font-black text-white mb-1.5">{callData.user.username}</h2>
+                <p className="text-zinc-400 font-bold text-sm">@{callData.user.handle} is calling you...</p>
+                <span className="inline-block mt-3 px-3.5 py-1 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 text-xs font-black uppercase tracking-widest">
+                  {callData.type === 'video' ? 'Incoming Video Call' : 'Incoming Voice Call'}
+                </span>
               </div>
-              <div className="flex gap-6">
-                <button onClick={() => handleEndCall(true)} className="w-16 h-16 bg-[#F23F42] hover:bg-[#D83C3E] rounded-full flex items-center justify-center text-white shadow-lg transition-transform active:scale-90">
-                  <X size={32} />
+
+              <div className="flex items-center gap-8 mt-2">
+                <button 
+                  onClick={() => handleEndCall(true)} 
+                  className="flex flex-col items-center gap-2 group cursor-pointer"
+                >
+                  <div className="w-16 h-16 bg-[#F23F42] hover:bg-[#D83C3E] rounded-full flex items-center justify-center text-white shadow-xl shadow-red-500/30 transition-transform group-hover:scale-110 active:scale-95">
+                    <PhoneOff size={28} />
+                  </div>
+                  <span className="text-xs font-black uppercase tracking-wider text-red-400">Decline</span>
                 </button>
-                <button onClick={acceptCall} className="w-16 h-16 bg-[#23A559] hover:bg-[#1A8344] rounded-full flex items-center justify-center text-white shadow-lg transition-transform active:scale-90">
-                  <Check size={32} />
+
+                <button 
+                  onClick={acceptCall} 
+                  className="flex flex-col items-center gap-2 group cursor-pointer"
+                >
+                  <div className="w-16 h-16 bg-[#23A559] hover:bg-[#1A8344] rounded-full flex items-center justify-center text-white shadow-xl shadow-green-500/40 transition-transform group-hover:scale-110 active:scale-95 animate-pulse">
+                    <Check size={32} />
+                  </div>
+                  <span className="text-xs font-black uppercase tracking-wider text-[#23A559]">Accept</span>
                 </button>
               </div>
             </div>
+          ) : isSomeoneScreenSharing ? (
+            /* ========================================================
+               SCREEN SHARE THEATER STAGE
+               Shown when YOU or OTHER PERSON is sharing screen.
+               Participant Profile Pictures are ALWAYS visible on top!
+               ======================================================== */
+            <div className="w-full h-full flex flex-col gap-3 max-w-7xl">
+              {/* Participant Profile Pictures Row (always visible above screen share) */}
+              <div className="flex items-center justify-center gap-4 shrink-0 pb-1">
+                {/* Local Participant Card */}
+                <div className={`flex items-center gap-2.5 px-3.5 py-2 rounded-2xl bg-[#2B2D31]/90 border transition-all ${
+                  isSpeaking ? 'border-[#23A559] shadow-[0_0_15px_rgba(35,165,89,0.35)]' : 'border-white/10'
+                }`}>
+                  <div className="relative w-8 h-8 rounded-full overflow-hidden ring-2 ring-white/20 shrink-0">
+                    {isCameraOn ? (
+                      <video ref={localVideoRef} autoPlay muted playsInline className="w-full h-full object-cover scale-x-[-1]" />
+                    ) : (
+                      <img 
+                        src={getAvatarUrl(currentUser || undefined)} 
+                        alt="You" 
+                        className="w-full h-full object-cover"
+                        onError={(e) => {
+                          const fallback = `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(currentUser?.username || 'user')}`;
+                          if (e.currentTarget.src !== fallback) e.currentTarget.src = fallback;
+                        }}
+                      />
+                    )}
+                  </div>
+                  <div className="text-left">
+                    <p className="text-xs font-bold text-white leading-tight">You {isScreenSharing && <span className="text-emerald-400 font-extrabold">(Sharing)</span>}</p>
+                    <p className="text-[10px] text-zinc-400">{isMuted ? 'Muted' : isSpeaking ? 'Speaking' : 'Connected'}</p>
+                  </div>
+                </div>
+
+                {/* Remote Participant Card */}
+                <div className={`flex items-center gap-2.5 px-3.5 py-2 rounded-2xl bg-[#2B2D31]/90 border transition-all ${
+                  remoteIsSpeaking ? 'border-[#23A559] shadow-[0_0_15px_rgba(35,165,89,0.35)]' : 'border-white/10'
+                }`}>
+                  <div className="relative w-8 h-8 rounded-full overflow-hidden ring-2 ring-white/20 shrink-0">
+                    {hasRemoteVideo && remoteMedia === 'camera' ? (
+                      <video ref={remoteVideoRef} autoPlay playsInline className="w-full h-full object-cover" />
+                    ) : (
+                      <img 
+                        src={getAvatarUrl(callData.user)} 
+                        alt={callData.user.username} 
+                        className="w-full h-full object-cover"
+                        onError={(e) => {
+                          const fallback = `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(callData.user.username)}`;
+                          if (e.currentTarget.src !== fallback) e.currentTarget.src = fallback;
+                        }}
+                      />
+                    )}
+                  </div>
+                  <div className="text-left">
+                    <p className="text-xs font-bold text-white leading-tight">{callData.user.username} {remoteMedia === 'screen' && <span className="text-cyan-400 font-extrabold">(Sharing)</span>}</p>
+                    <p className="text-[10px] text-zinc-400">{remoteIsSpeaking ? 'Speaking' : 'Connected'}</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* High-Definition Screen Share Stage */}
+              <div className="flex-1 min-h-0 w-full bg-black rounded-3xl overflow-hidden border border-white/15 relative flex items-center justify-center shadow-2xl">
+                {isScreenSharing ? (
+                  /* YOU are sharing screen */
+                  <>
+                    <video 
+                      ref={localScreenRef} 
+                      autoPlay 
+                      muted 
+                      playsInline 
+                      className="w-full h-full object-contain bg-black"
+                    />
+                    <div className="absolute top-4 left-4 z-20 flex items-center gap-2 bg-black/80 backdrop-blur-md px-4 py-2 rounded-2xl border border-emerald-500/40 text-white text-xs font-bold">
+                      <div className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
+                      <span>You are sharing your screen</span>
+                      <button 
+                        onClick={stopScreenShare}
+                        className="ml-2 px-3 py-1 bg-red-600 hover:bg-red-700 text-white rounded-xl text-[11px] font-black uppercase tracking-wider transition-colors"
+                      >
+                        Stop Sharing
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  /* REMOTE PEER is sharing screen */
+                  <>
+                    <video 
+                      ref={remoteVideoRef} 
+                      autoPlay 
+                      playsInline 
+                      className="w-full h-full object-contain bg-black"
+                    />
+                    <div className="absolute top-4 left-4 z-20 flex items-center gap-2 bg-black/80 backdrop-blur-md px-4 py-2 rounded-2xl border border-cyan-500/40 text-white text-xs font-bold">
+                      <Monitor size={16} className="text-cyan-400" />
+                      <span>{callData.user.username}'s Screen (Live)</span>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8 w-full max-w-6xl h-full items-center">
-               <div className="flex flex-col items-center gap-4 group">
-                 <div className={`w-32 h-32 md:w-48 md:h-48 rounded-full overflow-hidden bg-[#313338] relative transition-all duration-300 ${isSpeaking ? 'ring-4 ring-[#23A559] shadow-[0_0_20px_rgba(35,165,89,0.4)]' : 'ring-2 ring-transparent'}`}>
-                   {isCameraOn ? <video ref={localVideoRef} autoPlay muted playsInline className="w-full h-full object-cover scale-x-[-1]" /> : <img src={currentUser?.avatarUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${currentUser?.username}`} alt="" className="w-full h-full object-cover" />}
-                   {isMuted && <div className="absolute inset-0 bg-black/40 flex items-center justify-center"><MicOff size={32} className="text-red-500" /></div>}
-                 </div>
-                 <div className="bg-[#1E1F22] px-4 py-1.5 rounded-full text-white text-sm font-bold shadow-lg">You</div>
-               </div>
-               <div className="flex flex-col items-center gap-4 group">
-                 <div className={`w-32 h-32 md:w-48 md:h-48 rounded-full overflow-hidden bg-[#313338] relative transition-all duration-300 ${remoteIsSpeaking ? 'ring-4 ring-[#23A559] shadow-[0_0_20px_rgba(35,165,89,0.4)]' : 'ring-2 ring-transparent'}`}>
-                   <video ref={remoteVideoRef} autoPlay playsInline className="w-full h-full object-cover" />
-                   {/* Fallback image if no video stream yet */}
-                   <div className="absolute inset-0 flex items-center justify-center bg-[#313338] -z-10">
-                     <img src={callData.user.avatarUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${callData.user.username}`} alt="" className="w-full h-full object-cover" />
-                   </div>
-                 </div>
-                 <div className="bg-[#1E1F22] px-4 py-1.5 rounded-full text-white text-sm font-bold shadow-lg flex items-center gap-2">
-                   {callData.user.username}
-                   {callStatus === 'calling' && <span className="text-[10px] text-yellow-500 animate-pulse">Calling...</span>}
-                 </div>
-               </div>
+            /* ========================================================
+               CALL GRID / STAGE (CAMERA OR AUDIO PROFILE PICTURES)
+               The person's Profile Picture MUST BE SEEN with high clarity!
+               ======================================================== */
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-8 w-full max-w-5xl h-full items-center justify-center">
+              {/* Tile 1: Local User (You) */}
+              <div className="w-full h-full max-h-[440px] bg-[#2B2D31] rounded-3xl overflow-hidden border border-white/10 flex flex-col items-center justify-center p-6 relative shadow-xl group">
+                {isCameraOn ? (
+                  /* Camera active */
+                  <div className="w-full h-full relative rounded-2xl overflow-hidden bg-black flex items-center justify-center">
+                    <video 
+                      ref={localVideoRef} 
+                      autoPlay 
+                      muted 
+                      playsInline 
+                      className="w-full h-full object-cover scale-x-[-1]" 
+                    />
+                    {/* Corner Profile Picture Badge */}
+                    <div className="absolute top-3 left-3 flex items-center gap-2 bg-black/70 backdrop-blur-md px-3 py-1.5 rounded-full border border-white/20">
+                      <img 
+                        src={getAvatarUrl(currentUser || undefined)} 
+                        alt="You" 
+                        className="w-6 h-6 rounded-full object-cover" 
+                      />
+                      <span className="text-white text-xs font-bold">You (Camera On)</span>
+                    </div>
+                  </div>
+                ) : (
+                  /* Camera off: Profile Picture PROMINENTLY DISPLAYED */
+                  <div className="flex flex-col items-center gap-4 my-auto text-center">
+                    <div className={`relative w-32 h-32 sm:w-40 sm:h-40 rounded-full overflow-hidden bg-[#313338] transition-all duration-300 ${
+                      isSpeaking ? 'ring-4 ring-[#23A559] shadow-[0_0_30px_rgba(35,165,89,0.5)] scale-105' : 'ring-2 ring-white/10'
+                    }`}>
+                      <img 
+                        src={getAvatarUrl(currentUser || undefined)} 
+                        alt={currentUser?.username || 'You'} 
+                        className="w-full h-full object-cover"
+                        onError={(e) => {
+                          const fallback = `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(currentUser?.username || 'user')}`;
+                          if (e.currentTarget.src !== fallback) e.currentTarget.src = fallback;
+                        }}
+                      />
+                      {isMuted && (
+                        <div className="absolute inset-0 bg-black/50 backdrop-blur-[2px] flex items-center justify-center">
+                          <MicOff size={36} className="text-red-500 drop-shadow" />
+                        </div>
+                      )}
+                    </div>
+                    <div>
+                      <h3 className="text-xl sm:text-2xl font-black text-white">{currentUser?.username || 'You'}</h3>
+                      <p className="text-xs text-zinc-400 font-semibold mt-0.5">@{currentUser?.handle || 'me'}</p>
+                      <span className="inline-block mt-2 px-3 py-0.5 rounded-full bg-white/5 border border-white/10 text-[10px] font-black uppercase tracking-wider text-zinc-300">
+                        {isMuted ? 'Muted' : isSpeaking ? 'Speaking...' : 'Ready'}
+                      </span>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Tile 2: Remote User (Other Person) */}
+              <div className="w-full h-full max-h-[440px] bg-[#2B2D31] rounded-3xl overflow-hidden border border-white/10 flex flex-col items-center justify-center p-6 relative shadow-xl group">
+                {hasRemoteVideo && remoteMedia === 'camera' ? (
+                  /* Remote Camera active */
+                  <div className="w-full h-full relative rounded-2xl overflow-hidden bg-black flex items-center justify-center">
+                    <video 
+                      ref={remoteVideoRef} 
+                      autoPlay 
+                      playsInline 
+                      className="w-full h-full object-cover" 
+                    />
+                    {/* Corner Profile Picture Badge for other person */}
+                    <div className="absolute top-3 left-3 flex items-center gap-2 bg-black/70 backdrop-blur-md px-3 py-1.5 rounded-full border border-white/20">
+                      <img 
+                        src={getAvatarUrl(callData.user)} 
+                        alt={callData.user.username} 
+                        className="w-6 h-6 rounded-full object-cover" 
+                      />
+                      <span className="text-white text-xs font-bold">{callData.user.username}</span>
+                    </div>
+                  </div>
+                ) : (
+                  /* Remote Camera off: Profile Picture PROMINENTLY DISPLAYED */
+                  <div className="flex flex-col items-center gap-4 my-auto text-center">
+                    <div className={`relative w-32 h-32 sm:w-40 sm:h-40 rounded-full overflow-hidden bg-[#313338] transition-all duration-300 ${
+                      remoteIsSpeaking ? 'ring-4 ring-[#23A559] shadow-[0_0_30px_rgba(35,165,89,0.5)] scale-105' : 'ring-2 ring-white/10'
+                    }`}>
+                      <img 
+                        src={getAvatarUrl(callData.user)} 
+                        alt={callData.user.username} 
+                        className="w-full h-full object-cover"
+                        onError={(e) => {
+                          const fallback = `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(callData.user.username)}`;
+                          if (e.currentTarget.src !== fallback) e.currentTarget.src = fallback;
+                        }}
+                      />
+                      {callStatus === 'calling' && (
+                        <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
+                          <div className="w-8 h-8 border-3 border-amber-400 border-t-transparent rounded-full animate-spin" />
+                        </div>
+                      )}
+                    </div>
+                    <div>
+                      <h3 className="text-xl sm:text-2xl font-black text-white">{callData.user.username}</h3>
+                      <p className="text-xs text-zinc-400 font-semibold mt-0.5">@{callData.user.handle}</p>
+                      <span className={`inline-block mt-2 px-3 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
+                        callStatus === 'calling'
+                          ? 'bg-amber-400/20 text-amber-300 border border-amber-400/30 animate-pulse'
+                          : remoteIsSpeaking
+                          ? 'bg-[#23A559]/20 text-[#23A559] border border-[#23A559]/40'
+                          : 'bg-white/5 text-zinc-300 border border-white/10'
+                      }`}>
+                        {callStatus === 'calling' ? 'Ringing...' : remoteIsSpeaking ? 'Speaking...' : 'Connected'}
+                      </span>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           )}
         </div>
 
-        <div className="h-24 bg-[#1E1F22] flex items-center justify-center px-4 gap-4">
-           <div className="flex items-center gap-2 bg-[#2B2D31] p-1.5 rounded-2xl shadow-xl">
-             <button onClick={() => setIsMuted(!isMuted)} className={`p-3 rounded-xl transition-all ${isMuted ? 'bg-[#F23F42] text-white' : 'text-[#DBDEE1] hover:bg-[#35373C]'}`}>{isMuted ? <MicOff size={24} /> : <Mic size={24} />}</button>
-             <button onClick={() => setIsDeafened(!isDeafened)} className={`p-3 rounded-xl transition-all ${isDeafened ? 'bg-[#F23F42] text-white' : 'text-[#DBDEE1] hover:bg-[#35373C]'}`}>{isDeafened ? <VolumeX size={24} /> : <Volume2 size={24} />}</button>
-           </div>
-           <div className="flex items-center gap-2 bg-[#2B2D31] p-1.5 rounded-2xl shadow-xl">
-             <button onClick={toggleCamera} className={`p-3 rounded-xl transition-all ${isCameraOn ? 'bg-white text-black' : 'text-[#DBDEE1] hover:bg-[#35373C]'}`}>{isCameraOn ? <VideoOff size={24} /> : <Camera size={24} />}</button>
-             <button onClick={toggleScreenShare} className={`p-3 rounded-xl transition-all ${isScreenSharing ? 'bg-[#23A559] text-white' : 'text-[#DBDEE1] hover:bg-[#35373C]'}`}><Monitor size={24} /></button>
-           </div>
-           <button onClick={() => handleEndCall(true)} className="w-14 h-14 bg-[#F23F42] hover:bg-[#D83C3E] rounded-2xl flex items-center justify-center text-white shadow-xl shadow-red-500/20 transition-all hover:scale-105 active:scale-95 ml-4"><PhoneOff size={28} /></button>
+        {/* Bottom Control Bar */}
+        <div className="h-24 bg-[#1E1F22] border-t border-white/10 flex items-center justify-center px-4 gap-3 sm:gap-4 shrink-0">
+          {/* Audio controls */}
+          <div className="flex items-center gap-2 bg-[#2B2D31] p-1.5 rounded-2xl shadow-xl border border-white/5">
+            <button 
+              onClick={() => setIsMuted(!isMuted)} 
+              className={`p-3 rounded-xl transition-all cursor-pointer ${isMuted ? 'bg-[#F23F42] text-white shadow-lg shadow-red-500/30' : 'text-[#DBDEE1] hover:bg-[#35373C] hover:text-white'}`}
+              title={isMuted ? "Unmute Microphone" : "Mute Microphone"}
+            >
+              {isMuted ? <MicOff size={22} /> : <Mic size={22} />}
+            </button>
+            <button 
+              onClick={() => setIsDeafened(!isDeafened)} 
+              className={`p-3 rounded-xl transition-all cursor-pointer ${isDeafened ? 'bg-[#F23F42] text-white shadow-lg shadow-red-500/30' : 'text-[#DBDEE1] hover:bg-[#35373C] hover:text-white'}`}
+              title={isDeafened ? "Undeafen Audio" : "Deafen Audio"}
+            >
+              {isDeafened ? <VolumeX size={22} /> : <Volume2 size={22} />}
+            </button>
+          </div>
+
+          {/* Video & Screen sharing controls */}
+          <div className="flex items-center gap-2 bg-[#2B2D31] p-1.5 rounded-2xl shadow-xl border border-white/5">
+            <button 
+              onClick={toggleCamera} 
+              className={`p-3 rounded-xl transition-all cursor-pointer ${isCameraOn ? 'bg-white text-black shadow-lg' : 'text-[#DBDEE1] hover:bg-[#35373C] hover:text-white'}`}
+              title={isCameraOn ? "Turn Camera Off" : "Turn Camera On"}
+            >
+              {isCameraOn ? <VideoOff size={22} /> : <Camera size={22} />}
+            </button>
+            <button 
+              onClick={toggleScreenShare} 
+              className={`p-3 rounded-xl transition-all cursor-pointer ${isScreenSharing ? 'bg-[#23A559] text-white shadow-lg shadow-green-500/40 animate-pulse' : 'text-[#DBDEE1] hover:bg-[#35373C] hover:text-white'}`}
+              title={isScreenSharing ? "Stop Sharing Screen" : "Share Screen"}
+            >
+              <Monitor size={22} />
+            </button>
+          </div>
+
+          {/* End Call Button */}
+          <button 
+            onClick={() => handleEndCall(true)} 
+            className="w-13 h-13 sm:w-14 sm:h-14 bg-[#F23F42] hover:bg-[#D83C3E] rounded-2xl flex items-center justify-center text-white shadow-xl shadow-red-500/25 transition-all hover:scale-105 active:scale-95 cursor-pointer ml-2"
+            title="End Call"
+          >
+            <PhoneOff size={26} />
+          </button>
         </div>
       </motion.div>
     </AnimatePresence>
   );
 }
+

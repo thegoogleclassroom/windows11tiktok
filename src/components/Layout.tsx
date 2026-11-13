@@ -428,7 +428,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
       )}
 
       {/* Main Body: Desktop Sidebar + Content */}
-      <div className="flex-1 min-h-0 h-full flex overflow-hidden">
+      <div className="flex-1 min-h-0 flex overflow-hidden">
         {/* Sidebar - Desktop */}
         {!isIntro && (
           <motion.div 

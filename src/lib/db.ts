@@ -984,7 +984,7 @@ export const subscribeToAppSettings = (callback: (settings: any) => void) => {
 export const clearDb = async () => {};
 
 // WebRTC Signaling Helpers
-export const createCall = async (callId: string, callerId: string, receiverId: string, offer: any) => {
+export const createCall = async (callId: string, callerId: string, receiverId: string, offer: any, extraData: Record<string, any> = {}) => {
   try {
     const docRef = doc(db, 'calls', callId);
     await setDoc(docRef, {
@@ -993,7 +993,8 @@ export const createCall = async (callId: string, callerId: string, receiverId: s
       receiverId,
       status: 'initiating',
       offer,
-      timestamp: Date.now()
+      timestamp: Date.now(),
+      ...extraData
     });
   } catch (err) {
     handleFirestoreError(err, OperationType.CREATE, `calls/${callId}`);

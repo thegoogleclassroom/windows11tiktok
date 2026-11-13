@@ -285,13 +285,20 @@ export type Call = {
   callerId: string;
   receiverId: string;
   type: 'voice' | 'video';
-  status: 'offering' | 'answered' | 'declined' | 'ended' | 'active';
-  createdAt: number;
-  updatedAt: number;
+  status: 'offering' | 'answered' | 'declined' | 'ended' | 'active' | 'initiating';
+  createdAt?: number;
+  updatedAt?: number;
+  timestamp?: number;
   offer?: any;
   answer?: any;
   callerCandidates?: any[];
   receiverCandidates?: any[];
+  callerMedia?: 'none' | 'camera' | 'screen';
+  receiverMedia?: 'none' | 'camera' | 'screen';
+  callerName?: string;
+  receiverName?: string;
+  callerAvatar?: string;
+  receiverAvatar?: string;
 };
 
 export type GameData = {

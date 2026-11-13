@@ -254,12 +254,16 @@ Return ONLY a valid JSON array of these objects. No markdown formatting, no extr
     }
   });
 
+  let vite: Awaited<ReturnType<typeof createViteServer>> | null = null;
+
   // Vite middleware for development
   if (process.env['NODE_ENV'] !== "production") {
-    const vite = await createViteServer({
+    vite = await createViteServer({
       server: { 
         middlewareMode: true,
-        hmr: false
+        hmr: false,
+        ws: false,
+        watch: null
       },
       appType: "spa",
     });
@@ -267,7 +271,7 @@ Return ONLY a valid JSON array of these objects. No markdown formatting, no extr
   } else {
     const distPath = path.join(process.cwd(), 'dist');
     app.use(express.static(distPath));
-    app.get('*all', (req, res) => {
+    app.get('*', (req, res) => {
       res.sendFile(path.join(distPath, 'index.html'));
     });
   }
@@ -277,26 +281,43 @@ Return ONLY a valid JSON array of these objects. No markdown formatting, no extr
     console.log(`Server running on http://0.0.0.0:${PORT}`);
   });
 
+  let listenRetries = 0;
   server.on('error', (err: any) => {
-    if (err.code === 'EADDRINUSE') {
-      console.warn(`Port ${PORT} in use, retrying shortly...`);
+    if (err.code === 'EADDRINUSE' && listenRetries < 10) {
+      listenRetries++;
+      console.warn(`Port ${PORT} in use, retrying (${listenRetries}/10)...`);
       setTimeout(() => {
         try {
           server.close();
         } catch {}
         server.listen(PORT, "0.0.0.0");
-      }, 1000);
+      }, 500);
     } else {
       console.error('Server error:', err);
+      process.exit(1);
     }
   });
 
-  process.on('SIGTERM', () => {
-    server.close(() => process.exit(0));
-  });
-  process.on('SIGINT', () => {
-    server.close(() => process.exit(0));
-  });
+  const shutdown = async () => {
+    const forceTimer = setTimeout(() => process.exit(0), 500);
+    forceTimer.unref();
+    try {
+      await vite?.close();
+    } catch {}
+    try {
+      server.closeAllConnections?.();
+    } catch {}
+    server.close(() => {
+      clearTimeout(forceTimer);
+      process.exit(0);
+    });
+  };
+
+  process.on('SIGTERM', shutdown);
+  process.on('SIGINT', shutdown);
 }
 
-startServer();
+startServer().catch((err) => {
+  console.error('Failed to start server:', err);
+  process.exit(1);
+});

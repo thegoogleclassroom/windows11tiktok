@@ -47,8 +47,10 @@ export function Chat() {
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
-    if (!currentUser) return;
-    
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages.length]);
+
+  useEffect(() => {
     const loadChat = async () => {
       const users = await getUsers();
       setAllUsers(users);
@@ -83,10 +85,16 @@ export function Chat() {
       } else {
         const user = users.find(u => u.handle === handle);
         if (user) {
-          chatMsgs = allMsgs.filter(m => 
-            (m.fromUserId === currentUser.id && m.toUserId === user.id) || 
-            (m.fromUserId === user.id && m.toUserId === currentUser.id)
-          );
+          if (currentUser) {
+            chatMsgs = allMsgs.filter(m => 
+              (m.fromUserId === currentUser.id && m.toUserId === user.id) || 
+              (m.fromUserId === user.id && m.toUserId === currentUser.id)
+            );
+          } else {
+            chatMsgs = allMsgs.filter(m => 
+              m.toUserId === user.id || m.fromUserId === user.id
+            );
+          }
         }
       }
       
@@ -385,10 +393,17 @@ export function Chat() {
     }
   };
 
-  if (!currentUser || (!otherUser && !group)) return null;
+  if (!otherUser && !group) {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center p-8 text-center text-zinc-500">
+        <Loader2 className="animate-spin text-pink-600 mb-2" size={32} />
+        <p className="text-sm font-semibold">Loading conversation...</p>
+      </div>
+    );
+  }
 
   return (
-    <div className="w-full max-w-2xl mx-auto border-x border-zinc-200 dark:border-zinc-800 h-full max-h-full min-h-0 flex-1 flex flex-col bg-white dark:bg-zinc-950 relative overflow-hidden">
+    <div className="w-full max-w-2xl mx-auto border-x border-zinc-200 dark:border-zinc-800 h-full min-h-0 flex-1 flex flex-col bg-white dark:bg-zinc-950 relative overflow-hidden pb-16 md:pb-0">
       {/* Header */}
       <div className="p-4 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between bg-white/80 dark:bg-zinc-950/80 backdrop-blur-md shrink-0 z-10">
         <div className="flex items-center gap-4">
@@ -581,13 +596,35 @@ export function Chat() {
       </div>
       
       {/* Input */}
-      <div className="shrink-0 sticky bottom-0 p-3 sm:p-4 border-t border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 z-20 w-full shadow-lg">
+      <div className="shrink-0 p-3 sm:p-4 border-t border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 z-20 w-full shadow-lg">
+        {!currentUser && (
+          <div className="mb-2 p-2 rounded-xl bg-pink-500/10 border border-pink-500/30 text-pink-600 dark:text-pink-400 text-xs font-bold flex items-center justify-between">
+            <span>You're browsing as a guest. Log in to send messages!</span>
+            <button
+              type="button"
+              onClick={() => setShowAuthModal(true)}
+              className="px-3 py-1 bg-pink-600 hover:bg-pink-700 text-white rounded-lg text-xs font-black transition-colors cursor-pointer"
+            >
+              Log in
+            </button>
+          </div>
+        )}
         <form onSubmit={handleSend} className="flex items-center gap-2 relative">
           <input type="file" ref={fileInputRef} onChange={handleFileChange} accept="image/*,video/*" className="hidden" />
-          <button type="button" onClick={() => fileInputRef.current?.click()} className="p-2.5 text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 transition-colors">
+          <button 
+            type="button" 
+            onClick={() => currentUser ? fileInputRef.current?.click() : setShowAuthModal(true)} 
+            className="p-2.5 text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 transition-colors"
+            title="Attach file"
+          >
             <Paperclip size={20} />
           </button>
-          <button type="button" onClick={() => setShowCamera(true)} className="p-2.5 text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 transition-colors mr-1">
+          <button 
+            type="button" 
+            onClick={() => currentUser ? setShowCamera(true) : setShowAuthModal(true)} 
+            className="p-2.5 text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 transition-colors mr-1"
+            title="Take photo"
+          >
             <Camera size={20} />
           </button>
           
@@ -596,7 +633,12 @@ export function Chat() {
               <Square size={20} className="fill-current" />
             </button>
           ) : (
-            <button type="button" onClick={startAudioRecording} className="p-2.5 text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 transition-colors mr-1" title="Record audio">
+            <button 
+              type="button" 
+              onClick={() => currentUser ? startAudioRecording() : setShowAuthModal(true)} 
+              className="p-2.5 text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 transition-colors mr-1" 
+              title="Record audio"
+            >
               <Mic size={20} />
             </button>
           )}
@@ -612,16 +654,23 @@ export function Chat() {
             <input 
               type="text" 
               value={newMessage}
+              onFocus={() => { if (!currentUser) setShowAuthModal(true); }}
               onChange={e => handleInputChange(e.target.value)}
-              placeholder={currentUser ? "Send a message..." : "Type a message (or login to chat)..."}
+              placeholder={currentUser ? "Send a message..." : "Click here to log in and chat..."}
               className="flex-1 bg-zinc-100 dark:bg-zinc-900 rounded-full px-4 py-2.5 outline-none focus:ring-2 focus:ring-pink-500 transition-all text-zinc-900 dark:text-white placeholder:text-zinc-400 dark:placeholder:text-zinc-500 select-text cursor-text"
               disabled={isUploading}
             />
           )}
           <button 
             type="submit"
-            disabled={(!newMessage.trim() && !isUploading) || isUploading}
-            className="p-2.5 bg-pink-600 text-white rounded-full hover:bg-pink-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center w-10 h-10 shrink-0"
+            onClick={(e) => {
+              if (!currentUser) {
+                e.preventDefault();
+                setShowAuthModal(true);
+              }
+            }}
+            disabled={isUploading || (Boolean(currentUser) && !newMessage.trim())}
+            className="p-2.5 bg-pink-600 text-white rounded-full hover:bg-pink-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center w-10 h-10 shrink-0 cursor-pointer"
           >
             {isUploading ? <Loader2 size={20} className="animate-spin" /> : <Send size={20} className="ml-0.5" />}
           </button>
