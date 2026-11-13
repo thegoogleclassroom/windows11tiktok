@@ -34,6 +34,8 @@ type AppState = {
   setCallData: (data: { user: User; type: 'voice' | 'video' } | null) => void;
   selectedCameraId: string;
   setSelectedCameraId: (id: string) => void;
+  listenAlongHostId: string | null;
+  setListenAlongHostId: (id: string | null) => void;
 };
 
 const StoreContext = createContext<AppState | null>(null);
@@ -51,6 +53,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [activeStory, setActiveStory] = useState<{ userId: string; user: User } | null>(null);
   const [isCalling, setIsCalling] = useState(false);
   const [callData, setCallData] = useState<{ user: User; type: 'voice' | 'video' } | null>(null);
+  const [listenAlongHostId, setListenAlongHostId] = useState<string | null>(null);
   const [selectedCameraId, setSelectedCameraIdState] = useState<string>(() => {
     return localStorage.getItem('preferredCameraId') || '';
   });
@@ -152,7 +155,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       callData,
       setCallData,
       selectedCameraId,
-      setSelectedCameraId
+      setSelectedCameraId,
+      listenAlongHostId,
+      setListenAlongHostId
     }}>
       {children}
     </StoreContext.Provider>

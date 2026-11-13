@@ -190,6 +190,20 @@ export function GamesApps() {
         <iframe 
           id="game-iframe"
           src={activeGameUrl} 
+          onLoad={() => {
+            if (activeGameUrl.includes('CentralMusic.html')) {
+              try {
+                const raw = localStorage.getItem('aura_listen_along_target');
+                if (raw) {
+                  const target = JSON.parse(raw);
+                  const iframe = document.getElementById('game-iframe') as HTMLIFrameElement | null;
+                  if (iframe?.contentWindow && target && (!target.syncedAt || Date.now() - target.syncedAt < 180000)) {
+                    iframe.contentWindow.postMessage({ type: 'CENTRALMUSIC_SYNC', payload: target }, '*');
+                  }
+                }
+              } catch {}
+            }
+          }}
           className="w-full h-full border-none"
           allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
           allowFullScreen

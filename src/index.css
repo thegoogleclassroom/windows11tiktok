@@ -54,3 +54,14 @@
 .animate-float-note-2 {
   animation: float-note 2.6s ease-out infinite 1.3s;
 }
+
+@keyframes spin-sideways {
+  0% { transform: perspective(220px) rotateY(0deg); }
+  100% { transform: perspective(220px) rotateY(360deg); }
+}
+
+.animate-spin-sideways {
+  animation: spin-sideways 2.8s linear infinite;
+  transform-style: preserve-3d;
+}
+

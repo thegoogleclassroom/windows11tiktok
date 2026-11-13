@@ -27,6 +27,19 @@ export type User = {
   isSystemWiped?: boolean;
   themeStyle?: string;
   acceptedReportsCount?: number;
+  dndEnabled?: boolean;
+  notificationSound?: 'chime' | 'pop' | 'ping' | 'arcade' | 'mute';
+  listeningState?: {
+    title: string;
+    artist: string;
+    artwork: string;
+    streamUrl: string;
+    isPlaying: boolean;
+    currentTime: number;
+    duration: number;
+    updatedAt: number;
+    trackSeq?: number;
+  } | null;
   banStatus?: {
     type: 'temp' | 'perm' | 'hwid';
     until?: number; // timestamp for temp ban
@@ -223,6 +236,13 @@ export type Message = {
   sharedVideoId?: string;
   read?: boolean; // unread indicator for DM sidebar counter
   seenBy?: string[]; // Array of user IDs who have seen the message
+  reactions?: Record<string, string[]>; // emoji -> array of userIds
+  replyTo?: {
+    id: string;
+    senderName: string;
+    content: string;
+    hasMedia?: boolean;
+  };
 };
 
 export type GroupChat = {
@@ -237,6 +257,7 @@ export type GroupChat = {
   voiceChannel?: {
     active: boolean;
     participants: string[];
+    mutedUsers?: string[];
   };
 };
 

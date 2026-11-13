@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { getStories, saveStories, deleteStoryFromDB, getUsers } from '../lib/db';
+import { getStories, markStoryViewed, deleteStoryFromDB, getUsers } from '../lib/db';
 import { Story, User } from '../types';
 import { useAppStore } from '../store';
 import { isFriend } from '../lib/utils';
@@ -270,13 +270,7 @@ function StoryViewerModal({ groups, currentGroupIndex, initialStoryIndex, onClos
     if (!(currentStory.viewers || []).includes(currentUser.id)) {
       const updatedViewers = [...(currentStory.viewers || []), currentUser.id];
       currentStory.viewers = updatedViewers;
-      getStories().then(allStories => {
-        const idx = allStories.findIndex(s => s.id === currentStory.id);
-        if (idx !== -1) {
-          allStories[idx].viewers = updatedViewers;
-          saveStories(allStories);
-        }
-      });
+      markStoryViewed(currentStory.id, currentUser.id);
     }
   }, [currentStory?.id, currentUser?.id]);
 

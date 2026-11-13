@@ -1,8 +1,8 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { 
   getVideos, getUsers, saveUsers, saveVideos, incrementVideoView, updateVideo,
-  ensureVideoInDB, getMessages, saveMessages, getNotifications, 
-  saveNotifications, subscribeToVideo, deleteVideoFromDB, getAppSettings, subscribeToAppSettings,
+  ensureVideoInDB, addMessage, addNotifications,
+  subscribeToVideo, deleteVideoFromDB, getAppSettings, subscribeToAppSettings,
   updateUser, createWatchParty, joinWatchParty, subscribeToWatchParty, updateWatchPartyState,
   doc, getDoc, db
 } from '../lib/db';
@@ -916,18 +916,16 @@ export const VideoItem: React.FC<{
 
   const sendVideo = async (recipient: User) => {
     if (!currentUser) return;
-    const messages = await getMessages();
-    await saveMessages([...messages, {
+    await addMessage({
       id: `msg_${Date.now()}`,
       fromUserId: currentUser.id,
       toUserId: recipient.id,
       content: `Shared a video with you: ${video.description}`,
       sharedVideoId: video.id,
       timestamp: Date.now()
-    }]);
-    const notifications = await getNotifications();
-    await saveNotifications([...notifications, {
-      id: `notif_${Date.now()}`,
+    });
+    await addNotifications([{
+      id: `notif_${Date.now()}_${recipient.id}`,
       userId: recipient.id,
       type: 'message',
       fromUserId: currentUser.id,

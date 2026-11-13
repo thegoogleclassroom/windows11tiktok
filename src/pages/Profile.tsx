@@ -4,16 +4,17 @@ import { motion, AnimatePresence } from 'motion/react';
 import Cropper from 'react-easy-crop';
 import { 
   getUsers, getVideos, saveUsers, deleteVideoFromDB, getAppeals, saveAppeals, 
-  updateUser, submitVerificationRequest 
+  updateUser, submitVerificationRequest, subscribeToUserDoc 
 } from '../lib/db';
 import { User, Video, Appeal } from '../types';
 import { useAppStore } from '../store';
-import { isFriend } from '../lib/utils';
+import { isFriend, playNotificationSound } from '../lib/utils';
 import { compressImage } from '../lib/imageUtils';
 import { 
   Settings, Play, Edit3, Grid, Heart, X, Upload, Bookmark, Flag, 
   Hammer, Wrench, Check, Trash2, HelpCircle, Users, Lock, Image as ImageIcon, LogOut,
-  AlertTriangle, Send, ShieldCheck, Trophy, Phone, Video as VideoIcon, Eye, EyeOff, Key, User as UserIcon, Sparkles, FileX
+  AlertTriangle, Send, ShieldCheck, Trophy, Phone, Video as VideoIcon, Eye, EyeOff, Key, User as UserIcon, Sparkles, FileX,
+  Disc, Music, Headphones, Bell, BellOff, Volume2
 } from 'lucide-react';
 import { VideoItem } from './Home';
 import { HolographicBadge, CentralProBadge } from '../components/UIPolish';
@@ -44,7 +45,11 @@ const getCroppedImg = async (imageSrc: string, pixelCrop: any): Promise<string> 
 
 export function Profile() {
   const { handle } = useParams<{ handle: string }>();
-  const { currentUser, setCurrentUser, setIsCalling, setCallData } = useAppStore();
+  const { 
+    currentUser, setCurrentUser, setIsCalling, setCallData,
+    setActiveGameUrl, setActiveGameTitle, setIsGameActive,
+    setMiniPlayerActive, setMiniPlayerTitle, setListenAlongHostId
+  } = useAppStore();
   const navigate = useNavigate();
   const [profileUser, setProfileUser] = useState<User | null>(null);
   const [videos, setVideos] = useState<Video[]>([]);
@@ -61,6 +66,8 @@ export function Profile() {
   const [isSubmittingAppeal, setIsSubmittingAppeal] = useState(false);
   const [myAppeals, setMyAppeals] = useState<Appeal[]>([]);
   const [removedVideos, setRemovedVideos] = useState<Video[]>([]);
+  const [showListeningModal, setShowListeningModal] = useState(false);
+  const [nowTick, setNowTick] = useState(Date.now());
 
   const areFriends = isFriend(currentUser, profileUser);
   const isOwnProfile = currentUser?.id === profileUser?.id;
@@ -111,6 +118,25 @@ export function Profile() {
   useEffect(() => {
     loadProfile();
   }, [handle, currentUser, showEdit]);
+
+  // Real-time subscription to profileUser for live listening indicator updates
+  useEffect(() => {
+    if (!profileUser?.id) return;
+    const unsub = subscribeToUserDoc(profileUser.id, (updated) => {
+      if (updated) {
+        setProfileUser(prev => prev ? { ...prev, ...updated } : updated);
+      }
+    });
+    return () => unsub();
+  }, [profileUser?.id]);
+
+  // Smooth live timeline ticker while listening modal is open
+  useEffect(() => {
+    if (!showListeningModal) return;
+    setNowTick(Date.now());
+    const id = setInterval(() => setNowTick(Date.now()), 250);
+    return () => clearInterval(id);
+  }, [showListeningModal]);
 
   const handleFollow = async () => {
     if (!currentUser || !profileUser) return;
@@ -279,7 +305,7 @@ export function Profile() {
                 </div>
               )}
             </div>
-            <div className="flex items-center justify-center md:justify-start gap-2 mb-4">
+            <div className="flex items-center justify-center md:justify-start gap-2 mb-3 flex-wrap">
               <p className="text-zinc-500 font-semibold">@{profileUser.handle}</p>
               {profileUser.currentGame && profileUser.showActivityStatus !== false && (
                 <span className="text-[10px] font-bold text-green-500 uppercase tracking-widest bg-green-500/10 px-2 py-0.5 rounded-full border border-green-500/20">
@@ -287,6 +313,67 @@ export function Profile() {
                 </span>
               )}
             </div>
+
+            {(() => {
+              const ls = profileUser.listeningState;
+              const isListeningVisible = Boolean(
+                ls &&
+                ls.title &&
+                profileUser.showActivityStatus !== false &&
+                !profileUser.isGhostMode &&
+                !profileUser.isSystemWiped &&
+                (ls.isPlaying ? Date.now() - ls.updatedAt < 180000 : Date.now() - ls.updatedAt < 45000)
+              );
+              if (!isListeningVisible || !ls) return null;
+              return (
+                <div className="flex justify-center md:justify-start mb-4">
+                  <button
+                    type="button"
+                    onClick={() => setShowListeningModal(true)}
+                    className="group relative inline-flex items-center gap-3 px-4 py-2 rounded-[999px] bg-gradient-to-r from-cyan-950/90 via-slate-900/95 to-blue-950/90 border border-cyan-400/50 hover:border-cyan-300 shadow-[0_6px_25px_rgba(0,242,254,0.22)] hover:shadow-[0_8px_32px_rgba(0,242,254,0.38)] transition-all cursor-pointer overflow-hidden max-w-full"
+                    title="Click to view live track timeline & Listen Along"
+                  >
+                    {/* Curved SVG Arc Borders Surrounding Song Name */}
+                    <svg className="pointer-events-none absolute inset-0 w-full h-full opacity-75" preserveAspectRatio="none" viewBox="0 0 260 56">
+                      <path d="M 18 5 Q 130 -2 242 5" fill="none" stroke="url(#musicArcGrad)" strokeWidth="2" strokeLinecap="round" />
+                      <path d="M 18 51 Q 130 58 242 51" fill="none" stroke="url(#musicArcGrad)" strokeWidth="2" strokeLinecap="round" />
+                      <defs>
+                        <linearGradient id="musicArcGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+                          <stop offset="0%" stopColor="#00f2fe" stopOpacity="0.2" />
+                          <stop offset="50%" stopColor="#38bdf8" stopOpacity="1" />
+                          <stop offset="100%" stopColor="#818cf8" stopOpacity="0.2" />
+                        </linearGradient>
+                      </defs>
+                    </svg>
+
+                    {/* Sideways Rotating 3D Disc */}
+                    <div className={`relative w-9 h-9 rounded-full shrink-0 flex items-center justify-center ${ls.isPlaying ? 'animate-spin-sideways' : ''}`}>
+                      <div className="w-9 h-9 rounded-full bg-gradient-to-br from-zinc-900 via-cyan-900 to-black border-2 border-cyan-400 shadow-[0_0_12px_rgba(0,242,254,0.55)] flex items-center justify-center overflow-hidden">
+                        {ls.artwork ? (
+                          <img src={ls.artwork} alt="" className="w-full h-full object-cover opacity-85" />
+                        ) : (
+                          <Disc size={20} className="text-cyan-400" />
+                        )}
+                        <div className="absolute w-2.5 h-2.5 rounded-full bg-zinc-950 border border-cyan-300 shadow-inner" />
+                      </div>
+                    </div>
+
+                    {/* Curved-UI Surrounded Song Name */}
+                    <div className="min-w-0 text-left pr-1 relative z-10">
+                      <div className="flex items-center gap-1.5">
+                        <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping shrink-0" />
+                        <span className="text-[9px] font-black uppercase tracking-widest text-cyan-300">
+                          CentralMusic {ls.isPlaying ? '• Live' : '• Paused'}
+                        </span>
+                      </div>
+                      <p className="text-xs sm:text-sm font-extrabold text-white truncate max-w-[200px] sm:max-w-[260px] group-hover:text-cyan-200 transition-colors">
+                        {ls.title}
+                      </p>
+                    </div>
+                  </button>
+                </div>
+              );
+            })()}
             
             <div className="flex items-center justify-center md:justify-start gap-6 mb-4">
               <div className="text-center">
@@ -615,6 +702,125 @@ export function Profile() {
       {showThemePreview && currentUser && (
         <ThemePreviewModal user={currentUser} onClose={() => setShowThemePreview(false)} />
       )}
+
+      {/* Live CentralMusic Detail & Listen Along Modal */}
+      <AnimatePresence>
+        {showListeningModal && profileUser?.listeningState && (() => {
+          const ls = profileUser.listeningState!;
+          const elapsed = ls.isPlaying ? Math.max(0, (nowTick - ls.updatedAt) / 1000) : 0;
+          const duration = ls.duration || 0;
+          const liveTime = duration > 0 ? Math.min(duration, (ls.currentTime || 0) + elapsed) : (ls.currentTime || 0) + elapsed;
+          const pct = duration > 0 ? Math.min(100, Math.max(0, (liveTime / duration) * 100)) : 0;
+          const fmt = (sec: number) => {
+            if (!isFinite(sec) || sec < 0) return '0:00';
+            const m = Math.floor(sec / 60);
+            const s = Math.floor(sec % 60);
+            return `${m}:${s < 10 ? '0' : ''}${s}`;
+          };
+
+          const handleListenAlong = () => {
+            const syncTarget = {
+              ...ls,
+              hostHandle: profileUser.handle,
+              syncedAt: Date.now()
+            };
+            try {
+              localStorage.setItem('aura_listen_along_target', JSON.stringify(syncTarget));
+              localStorage.setItem('aura_player_command', JSON.stringify({
+                action: 'syncTrack',
+                ...syncTarget,
+                timestamp: Date.now()
+              }));
+              localStorage.setItem('aura_in_music_app', 'true');
+            } catch {}
+
+            setListenAlongHostId(profileUser.id);
+            setActiveGameUrl('Apps/CentralMusic.html');
+            setActiveGameTitle('Central Music');
+            setMiniPlayerTitle('Central Music');
+            setMiniPlayerActive(false);
+            setIsGameActive(true);
+            setShowListeningModal(false);
+            navigate('/games-apps');
+          };
+
+          return (
+            <div className="fixed inset-0 z-[1200] flex items-center justify-center bg-black/75 backdrop-blur-md p-4">
+              <motion.div
+                initial={{ scale: 0.9, opacity: 0, y: 12 }}
+                animate={{ scale: 1, opacity: 1, y: 0 }}
+                exit={{ scale: 0.9, opacity: 0, y: 12 }}
+                className="w-full max-w-sm bg-zinc-950 border border-cyan-500/40 rounded-[2rem] p-6 text-white shadow-[0_20px_60px_rgba(0,242,254,0.25)] relative overflow-hidden"
+              >
+                {ls.artwork && (
+                  <div
+                    className="absolute inset-0 bg-cover bg-center opacity-20 blur-2xl pointer-events-none"
+                    style={{ backgroundImage: `url(${ls.artwork})` }}
+                  />
+                )}
+                <button
+                  onClick={() => setShowListeningModal(false)}
+                  className="absolute top-4 right-4 z-20 p-2 rounded-full bg-white/10 hover:bg-white/20 text-zinc-300 hover:text-white transition-colors"
+                >
+                  <X size={18} />
+                </button>
+
+                <div className="relative z-10 flex flex-col items-center text-center">
+                  <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-cyan-500/15 border border-cyan-400/30 text-cyan-300 text-[10px] font-black uppercase tracking-widest mb-4">
+                    <Headphones size={12} />
+                    <span>@{profileUser.handle} is listening</span>
+                  </div>
+
+                  {/* Song Icon / Artwork + Sideways Spinning Accent */}
+                  <div className="relative w-32 h-32 rounded-3xl overflow-hidden border-2 border-cyan-400/60 shadow-[0_0_30px_rgba(0,242,254,0.3)] mb-4 bg-zinc-900 flex items-center justify-center">
+                    {ls.artwork ? (
+                      <img src={ls.artwork} alt={ls.title} className="w-full h-full object-cover" />
+                    ) : (
+                      <Music size={48} className="text-cyan-400" />
+                    )}
+                    <div className={`absolute bottom-2 right-2 w-8 h-8 rounded-full bg-zinc-950/90 border border-cyan-400 flex items-center justify-center shadow-lg ${ls.isPlaying ? 'animate-spin-sideways' : ''}`}>
+                      <Disc size={18} className="text-cyan-400" />
+                    </div>
+                  </div>
+
+                  {/* Song Name & Author */}
+                  <h3 className="text-lg font-black tracking-tight text-white line-clamp-2 mb-1">{ls.title}</h3>
+                  <p className="text-xs font-bold text-cyan-400 mb-5">By {ls.artist || 'Unknown Artist'}</p>
+
+                  {/* Exact Timeline Progress */}
+                  <div className="w-full bg-white/5 border border-white/10 rounded-2xl p-3.5 mb-5">
+                    <div className="w-full h-2 bg-zinc-800 rounded-full overflow-hidden mb-2">
+                      <div
+                        className="h-full bg-gradient-to-r from-cyan-400 to-blue-500 rounded-full transition-all duration-200"
+                        style={{ width: `${pct}%` }}
+                      />
+                    </div>
+                    <div className="flex justify-between items-center text-[11px] font-mono font-bold text-zinc-300">
+                      <span className="text-cyan-300">{fmt(liveTime)}</span>
+                      <span className="text-[10px] uppercase tracking-wider text-zinc-400">
+                        {ls.isPlaying ? 'Exact Live Timeline' : 'Paused'}
+                      </span>
+                      <span>{duration > 0 ? fmt(duration) : '--:--'}</span>
+                    </div>
+                  </div>
+
+                  {/* Listen Along Button */}
+                  <button
+                    onClick={handleListenAlong}
+                    className="w-full py-3.5 px-5 rounded-2xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-black text-xs uppercase tracking-widest shadow-lg shadow-cyan-500/30 transition-all hover:scale-[1.02] active:scale-95 flex items-center justify-center gap-2 cursor-pointer"
+                  >
+                    <Headphones size={16} />
+                    <span>Listen Along</span>
+                  </button>
+                  <p className="text-[10px] text-zinc-400 mt-2.5">
+                    Opens CentralMusic synced to their exact timeline and auto-plays new tracks when theirs changes.
+                  </p>
+                </div>
+              </motion.div>
+            </div>
+          );
+        })()}
+      </AnimatePresence>
     </div>
   );
 }
@@ -784,6 +990,10 @@ function EditProfileModal({ user, onClose }: { user: User, onClose: () => void }
   const [themeStyle, setThemeStyle] = useState(user.themeStyle || 'cyber');
   const [profileBannerUrl, setProfileBannerUrl] = useState(user.profileBannerUrl || '');
   const [displayNameFont, setDisplayNameFont] = useState(user.displayNameFont || '');
+  const [dndEnabled, setDndEnabled] = useState<boolean>(user.dndEnabled ?? (localStorage.getItem('ct_dnd_enabled') === 'true'));
+  const [notificationSound, setNotificationSound] = useState<'chime' | 'pop' | 'ping' | 'arcade' | 'mute'>(
+    user.notificationSound || (localStorage.getItem('ct_notif_sound') as any) || 'chime'
+  );
   const [showLockInfo, setShowLockInfo] = useState(false);
 
   const isEligible = user.isVerified || user.role === 'staff' || user.role === 'owner' || (user.badges || []).includes('Tradient');
@@ -821,9 +1031,13 @@ function EditProfileModal({ user, onClose }: { user: User, onClose: () => void }
         isGhostMode,
         themeStyle,
         profileBannerUrl,
-        displayNameFont
+        displayNameFont,
+        dndEnabled,
+        notificationSound
       };
       
+      localStorage.setItem('ct_dnd_enabled', String(dndEnabled));
+      localStorage.setItem('ct_notif_sound', notificationSound);
       await updateUser(user.id, updateData);
       setCurrentUser({ ...user, ...updateData });
       onClose();
@@ -1153,6 +1367,56 @@ function EditProfileModal({ user, onClose }: { user: User, onClose: () => void }
                 >
                   <div className={`absolute top-1 left-1 bg-white w-4 h-4 rounded-full transition-transform ${isGhostMode ? 'translate-x-6' : 'translate-x-0'}`} />
                 </button>
+              </div>
+
+              <div className="pt-4 border-t border-zinc-200 dark:border-zinc-800 space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="font-semibold flex items-center gap-2">
+                      {dndEnabled ? <BellOff size={16} className="text-amber-500" /> : <Bell size={16} className="text-pink-500" />}
+                      Do Not Disturb (DND)
+                    </p>
+                    <p className="text-sm text-zinc-500">Silence popups, sounds & browser alerts.</p>
+                  </div>
+                  <button 
+                    type="button"
+                    onClick={() => setDndEnabled(!dndEnabled)}
+                    className={`w-12 h-6 rounded-full transition-colors relative ${dndEnabled ? 'bg-amber-500' : 'bg-zinc-300 dark:bg-zinc-700'}`}
+                  >
+                    <div className={`absolute top-1 left-1 bg-white w-4 h-4 rounded-full transition-transform ${dndEnabled ? 'translate-x-6' : 'translate-x-0'}`} />
+                  </button>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-semibold mb-2 flex items-center gap-2">
+                    <Volume2 size={15} className="text-pink-500" /> Notification Sound
+                  </label>
+                  <div className="grid grid-cols-3 gap-2">
+                    {([
+                      { id: 'chime', label: 'Chime' },
+                      { id: 'pop', label: 'Pop' },
+                      { id: 'ping', label: 'Ping' },
+                      { id: 'arcade', label: 'Arcade' },
+                      { id: 'mute', label: 'Muted' },
+                    ] as const).map(opt => (
+                      <button
+                        key={opt.id}
+                        type="button"
+                        onClick={() => {
+                          setNotificationSound(opt.id);
+                          playNotificationSound(opt.id);
+                        }}
+                        className={`py-2 px-3 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
+                          notificationSound === opt.id
+                            ? 'border-pink-600 bg-pink-500/15 text-pink-500'
+                            : 'border-zinc-200 dark:border-zinc-800 hover:border-zinc-400 text-zinc-600 dark:text-zinc-300'
+                        }`}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
               </div>
 
               <div className="pt-4 border-t border-zinc-200 dark:border-zinc-800">

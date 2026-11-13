@@ -3,7 +3,7 @@ import { useAppStore } from '../store';
 import { 
   getFAQCategories, saveFAQCategories, getFAQPosts, saveFAQPosts, deleteFAQPostFromDB, 
   getUsers, announceForumPostToEveryone, getForumEditRequests, saveForumEditRequests, 
-  deleteForumEditRequestFromDB 
+  deleteForumEditRequestFromDB, isQuotaBlocked
 } from '../lib/db';
 import { FAQCategory, FAQPost, FAQReply, User, ForumEditRequest } from '../types';
 import { 
@@ -129,7 +129,9 @@ export function DiscordForum() {
     let cats = await getFAQCategories();
     if (cats.length === 0) {
       cats = DEFAULT_CATEGORIES;
-      await saveFAQCategories(cats);
+      if (!isQuotaBlocked()) {
+        await saveFAQCategories(cats);
+      }
     }
     setCategories(cats);
     if (!newCategory && cats.length > 0) {
@@ -195,7 +197,9 @@ export function DiscordForum() {
         }
       ];
       allPosts = initialPosts;
-      await saveFAQPosts(initialPosts);
+      if (!isQuotaBlocked()) {
+        await saveFAQPosts(initialPosts);
+      }
     }
     setPosts(allPosts);
   };

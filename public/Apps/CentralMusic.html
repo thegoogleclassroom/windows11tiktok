@@ -170,6 +170,11 @@
     </aside>
 
     <main>
+        <div id="listen-along-pill" style="display:none; position:absolute; top:20px; left:50%; transform:translateX(-50%); background:rgba(0,242,254,0.14); border:1px solid rgba(0,242,254,0.5); color:#00f2fe; padding:8px 18px; border-radius:999px; font-size:0.75rem; font-weight:800; letter-spacing:0.5px; z-index:30; backdrop-filter:blur(12px); align-items:center; gap:10px; box-shadow:0 8px 25px rgba(0,242,254,0.2);">
+            <span style="width:8px; height:8px; border-radius:50%; background:#00f2fe; display:inline-block;"></span>
+            <span id="listen-along-text">LISTENING ALONG</span>
+            <button id="tap-sync-audio-btn" onclick="retrySyncPlay()" style="display:none; background:#00f2fe; color:#050b14; border:none; border-radius:999px; padding:4px 10px; font-weight:800; font-size:0.7rem; cursor:pointer;">Tap to Hear Audio</button>
+        </div>
         <div id="art-zone">
             <div style="width:100%; height:100%; display:flex; align-items:center; justify-content:center; background:rgba(0,242,254,0.05); color:var(--accent); font-weight:800; font-size:1.5rem; text-align:center; padding:20px;">Central Music</div>
         </div>
@@ -440,10 +445,103 @@
                 title: currentTrackData.song || currentTrackData.title,
                 artist: currentTrackData.artist,
                 artwork: currentTrackData.artwork,
+                streamUrl: audio.src || currentTrackData.streamUrl || '',
                 isPlaying: !audio.paused,
-                currentTime: audio.currentTime,
-                duration: audio.duration
+                currentTime: audio.currentTime || 0,
+                duration: audio.duration || 0,
+                updatedAt: Date.now()
             }));
+        }
+
+        let pendingSyncTargetTime = null;
+        let isApplyingSync = false;
+
+        function retrySyncPlay() {
+            audio.play().then(() => {
+                document.getElementById('play-btn').innerText = '⏸';
+                document.getElementById('tap-sync-audio-btn').style.display = 'none';
+                broadcastState();
+            }).catch(() => {});
+        }
+
+        function applySyncCommand(cmd) {
+            if (!cmd || !cmd.title) return;
+            const pill = document.getElementById('listen-along-pill');
+            const tapBtn = document.getElementById('tap-sync-audio-btn');
+            if (pill) {
+                pill.style.display = 'flex';
+                const label = document.getElementById('listen-along-text');
+                if (label) label.innerText = cmd.hostHandle ? `LISTENING ALONG WITH @${cmd.hostHandle}` : 'LISTENING ALONG LIVE';
+            }
+
+            const elapsed = cmd.isPlaying && cmd.updatedAt ? Math.max(0, (Date.now() - cmd.updatedAt) / 1000) : 0;
+            let targetTime = (Number(cmd.currentTime) || 0) + elapsed;
+            if (cmd.duration && targetTime > cmd.duration) targetTime = Math.max(0, cmd.duration - 0.5);
+
+            const currentTitle = currentTrackData ? (currentTrackData.song || currentTrackData.title) : '';
+            const trackChanged = !currentTrackData || (cmd.streamUrl && currentTrackData.streamUrl !== cmd.streamUrl) || currentTitle !== cmd.title;
+
+            isApplyingSync = true;
+            if (trackChanged && cmd.streamUrl) {
+                currentTrackData = {
+                    song: cmd.title,
+                    title: cmd.title,
+                    artist: cmd.artist || 'Unknown Artist',
+                    artwork: cmd.artwork || '',
+                    streamUrl: cmd.streamUrl
+                };
+                const existingIdx = queue.findIndex(q => (q.streamUrl && q.streamUrl === cmd.streamUrl) || q.title === cmd.title);
+                if (existingIdx !== -1) {
+                    currentIndex = existingIdx;
+                } else {
+                    queue.push({ title: cmd.title, artist: cmd.artist || '', artwork: cmd.artwork || '', streamUrl: cmd.streamUrl });
+                    currentIndex = queue.length - 1;
+                    save();
+                }
+                audio.src = cmd.streamUrl;
+                document.getElementById('art-zone').innerHTML = `<img src="${cmd.artwork || ''}">`;
+                bgBlur.style.backgroundImage = `url(${cmd.artwork || ''})`;
+                document.getElementById('track-title').innerText = cmd.title;
+                document.getElementById('track-artist').innerText = cmd.artist || '';
+                updateQueueUI();
+                pendingSyncTargetTime = targetTime;
+                audio.addEventListener('loadedmetadata', function onMeta() {
+                    audio.removeEventListener('loadedmetadata', onMeta);
+                    if (pendingSyncTargetTime !== null) {
+                        try { audio.currentTime = Math.min(pendingSyncTargetTime, audio.duration || pendingSyncTargetTime); } catch {}
+                        pendingSyncTargetTime = null;
+                    }
+                    if (cmd.isPlaying) {
+                        audio.play().then(() => {
+                            document.getElementById('play-btn').innerText = '⏸';
+                            if (tapBtn) tapBtn.style.display = 'none';
+                        }).catch(() => {
+                            if (tapBtn) tapBtn.style.display = 'inline-block';
+                        });
+                    } else {
+                        audio.pause();
+                        document.getElementById('play-btn').innerText = '▶';
+                    }
+                    isApplyingSync = false;
+                }, { once: true });
+                if (isLyricMode) fetchLyrics(cmd.artist || '', cmd.title);
+            } else {
+                if (Math.abs((audio.currentTime || 0) - targetTime) > 1.8) {
+                    try { audio.currentTime = targetTime; } catch {}
+                }
+                if (cmd.isPlaying && audio.paused) {
+                    audio.play().then(() => {
+                        document.getElementById('play-btn').innerText = '⏸';
+                        if (tapBtn) tapBtn.style.display = 'none';
+                    }).catch(() => {
+                        if (tapBtn) tapBtn.style.display = 'inline-block';
+                    });
+                } else if (!cmd.isPlaying && !audio.paused) {
+                    audio.pause();
+                    document.getElementById('play-btn').innerText = '▶';
+                }
+                isApplyingSync = false;
+            }
         }
 
         window.addEventListener('storage', (e) => {
@@ -454,16 +552,37 @@
                     if (cmd.action === 'next') changeTrack(1);
                     if (cmd.action === 'prev') changeTrack(-1);
                     if (cmd.action === 'seek') audio.currentTime = cmd.time;
+                    if (cmd.action === 'syncTrack') applySyncCommand(cmd);
+                } catch(err) {}
+            } else if (e.key === 'aura_listen_along_target' && e.newValue) {
+                try {
+                    applySyncCommand(JSON.parse(e.newValue));
                 } catch(err) {}
             }
         });
+
+        window.addEventListener('message', (event) => {
+            if (event.data && event.data.type === 'CENTRALMUSIC_SYNC' && event.data.payload) {
+                applySyncCommand(event.data.payload);
+            }
+        });
+
+        audio.onplay = () => {
+            document.getElementById('play-btn').innerText = '⏸';
+            broadcastState();
+        };
+        audio.onpause = () => {
+            document.getElementById('play-btn').innerText = '▶';
+            broadcastState();
+        };
+        audio.onseeked = () => broadcastState();
 
         audio.ontimeupdate = () => {
             const b = document.getElementById('seek-bar');
             b.max = audio.duration || 0; b.value = audio.currentTime;
             document.getElementById('time-cur').innerText = formatTime(audio.currentTime);
             document.getElementById('time-dur').innerText = formatTime(audio.duration);
-            broadcastState();
+            if (!isApplyingSync) broadcastState();
 
             if (isLyricMode && lyricsData.length > 0) {
                 const idx = lyricsData.findIndex((l, i) => audio.currentTime >= l.time && (!lyricsData[i+1] || audio.currentTime < lyricsData[i+1].time));
@@ -482,7 +601,14 @@
             if(!audio.src) return;
             audio.paused ? (audio.play(), document.getElementById('play-btn').innerText = '⏸') : (audio.pause(), document.getElementById('play-btn').innerText = '▶'); 
         }
-        function changeTrack(dir) { playTrack(currentIndex + dir); }
+        function changeTrack(dir) {
+            const nextIdx = currentIndex + dir;
+            if (nextIdx >= 0 && nextIdx < queue.length) {
+                playTrack(nextIdx);
+            } else {
+                broadcastState();
+            }
+        }
         function formatTime(s) { if(isNaN(s)) return "0:00"; const m=Math.floor(s/60), sc=Math.floor(s%60); return `${m}:${sc<10?'0':''}${sc}`; }
         function showOverlay(id) { document.getElementById(id).style.display = 'flex'; }
         function hideOverlays() { document.querySelectorAll('.overlay').forEach(o => o.style.display = 'none'); }
@@ -505,6 +631,16 @@
         document.getElementById('seek-bar').oninput = (e) => audio.currentTime = e.target.value;
         audio.onended = () => changeTrack(1);
         updateQueueUI();
+
+        try {
+            const initialTarget = localStorage.getItem('aura_listen_along_target');
+            if (initialTarget) {
+                const parsedTarget = JSON.parse(initialTarget);
+                if (parsedTarget && (!parsedTarget.syncedAt || Date.now() - parsedTarget.syncedAt < 180000)) {
+                    applySyncCommand(parsedTarget);
+                }
+            }
+        } catch (err) {}
     </script>
 </body>
 </html>

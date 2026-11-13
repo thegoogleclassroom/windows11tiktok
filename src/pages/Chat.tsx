@@ -2,19 +2,30 @@ import React, { useEffect, useState, useRef } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useAppStore } from '../store';
 import { 
-  getMessages, getUsers, saveMessages, getNotifications, 
-  saveNotifications, getGroupChats, deleteMessage, updateTypingStatus, 
+  getMessages, getUsers, addMessage, addNotifications, markMessagesSeen,
+  getGroupChats, deleteMessage, updateTypingStatus, 
   getUserStatuses, createWatchParty, subscribeToWatchPartiesByGroup,
-  joinWatchParty, removeGroupMember, toggleGroupAdmin, addGroupMember
+  joinWatchParty, removeGroupMember, toggleGroupAdmin, addGroupMember,
+  toggleMessageReaction, subscribeToGroupChat, joinVoiceChannel, leaveVoiceChannel,
+  toggleVoiceChannelMute, subscribeToGroupVoiceSignals, sendGroupVoiceOffer,
+  sendGroupVoiceAnswer, addGroupVoiceCandidate, cleanupGroupVoiceSignals
 } from '../lib/db';
 import { Message, User, GroupChat, UserStatus, WatchParty } from '../types';
 import { 
-  ArrowLeft, Send, Phone, Paperclip, Camera, X, Loader2, 
-  Mic, Square, Trash2, CheckCheck, Users, Info, Tv,
-  ShieldCheck, UserPlus, UserMinus, Shield
+  ArrowLeft, Send, Phone, PhoneOff, Paperclip, Camera, X, Loader2, 
+  Mic, MicOff, Volume2, VolumeX, Square, Trash2, CheckCheck, Users, Info, Tv,
+  ShieldCheck, UserPlus, UserMinus, Shield, Reply, SmilePlus
 } from 'lucide-react';
 import { HolographicBadge } from '../components/UIPolish';
 import { CameraDeviceSelector } from '../components/CameraDeviceSelector';
+
+const QUICK_REACTIONS = ['❤️', '😂', '👍', '🔥', '😮', '😢'];
+const VOICE_ICE_SERVERS = {
+  iceServers: [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' }
+  ]
+};
 
 export function Chat() {
   const { handle, groupId } = useParams<{ handle?: string, groupId?: string }>();
@@ -37,6 +48,18 @@ export function Chat() {
   const [activeGroupParties, setActiveGroupParties] = useState<WatchParty[]>([]);
   const [showAddMember, setShowAddMember] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+
+  // #1 Reactions & Reply state
+  const [replyingTo, setReplyingTo] = useState<Message['replyTo'] | null>(null);
+  const [openReactionPickerId, setOpenReactionPickerId] = useState<string | null>(null);
+  const [highlightedMsgId, setHighlightedMsgId] = useState<string | null>(null);
+
+  // #6 Group Voice Room state
+  const [inVoiceRoom, setInVoiceRoom] = useState(false);
+  const [isMicMuted, setIsMicMuted] = useState(false);
+  const [isDeafened, setIsDeafened] = useState(false);
+  const [speakingUsers, setSpeakingUsers] = useState<string[]>([]);
+  const [remoteAudioStreams, setRemoteAudioStreams] = useState<Record<string, MediaStream>>({});
   
   const bottomRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -45,6 +68,15 @@ export function Chat() {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const markedSeenIdsRef = useRef<Set<string>>(new Set());
+  const isLoadingChatRef = useRef(false);
+  const lastTypingSentAtRef = useRef<number>(0);
+  const isTypingActiveRef = useRef(false);
+  const localVoiceStreamRef = useRef<MediaStream | null>(null);
+  const peerConnectionsRef = useRef<Map<string, RTCPeerConnection>>(new Map());
+  const appliedSignalsRef = useRef<Map<string, string>>(new Map());
+  const appliedCandidatesRef = useRef<Set<string>>(new Set());
+  const inVoiceRoomRef = useRef(false);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -52,8 +84,11 @@ export function Chat() {
 
   useEffect(() => {
     const loadChat = async () => {
-      const users = await getUsers();
-      setAllUsers(users);
+      if (isLoadingChatRef.current) return;
+      isLoadingChatRef.current = true;
+      try {
+        const users = await getUsers();
+        setAllUsers(users);
       
       const currentHandle = handle;
       const currentGroupId = groupId;
@@ -101,57 +136,271 @@ export function Chat() {
       chatMsgs.sort((a, b) => a.timestamp - b.timestamp);
       setMessages(chatMsgs);
 
-      // Read Receipts Logic
-      let msgsToUpdate = false;
-      const updatedAllMsgs = allMsgs.map(m => {
-        const isCurrentChat = groupId ? m.groupId === groupId : (m.fromUserId === otherUser?.id && m.toUserId === currentUser.id);
-        if (isCurrentChat && m.fromUserId !== currentUser.id) {
-          if (!(m.seenBy || []).includes(currentUser.id)) {
-            msgsToUpdate = true;
-            return { 
-              ...m, 
-              read: true, 
-              seenBy: [...(m.seenBy || []), currentUser.id] 
-            };
+      // Read Receipts Logic (only mark each unread message once per session)
+      if (currentUser) {
+        const targetOtherId = otherUser?.id || users.find(u => u.handle === handle)?.id;
+        const unreadIds: string[] = [];
+        for (const m of allMsgs) {
+          const isCurrentChat = groupId
+            ? m.groupId === groupId
+            : (m.fromUserId === targetOtherId && m.toUserId === currentUser.id);
+          if (
+            isCurrentChat &&
+            m.fromUserId !== currentUser.id &&
+            !(m.seenBy || []).includes(currentUser.id) &&
+            !markedSeenIdsRef.current.has(m.id)
+          ) {
+            unreadIds.push(m.id);
+            markedSeenIdsRef.current.add(m.id);
           }
         }
-        return m;
-      });
 
-      if (msgsToUpdate) {
-        await saveMessages(updatedAllMsgs);
+        if (unreadIds.length > 0) {
+          await markMessagesSeen(unreadIds, currentUser.id);
+        }
+
+        // Typing Status Logic
+        const statuses = await getUserStatuses();
+        const currentTypingIn = groupId || targetOtherId;
+        const activeTyping = statuses
+          .filter(s => 
+            s.userId !== currentUser.id && 
+            s.isTyping && 
+            s.typingIn === currentTypingIn && 
+            Date.now() - s.lastActive < 4000
+          )
+          .map(s => users.find(u => u.id === s.userId)?.username || 'Someone');
+        
+        setTypingUsers(activeTyping);
       }
-
-      // Typing Status Logic
-      const statuses = await getUserStatuses();
-      const currentTypingIn = groupId || otherUser?.id;
-      const activeTyping = statuses
-        .filter(s => 
-          s.userId !== currentUser.id && 
-          s.isTyping && 
-          s.typingIn === currentTypingIn && 
-          Date.now() - s.lastActive < 4000
-        )
-        .map(s => users.find(u => u.id === s.userId)?.username || 'Someone');
-      
-      setTypingUsers(activeTyping);
+      } finally {
+        isLoadingChatRef.current = false;
+      }
     };
     
     loadChat();
-    const interval = setInterval(loadChat, 2000);
+    const interval = setInterval(loadChat, 3500);
     return () => clearInterval(interval);
-  }, [handle, groupId, currentUser, navigate, otherUser?.id]);
+  }, [handle, groupId, currentUser?.id, navigate, otherUser?.id]);
 
   useEffect(() => {
     if (!groupId) {
       setActiveGroupParties([]);
       return;
     }
-    const unsubscribe = subscribeToWatchPartiesByGroup(groupId, (parties) => {
+    const unsubParties = subscribeToWatchPartiesByGroup(groupId, (parties) => {
       setActiveGroupParties(parties);
     });
-    return () => unsubscribe();
+    const unsubGroup = subscribeToGroupChat(groupId, (updatedGroup) => {
+      if (updatedGroup) setGroup(updatedGroup);
+    });
+    return () => {
+      unsubParties();
+      unsubGroup();
+    };
   }, [groupId]);
+
+  const handleLeaveVoiceRoom = async () => {
+    inVoiceRoomRef.current = false;
+    setInVoiceRoom(false);
+    setIsMicMuted(false);
+    setIsDeafened(false);
+    setSpeakingUsers([]);
+    setRemoteAudioStreams({});
+    peerConnectionsRef.current.forEach(pc => {
+      try { pc.close(); } catch {}
+    });
+    peerConnectionsRef.current.clear();
+    appliedSignalsRef.current.clear();
+    appliedCandidatesRef.current.clear();
+    if (localVoiceStreamRef.current) {
+      localVoiceStreamRef.current.getTracks().forEach(t => t.stop());
+      localVoiceStreamRef.current = null;
+    }
+    if (groupId && currentUser) {
+      await leaveVoiceChannel(groupId, currentUser.id);
+      await cleanupGroupVoiceSignals(groupId, currentUser.id);
+    }
+  };
+
+  const handleJoinVoiceRoom = async () => {
+    if (!group || !currentUser) {
+      if (!currentUser) setShowAuthModal(true);
+      return;
+    }
+    if (inVoiceRoomRef.current) return;
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      localVoiceStreamRef.current = stream;
+      inVoiceRoomRef.current = true;
+      setInVoiceRoom(true);
+      setIsMicMuted(false);
+      await joinVoiceChannel(group.id, currentUser.id);
+    } catch {
+      alert('Microphone permission is required to join the Voice Room.');
+    }
+  };
+
+  const handleToggleVoiceMic = async () => {
+    const nextMuted = !isMicMuted;
+    setIsMicMuted(nextMuted);
+    if (localVoiceStreamRef.current) {
+      localVoiceStreamRef.current.getAudioTracks().forEach(t => {
+        t.enabled = !nextMuted;
+      });
+    }
+    if (groupId && currentUser) {
+      await toggleVoiceChannelMute(groupId, currentUser.id, nextMuted);
+    }
+  };
+
+  // Cleanup voice room on unmount or switching chats
+  useEffect(() => {
+    return () => {
+      if (inVoiceRoomRef.current && groupId && currentUser) {
+        inVoiceRoomRef.current = false;
+        peerConnectionsRef.current.forEach(pc => { try { pc.close(); } catch {} });
+        peerConnectionsRef.current.clear();
+        if (localVoiceStreamRef.current) {
+          localVoiceStreamRef.current.getTracks().forEach(t => t.stop());
+          localVoiceStreamRef.current = null;
+        }
+        leaveVoiceChannel(groupId, currentUser.id);
+        cleanupGroupVoiceSignals(groupId, currentUser.id);
+      }
+    };
+  }, [groupId, currentUser?.id]);
+
+  // Local microphone speaking ring detection
+  useEffect(() => {
+    if (!inVoiceRoom || !localVoiceStreamRef.current || !currentUser) return;
+    let ctx: AudioContext | null = null;
+    let rafId = 0;
+    try {
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      ctx = new AudioCtx();
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 64;
+      const source = ctx.createMediaStreamSource(localVoiceStreamRef.current);
+      source.connect(analyser);
+      const data = new Uint8Array(analyser.frequencyBinCount);
+      const checkLevel = () => {
+        rafId = requestAnimationFrame(checkLevel);
+        analyser.getByteFrequencyData(data);
+        let sum = 0;
+        for (let i = 0; i < data.length; i++) sum += data[i];
+        const avg = sum / data.length;
+        const speaking = avg > 16 && !isMicMuted;
+        setSpeakingUsers(prev => {
+          const has = prev.includes(currentUser.id);
+          if (speaking && !has) return [...prev, currentUser.id];
+          if (!speaking && has) return prev.filter(id => id !== currentUser.id);
+          return prev;
+        });
+      };
+      checkLevel();
+    } catch {}
+    return () => {
+      cancelAnimationFrame(rafId);
+      if (ctx) { try { ctx.close(); } catch {} }
+    };
+  }, [inVoiceRoom, isMicMuted, currentUser?.id]);
+
+  // Multi-person WebRTC mesh connections for active Voice Room participants
+  useEffect(() => {
+    if (!inVoiceRoom || !groupId || !currentUser || !localVoiceStreamRef.current) return;
+    const myId = currentUser.id;
+    const participants = (group?.voiceChannel?.participants || []).filter(id => id !== myId);
+
+    const getOrCreatePeer = (peerId: string) => {
+      let pc = peerConnectionsRef.current.get(peerId);
+      if (pc) return pc;
+      pc = new RTCPeerConnection(VOICE_ICE_SERVERS);
+      localVoiceStreamRef.current?.getTracks().forEach(track => {
+        pc!.addTrack(track, localVoiceStreamRef.current!);
+      });
+      pc.ontrack = (event) => {
+        const remoteStream = event.streams[0];
+        if (remoteStream) {
+          setRemoteAudioStreams(prev => ({ ...prev, [peerId]: remoteStream }));
+        }
+      };
+      pc.onicecandidate = (event) => {
+        if (event.candidate) {
+          const isOfferer = myId < peerId;
+          const offererId = isOfferer ? myId : peerId;
+          const answererId = isOfferer ? peerId : myId;
+          addGroupVoiceCandidate(groupId, offererId, answererId, isOfferer ? 'caller' : 'receiver', event.candidate.toJSON());
+        }
+      };
+      peerConnectionsRef.current.set(peerId, pc);
+      return pc;
+    };
+
+    // Initiate offers to peers where myId < peerId
+    participants.forEach(async (peerId) => {
+      const pc = getOrCreatePeer(peerId);
+      if (myId < peerId && pc.signalingState === 'stable' && !appliedSignalsRef.current.get(`offer_${peerId}`)) {
+        appliedSignalsRef.current.set(`offer_${peerId}`, 'sent');
+        try {
+          const offer = await pc.createOffer();
+          await pc.setLocalDescription(offer);
+          await sendGroupVoiceOffer(groupId, myId, peerId, { type: offer.type, sdp: offer.sdp });
+        } catch {}
+      }
+    });
+
+    // Close peers who left
+    (Array.from(peerConnectionsRef.current.keys()) as string[]).forEach((peerId: string) => {
+      if (!participants.includes(peerId)) {
+        try { peerConnectionsRef.current.get(peerId)?.close(); } catch {}
+        peerConnectionsRef.current.delete(peerId);
+        setRemoteAudioStreams(prev => {
+          const next = { ...prev };
+          delete next[peerId];
+          return next;
+        });
+      }
+    });
+
+    const unsubSignals = subscribeToGroupVoiceSignals(groupId, myId, async (signals) => {
+      for (const sig of signals) {
+        const peerId = sig.offererId === myId ? sig.answererId : sig.offererId;
+        if (!peerId || peerId === myId) continue;
+        const pc = getOrCreatePeer(peerId);
+
+        if (sig.answererId === myId && sig.offer && !appliedSignalsRef.current.get(`remote_offer_${sig.id}`)) {
+          appliedSignalsRef.current.set(`remote_offer_${sig.id}`, sig.offer.sdp || '1');
+          try {
+            await pc.setRemoteDescription(new RTCSessionDescription(sig.offer));
+            const answer = await pc.createAnswer();
+            await pc.setLocalDescription(answer);
+            await sendGroupVoiceAnswer(groupId, sig.offererId, myId, { type: answer.type, sdp: answer.sdp });
+          } catch {}
+        }
+
+        if (sig.offererId === myId && sig.answer && !appliedSignalsRef.current.get(`remote_answer_${sig.id}`)) {
+          appliedSignalsRef.current.set(`remote_answer_${sig.id}`, sig.answer.sdp || '1');
+          try {
+            if (pc.signalingState === 'have-local-offer') {
+              await pc.setRemoteDescription(new RTCSessionDescription(sig.answer));
+            }
+          } catch {}
+        }
+
+        const incomingCandidates = sig.offererId === myId ? (sig.receiverCandidates || []) : (sig.callerCandidates || []);
+        for (const cand of incomingCandidates) {
+          const key = `${sig.id}_${JSON.stringify(cand)}`;
+          if (!appliedCandidatesRef.current.has(key) && pc.remoteDescription) {
+            appliedCandidatesRef.current.add(key);
+            try { await pc.addIceCandidate(new RTCIceCandidate(cand)); } catch {}
+          }
+        }
+      }
+    });
+
+    return () => unsubSignals();
+  }, [inVoiceRoom, groupId, currentUser?.id, JSON.stringify(group?.voiceChannel?.participants || [])]);
 
   const handleStartParty = async () => {
     if (!groupId || !currentUser) return;
@@ -210,14 +459,13 @@ export function Chat() {
       videoUrl,
       audioUrl,
       timestamp: Date.now(),
-      seenBy: [currentUser.id]
+      seenBy: [currentUser.id],
+      ...(replyingTo && !isSystem ? { replyTo: replyingTo } : {})
     };
     
-    const allMsgs = await getMessages();
-    await saveMessages([...allMsgs, msg]);
+    await addMessage(msg);
     
     if (!isSystem) {
-      const notifications = await getNotifications();
       const targetUserIds = group ? (group.members || []).filter(id => id !== currentUser.id) : [otherUser!.id];
       
       const newNotifs = targetUserIds.map(id => ({
@@ -229,18 +477,62 @@ export function Chat() {
         timestamp: Date.now()
       }));
       
-      await saveNotifications([...notifications, ...newNotifs]);
+      await addNotifications(newNotifs);
     }
     
     setMessages(prev => [...prev, msg]);
     setNewMessage('');
+    setReplyingTo(null);
     updateTyping(false);
+  };
+
+  const handleToggleReaction = async (messageId: string, emoji: string) => {
+    if (!currentUser) {
+      setShowAuthModal(true);
+      return;
+    }
+    setOpenReactionPickerId(null);
+    setMessages(prev => prev.map(m => {
+      if (m.id !== messageId) return m;
+      const current = { ...(m.reactions || {}) };
+      const list = [...(current[emoji] || [])];
+      if (list.includes(currentUser.id)) {
+        const filtered = list.filter(id => id !== currentUser.id);
+        if (filtered.length === 0) delete current[emoji];
+        else current[emoji] = filtered;
+      } else {
+        current[emoji] = [...list, currentUser.id];
+      }
+      return { ...m, reactions: current };
+    }));
+    await toggleMessageReaction(messageId, emoji, currentUser.id);
+  };
+
+  const scrollToMessage = (targetId: string) => {
+    const el = document.getElementById(`msg-${targetId}`);
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      setHighlightedMsgId(targetId);
+      setTimeout(() => setHighlightedMsgId(null), 1600);
+    }
   };
 
   const updateTyping = (isTyping: boolean) => {
     if (!currentUser) return;
     const typingIn = groupId || otherUser?.id;
-    updateTypingStatus(currentUser.id, isTyping, typingIn);
+    const now = Date.now();
+    if (isTyping) {
+      if (isTypingActiveRef.current && now - lastTypingSentAtRef.current < 3000) {
+        return;
+      }
+      isTypingActiveRef.current = true;
+      lastTypingSentAtRef.current = now;
+      updateTypingStatus(currentUser.id, true, typingIn);
+    } else if (isTypingActiveRef.current) {
+      isTypingActiveRef.current = false;
+      lastTypingSentAtRef.current = 0;
+      updateTypingStatus(currentUser.id, false, typingIn);
+    }
   };
 
   const handleInputChange = (val: string) => {
@@ -450,29 +742,164 @@ export function Chat() {
             <Tv size={22} />
           </button>
           <button 
-            className="p-2 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 transition-colors"
+            className={`p-2 rounded-full transition-colors ${
+              inVoiceRoom
+                ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/30'
+                : 'text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300'
+            }`}
+            title={group ? (inVoiceRoom ? 'In Voice Room' : 'Join Group Voice Room') : 'Voice Call'}
             onClick={() => {
               if (group) {
-                import('../lib/db').then(({ joinVoiceChannel }) => {
-                  joinVoiceChannel(group.id, currentUser.id).catch(err => {
-                    console.error("Failed to sync voice channel state:", err);
-                  });
-                  setCallData({ user: { id: group.id, username: group.name, avatarUrl: group.avatarUrl } as any, type: 'voice' });
-                  setIsCalling(true);
-                });
+                if (inVoiceRoom) handleLeaveVoiceRoom();
+                else handleJoinVoiceRoom();
               } else if (otherUser) {
                 setCallData({ user: otherUser, type: 'voice' });
                 setIsCalling(true);
               }
             }}
           >
-            <Phone size={22} />
+            {inVoiceRoom ? <PhoneOff size={20} /> : <Phone size={22} />}
           </button>
         </div>
       </div>
+
+      {/* Collapsible Group Voice Room Panel (#6) */}
+      {group && inVoiceRoom && (
+        <div className="shrink-0 bg-gradient-to-r from-emerald-950 via-zinc-900 to-teal-950 text-white px-4 py-3 border-b border-emerald-500/30 z-10">
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <div className="flex items-center gap-2.5">
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping" />
+              <div>
+                <p className="text-xs font-black uppercase tracking-wider text-emerald-300">Voice Room Connected</p>
+                <p className="text-[10px] text-zinc-400">
+                  {(group.voiceChannel?.participants || []).length} in room
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleToggleVoiceMic}
+                className={`p-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer ${
+                  isMicMuted ? 'bg-red-500/20 text-red-400 border border-red-500/40' : 'bg-white/10 hover:bg-white/20 text-white'
+                }`}
+                title={isMicMuted ? 'Unmute Mic' : 'Mute Mic'}
+              >
+                {isMicMuted ? <MicOff size={15} /> : <Mic size={15} />}
+                <span className="hidden sm:inline">{isMicMuted ? 'Muted' : 'Mic On'}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setIsDeafened(!isDeafened)}
+                className={`p-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer ${
+                  isDeafened ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40' : 'bg-white/10 hover:bg-white/20 text-white'
+                }`}
+                title={isDeafened ? 'Undeafen Audio' : 'Deafen Audio'}
+              >
+                {isDeafened ? <VolumeX size={15} /> : <Volume2 size={15} />}
+                <span className="hidden sm:inline">{isDeafened ? 'Deafened' : 'Audio On'}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleLeaveVoiceRoom}
+                className="px-3 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-black uppercase tracking-wider flex items-center gap-1.5 transition-colors cursor-pointer"
+              >
+                <PhoneOff size={14} />
+                <span>Leave</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Participant Avatars with Live Speaking Green Rings */}
+          <div className="flex items-center gap-3 mt-3 overflow-x-auto pb-1">
+            {(group.voiceChannel?.participants || []).map(pid => {
+              const u = allUsers.find(x => x.id === pid) || (currentUser?.id === pid ? currentUser : null);
+              const isSpeaking = speakingUsers.includes(pid);
+              const isPeerMuted = (group.voiceChannel?.mutedUsers || []).includes(pid) || (pid === currentUser?.id && isMicMuted);
+              return (
+                <div key={pid} className="flex flex-col items-center gap-1 shrink-0">
+                  <div className={`relative w-10 h-10 rounded-full p-0.5 transition-all ${
+                    isSpeaking
+                      ? 'ring-2 ring-emerald-400 shadow-[0_0_15px_rgba(52,211,153,0.75)] scale-105'
+                      : 'ring-1 ring-white/20'
+                  }`}>
+                    <img src={u?.avatarUrl || ''} alt={u?.username || ''} className="w-full h-full rounded-full object-cover bg-zinc-800" />
+                    {isPeerMuted && (
+                      <div className="absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full bg-red-600 border border-zinc-900 flex items-center justify-center">
+                        <MicOff size={9} className="text-white" />
+                      </div>
+                    )}
+                  </div>
+                  <span className="text-[10px] font-semibold text-zinc-300 max-w-[60px] truncate">
+                    {pid === currentUser?.id ? 'You' : (u?.username || 'Member')}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Remote Peer Audio Elements */}
+          {(Object.entries(remoteAudioStreams) as [string, MediaStream][]).map(([peerId, stream]) => (
+            <RemoteVoiceAudio
+              key={peerId}
+              peerId={peerId}
+              stream={stream}
+              deafened={isDeafened}
+              onSpeakingChange={(id, speaking) => {
+                setSpeakingUsers(prev => {
+                  const has = prev.includes(id);
+                  if (speaking && !has) return [...prev, id];
+                  if (!speaking && has) return prev.filter(x => x !== id);
+                  return prev;
+                });
+              }}
+            />
+          ))}
+        </div>
+      )}
       
       {/* Messages */}
       <div className="flex-1 min-h-0 overflow-y-auto p-4 flex flex-col gap-4">
+        {/* Active Voice Room Banner when not yet joined */}
+        {group && !inVoiceRoom && group.voiceChannel?.active && (group.voiceChannel.participants || []).length > 0 && (
+          <div className="sticky top-0 z-20 mb-2 bg-gradient-to-r from-emerald-600 to-teal-600 p-3.5 rounded-2xl text-white shadow-xl flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="flex -space-x-2 shrink-0">
+                {(group.voiceChannel.participants || []).slice(0, 4).map(pid => {
+                  const u = allUsers.find(x => x.id === pid);
+                  return (
+                    <img
+                      key={pid}
+                      src={u?.avatarUrl || ''}
+                      alt=""
+                      className="w-8 h-8 rounded-full object-cover border-2 border-emerald-500 bg-zinc-900"
+                    />
+                  );
+                })}
+              </div>
+              <div className="min-w-0">
+                <p className="text-xs font-black uppercase tracking-tight flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-white animate-ping" />
+                  Voice Room Live
+                </p>
+                <p className="text-[10px] font-bold opacity-90 truncate">
+                  {(group.voiceChannel.participants || []).length} speaking now
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={handleJoinVoiceRoom}
+              className="px-4 py-2 bg-white text-emerald-700 rounded-xl font-black text-xs uppercase tracking-wider hover:scale-105 active:scale-95 transition-all shadow-lg shrink-0 cursor-pointer"
+            >
+              Join Voice
+            </button>
+          </div>
+        )}
+
         {/* Active Watch Party Banner */}
         {activeGroupParties.length > 0 && (
           <div className="sticky top-0 z-20 mb-4">
@@ -504,15 +931,16 @@ export function Chat() {
           </div>
         ) : (
           messages.map((m, idx) => {
-            const isMe = m.fromUserId === currentUser.id;
+            const isMe = m.fromUserId === currentUser?.id;
             const isSystem = m.fromUserId === 'system';
             const sender = allUsers.find(u => u.id === m.fromUserId);
-            const showSeen = isMe && m.seenBy && m.seenBy.filter(id => id !== currentUser.id).length > 0;
-            const seenNames = m.seenBy?.filter(id => id !== currentUser.id).map(id => allUsers.find(u => u.id === id)?.username).filter(Boolean).join(', ');
+            const showSeen = isMe && currentUser && m.seenBy && m.seenBy.filter(id => id !== currentUser.id).length > 0;
+            const seenNames = m.seenBy?.filter(id => id !== currentUser?.id).map(id => allUsers.find(u => u.id === id)?.username).filter(Boolean).join(', ');
+            const reactionEntries = (Object.entries(m.reactions || {}) as [string, string[]][]).filter(([, ids]) => Array.isArray(ids) && ids.length > 0);
 
             if (isSystem) {
               return (
-                <div key={m.id} className="flex justify-center my-2">
+                <div key={m.id} id={`msg-${m.id}`} className="flex justify-center my-2">
                   <span className="px-3 py-1 rounded-full bg-zinc-100 dark:bg-zinc-800 text-[10px] font-bold text-zinc-500 uppercase tracking-widest border border-zinc-200 dark:border-zinc-700 shadow-sm">
                     {m.content}
                   </span>
@@ -521,7 +949,13 @@ export function Chat() {
             }
 
             return (
-              <div key={m.id} className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
+              <div
+                key={m.id}
+                id={`msg-${m.id}`}
+                className={`flex flex-col ${isMe ? 'items-end' : 'items-start'} transition-all duration-300 ${
+                  highlightedMsgId === m.id ? 'bg-pink-500/10 rounded-2xl p-1 -m-1 ring-1 ring-pink-500/40' : ''
+                }`}
+              >
                 {group && !isMe && sender && (
                   <span className="text-[10px] font-bold text-zinc-500 ml-10 mb-1 flex items-center gap-1">
                     {sender.username}
@@ -532,8 +966,26 @@ export function Chat() {
                   {!isMe && (
                     <img src={sender?.avatarUrl} alt="" className="w-8 h-8 rounded-full mb-1 object-cover shrink-0" />
                   )}
-                  <div className="relative group">
-                    <div className={`rounded-2xl px-4 py-3 ${isMe ? 'bg-pink-600 text-white rounded-br-sm' : 'bg-zinc-100 dark:bg-zinc-800 rounded-bl-sm shadow-sm'}`}>
+                  <div className="relative group flex flex-col">
+                    <div className={`relative rounded-2xl px-4 py-3 ${isMe ? 'bg-pink-600 text-white rounded-br-sm' : 'bg-zinc-100 dark:bg-zinc-800 rounded-bl-sm shadow-sm'}`}>
+                      {/* Quoted Reply Block (#1) */}
+                      {m.replyTo && (
+                        <button
+                          type="button"
+                          onClick={() => scrollToMessage(m.replyTo!.id)}
+                          className={`w-full text-left mb-2 px-2.5 py-1.5 rounded-xl border-l-4 text-xs transition-opacity hover:opacity-90 cursor-pointer ${
+                            isMe
+                              ? 'bg-black/20 border-white/80 text-pink-50'
+                              : 'bg-zinc-200/80 dark:bg-zinc-900/80 border-pink-500 text-zinc-700 dark:text-zinc-300'
+                          }`}
+                        >
+                          <p className="font-bold text-[10px] opacity-90">{m.replyTo.senderName}</p>
+                          <p className="truncate text-[11px] opacity-80">
+                            {m.replyTo.content || (m.replyTo.hasMedia ? '📎 Media attachment' : 'Message')}
+                          </p>
+                        </button>
+                      )}
+
                       {m.imageUrl && (
                         <img src={m.imageUrl} alt="attachment" className="w-full rounded-lg mb-2 object-cover max-h-64" />
                       )}
@@ -549,22 +1001,91 @@ export function Chat() {
                           <audio src={m.audioUrl} controls className={`w-full h-8 rounded-lg ${isMe ? 'brightness-200 contrast-75' : ''}`} />
                         </div>
                       )}
-                      {m.content && <p className="mt-1 leading-relaxed">{m.content}</p>}
+                      {m.content && <p className="mt-0.5 leading-relaxed">{m.content}</p>}
                       {m.sharedVideoId && (
                         <Link to="/" className="mt-2 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-black/20 text-xs font-semibold hover:bg-black/30 transition-colors">
                           <span>🎬 View shared video</span>
                         </Link>
                       )}
                     </div>
-                    
-                    {isMe && (
-                      <button 
-                        onClick={() => handleDelete(m.id)}
-                        className="absolute -left-10 top-1/2 -translate-y-1/2 p-2 text-zinc-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all"
-                        title="Delete message"
+
+                    {/* Reaction Pills beneath message (#1) */}
+                    {reactionEntries.length > 0 && (
+                      <div className={`flex flex-wrap gap-1 mt-1 ${isMe ? 'justify-end' : 'justify-start'}`}>
+                        {reactionEntries.map(([emoji, ids]) => {
+                          const iReacted = currentUser ? ids.includes(currentUser.id) : false;
+                          return (
+                            <button
+                              key={emoji}
+                              type="button"
+                              onClick={() => handleToggleReaction(m.id, emoji)}
+                              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold border transition-all cursor-pointer ${
+                                iReacted
+                                  ? 'bg-pink-500/15 border-pink-500 text-pink-600 dark:text-pink-400'
+                                  : 'bg-zinc-100 dark:bg-zinc-900 border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 hover:border-zinc-400'
+                              }`}
+                            >
+                              <span>{emoji}</span>
+                              <span className="text-[10px]">{ids.length}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    {/* Hover Actions: React, Reply, Delete (#1) */}
+                    <div className={`absolute top-1/2 -translate-y-1/2 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity z-20 ${
+                      isMe ? '-left-20 flex-row-reverse' : '-right-20 flex-row'
+                    }`}>
+                      <button
+                        type="button"
+                        onClick={() => setOpenReactionPickerId(openReactionPickerId === m.id ? null : m.id)}
+                        className="p-1.5 text-zinc-400 hover:text-amber-500 bg-white dark:bg-zinc-900 rounded-full shadow-sm border border-zinc-200 dark:border-zinc-800 cursor-pointer"
+                        title="React"
                       >
-                        <Trash2 size={16} />
+                        <SmilePlus size={14} />
                       </button>
+                      <button
+                        type="button"
+                        onClick={() => setReplyingTo({
+                          id: m.id,
+                          senderName: isMe ? 'You' : (sender?.username || 'User'),
+                          content: m.content,
+                          hasMedia: Boolean(m.imageUrl || m.videoUrl || m.audioUrl)
+                        })}
+                        className="p-1.5 text-zinc-400 hover:text-pink-500 bg-white dark:bg-zinc-900 rounded-full shadow-sm border border-zinc-200 dark:border-zinc-800 cursor-pointer"
+                        title="Reply"
+                      >
+                        <Reply size={14} />
+                      </button>
+                      {isMe && (
+                        <button 
+                          type="button"
+                          onClick={() => handleDelete(m.id)}
+                          className="p-1.5 text-zinc-400 hover:text-red-500 bg-white dark:bg-zinc-900 rounded-full shadow-sm border border-zinc-200 dark:border-zinc-800 cursor-pointer"
+                          title="Delete message"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Quick Reaction Picker Bar */}
+                    {openReactionPickerId === m.id && (
+                      <div className={`absolute -top-11 z-30 flex items-center gap-1 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-full px-2 py-1 shadow-xl ${
+                        isMe ? 'right-0' : 'left-0'
+                      }`}>
+                        {QUICK_REACTIONS.map(emoji => (
+                          <button
+                            key={emoji}
+                            type="button"
+                            onClick={() => handleToggleReaction(m.id, emoji)}
+                            className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-zinc-100 dark:hover:bg-zinc-800 hover:scale-125 transition-transform text-base cursor-pointer"
+                          >
+                            {emoji}
+                          </button>
+                        ))}
+                      </div>
                     )}
                   </div>
                 </div>
@@ -597,6 +1118,27 @@ export function Chat() {
       
       {/* Input */}
       <div className="shrink-0 p-3 sm:p-4 border-t border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 z-20 w-full shadow-lg">
+        {/* Reply Preview Banner (#1) */}
+        {replyingTo && (
+          <div className="mb-2 px-3 py-2 rounded-xl bg-zinc-100 dark:bg-zinc-900 border-l-4 border-pink-600 flex items-center justify-between gap-2">
+            <div className="min-w-0 flex-1">
+              <p className="text-[11px] font-bold text-pink-600 flex items-center gap-1">
+                <Reply size={12} /> Replying to {replyingTo.senderName}
+              </p>
+              <p className="text-xs text-zinc-500 dark:text-zinc-400 truncate">
+                {replyingTo.content || (replyingTo.hasMedia ? '📎 Media attachment' : 'Message')}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setReplyingTo(null)}
+              className="p-1 text-zinc-400 hover:text-zinc-700 dark:hover:text-white rounded-full cursor-pointer"
+              title="Cancel reply"
+            >
+              <X size={16} />
+            </button>
+          </div>
+        )}
         {!currentUser && (
           <div className="mb-2 p-2 rounded-xl bg-pink-500/10 border border-pink-500/30 text-pink-600 dark:text-pink-400 text-xs font-bold flex items-center justify-between">
             <span>You're browsing as a guest. Log in to send messages!</span>
@@ -693,7 +1235,7 @@ export function Chat() {
             <div className="space-y-1 mb-8">
               <div className="flex items-center justify-between mb-3 px-2">
                 <h4 className="text-xs font-bold text-zinc-500 uppercase tracking-widest">Members</h4>
-                {(group.ownerId === currentUser.id || (group.admins || []).includes(currentUser.id)) && (
+                {(group.ownerId === currentUser?.id || (currentUser?.id && (group.admins || []).includes(currentUser.id))) && (
                   <button 
                     onClick={() => setShowAddMember(true)}
                     className="flex items-center gap-1 text-pink-600 text-[10px] font-black uppercase tracking-widest"
@@ -709,7 +1251,7 @@ export function Chat() {
                 if (!u) return null;
                 const isOwner = group.ownerId === mid;
                 const isAdmin = group.admins?.includes(mid);
-                const canManage = (group.ownerId === currentUser.id || (group.admins || []).includes(currentUser.id)) && mid !== currentUser.id && !isOwner;
+                const canManage = (group.ownerId === currentUser?.id || (currentUser?.id && (group.admins || []).includes(currentUser.id))) && mid !== currentUser?.id && !isOwner;
 
                 return (
                   <div key={mid} className="flex items-center justify-between p-2 rounded-xl hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors group/member">
@@ -726,10 +1268,10 @@ export function Chat() {
                     </div>
                     
                     <div className="flex items-center gap-2">
-                      {mid === currentUser.id && <span className="text-[10px] bg-zinc-100 dark:bg-zinc-800 px-2 py-1 rounded-full text-zinc-500 font-bold">YOU</span>}
+                      {mid === currentUser?.id && <span className="text-[10px] bg-zinc-100 dark:bg-zinc-800 px-2 py-1 rounded-full text-zinc-500 font-bold">YOU</span>}
                       {canManage && (
                         <div className="flex items-center gap-1 opacity-0 group-hover/member:opacity-100 transition-opacity">
-                          {group.ownerId === currentUser.id && (
+                          {group.ownerId === currentUser?.id && (
                             <button 
                               onClick={() => toggleGroupAdmin(group.id, mid)}
                               className={`p-2 rounded-lg transition-colors ${isAdmin ? 'text-indigo-600 bg-indigo-50 dark:bg-indigo-950/30' : 'text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700'}`}
@@ -777,7 +1319,7 @@ export function Chat() {
             />
             <div className="max-h-[300px] overflow-y-auto space-y-2">
               {allUsers
-                .filter(u => u.id !== currentUser.id && !(group?.members || []).includes(u.id))
+                .filter(u => u.id !== currentUser?.id && !(group?.members || []).includes(u.id))
                 .filter(u => (u.username || '').toLowerCase().includes(searchQuery.toLowerCase()) || (u.handle || '').toLowerCase().includes(searchQuery.toLowerCase()))
                 .map(u => (
                   <button 
@@ -871,3 +1413,55 @@ function VoiceVisualizer({ stream }: { stream: MediaStream }) {
   }, [stream]);
   return <canvas ref={canvasRef} width={200} height={32} className="flex-1 h-8 opacity-80" />;
 }
+
+const RemoteVoiceAudio: React.FC<{
+  peerId: string;
+  stream: MediaStream;
+  deafened: boolean;
+  onSpeakingChange: (peerId: string, speaking: boolean) => void;
+}> = ({
+  peerId,
+  stream,
+  deafened,
+  onSpeakingChange
+}) => {
+  const audioRef = useRef<HTMLAudioElement>(null);
+  useEffect(() => {
+    if (audioRef.current) {
+      audioRef.current.srcObject = stream;
+      audioRef.current.muted = deafened;
+      audioRef.current.play().catch(() => {});
+    }
+  }, [stream, deafened]);
+
+  useEffect(() => {
+    let ctx: AudioContext | null = null;
+    let rafId = 0;
+    try {
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      ctx = new AudioCtx();
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 64;
+      const source = ctx.createMediaStreamSource(stream);
+      source.connect(analyser);
+      const data = new Uint8Array(analyser.frequencyBinCount);
+      const check = () => {
+        rafId = requestAnimationFrame(check);
+        analyser.getByteFrequencyData(data);
+        let sum = 0;
+        for (let i = 0; i < data.length; i++) sum += data[i];
+        onSpeakingChange(peerId, (sum / data.length) > 16);
+      };
+      check();
+    } catch {}
+    return () => {
+      cancelAnimationFrame(rafId);
+      onSpeakingChange(peerId, false);
+      if (ctx) { try { ctx.close(); } catch {} }
+    };
+  }, [peerId, stream]);
+
+  return <audio ref={audioRef} autoPlay playsInline className="hidden" />;
+}
+
+

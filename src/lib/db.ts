@@ -183,15 +183,54 @@ function handleFirestoreError(error: unknown, operationType: OperationType, path
 
 export const initDb = async () => {};
 
+// Track last known serialized docs per collection so saveCollection only writes changed/new items
+const lastSyncedDocs = new Map<string, Map<string, string>>();
+let quotaBlockedUntil = 0;
+
+export const isQuotaBlocked = () => Date.now() < quotaBlockedUntil;
+
+export const isQuotaError = (err: any): boolean => {
+  const code = err?.code || '';
+  const msg = (err?.message || String(err || '')).toLowerCase();
+  return code === 'resource-exhausted' || msg.includes('resource-exhausted') || msg.includes('quota exceeded') || msg.includes('quota limit');
+};
+
+export const handleWriteQuotaError = (err: any) => {
+  if (isQuotaError(err)) {
+    // Pause Firestore writes for 5 minutes to avoid SDK retry storms
+    quotaBlockedUntil = Date.now() + 5 * 60 * 1000;
+    console.warn('Firestore daily write quota reached — pausing remote writes and keeping local cache active.');
+    return true;
+  }
+  return false;
+};
+
+const recordCollectionSnapshot = <T extends { id?: string }>(collName: string, items: T[]) => {
+  let map = lastSyncedDocs.get(collName);
+  if (!map) {
+    map = new Map<string, string>();
+    lastSyncedDocs.set(collName, map);
+  }
+  items.forEach(item => {
+    if (item && typeof item === 'object' && item.id) {
+      try {
+        map!.set(item.id, JSON.stringify(deepClean(item)));
+      } catch {}
+    }
+  });
+};
+
 const fetchCollection = async <T>(collName: string): Promise<T[]> => {
   try {
     const snapshot = await getDocs(collection(db, collName));
     const items = snapshot.docs.map(doc => doc.data() as T);
+    recordCollectionSnapshot(collName, items as any[]);
     try {
       localStorage.setItem(`ct_cache_${collName}`, JSON.stringify(items));
     } catch {}
     return items;
   } catch (err: any) {
+    handleWriteQuotaError(err);
     const msg = err?.message || String(err);
     if (!msg.includes('Missing or insufficient permissions') && !msg.includes('permission-denied')) {
       console.warn(`Note on fetching ${collName}:`, msg);
@@ -211,26 +250,49 @@ const saveCollection = async <T extends { id: string }>(collName: string, items:
   try {
     localStorage.setItem(`ct_cache_${collName}`, JSON.stringify(items));
   } catch {}
+  if (isQuotaBlocked()) return;
+
   try {
-    const batch = writeBatch(db);
-    items.forEach(item => {
-      if (!item || typeof item !== 'object' || !item.id) return;
+    let knownMap = lastSyncedDocs.get(collName);
+    if (!knownMap) {
+      knownMap = new Map<string, string>();
+      lastSyncedDocs.set(collName, knownMap);
+    }
+
+    const dirtyEntries: Array<{ id: string; cleaned: any; serialized: string }> = [];
+    for (const item of items) {
+      if (!item || typeof item !== 'object' || !item.id) continue;
       try {
-        const docRef = doc(db, collName, item.id);
         let dataToSave = deepClean(item);
         if (dataToSave && typeof dataToSave === 'object') {
           if ('videoData' in dataToSave) {
             delete (dataToSave as any).videoData;
           }
-          batch.set(docRef, dataToSave, { merge: true });
+          const serialized = JSON.stringify(dataToSave);
+          if (knownMap.get(item.id) !== serialized) {
+            dirtyEntries.push({ id: item.id, cleaned: dataToSave, serialized });
+          }
         }
-      } catch (itemErr) {
-        // Silently ignore malformed items
+      } catch {}
+    }
+
+    if (dirtyEntries.length === 0) return;
+
+    // Firestore batch limit is 500 writes; chunk safely at 400
+    for (let i = 0; i < dirtyEntries.length; i += 400) {
+      const chunk = dirtyEntries.slice(i, i + 400);
+      const batch = writeBatch(db);
+      for (const entry of chunk) {
+        const docRef = doc(db, collName, entry.id);
+        batch.set(docRef, entry.cleaned, { merge: true });
       }
-    });
-    await batch.commit();
+      await batch.commit();
+      for (const entry of chunk) {
+        knownMap.set(entry.id, entry.serialized);
+      }
+    }
   } catch (err) {
-    // Silently ignore batch commit errors to keep UI smooth
+    handleWriteQuotaError(err);
   }
 };
 
@@ -245,13 +307,44 @@ export const saveUsers = (users: User[]) => saveCollection('users', users);
 
 export const updateUser = async (userId: string, data: Partial<User>) => {
   try {
+    const cached = JSON.parse(localStorage.getItem('ct_cache_users') || '[]') as User[];
+    if (cached.length > 0) {
+      localStorage.setItem('ct_cache_users', JSON.stringify(cached.map(u => u.id === userId ? { ...u, ...data } : u)));
+    }
+  } catch {}
+  if (isQuotaBlocked()) return;
+  try {
     const docRef = doc(db, 'users', userId);
     const updateData = deepClean(data);
     await updateDoc(docRef, updateData);
   } catch (err) {
-    console.error("Error updating user:", userId, err);
-    throw err;
+    if (!handleWriteQuotaError(err)) {
+      console.error("Error updating user:", userId, err);
+      throw err;
+    }
   }
+};
+
+export const updateUserListeningState = async (userId: string, listeningState: User['listeningState']) => {
+  if (!userId || isQuotaBlocked()) return;
+  try {
+    await updateDoc(doc(db, 'users', userId), {
+      listeningState: listeningState ? deepClean(listeningState) : null
+    });
+  } catch (err) {
+    handleWriteQuotaError(err);
+  }
+};
+
+export const subscribeToUserDoc = (userId: string, callback: (user: User | null) => void) => {
+  if (!userId) return () => {};
+  return onSnapshot(doc(db, 'users', userId), (snap) => {
+    if (snap.exists()) {
+      callback(snap.data() as User);
+    } else {
+      callback(null);
+    }
+  }, () => {});
 };
 
 export const updateUserGame = async (userId: string, gameTitle: string | null) => {
@@ -366,16 +459,124 @@ export const updateVideo = async (videoId: string, update: (video: Video) => Vid
 
 export const getMessages = () => fetchCollection<Message>('messages');
 export const saveMessages = (messages: Message[]) => saveCollection('messages', messages);
+
+export const addMessage = async (msg: Message) => {
+  try {
+    const cached = JSON.parse(localStorage.getItem('ct_cache_messages') || '[]') as Message[];
+    localStorage.setItem('ct_cache_messages', JSON.stringify([...cached, msg]));
+  } catch {}
+  if (isQuotaBlocked()) return;
+  try {
+    const cleaned = deepClean(msg);
+    const docRef = doc(db, 'messages', msg.id);
+    await setDoc(docRef, cleaned, { merge: true });
+    let knownMap = lastSyncedDocs.get('messages');
+    if (!knownMap) {
+      knownMap = new Map<string, string>();
+      lastSyncedDocs.set('messages', knownMap);
+    }
+    knownMap.set(msg.id, JSON.stringify(cleaned));
+  } catch (err) {
+    handleWriteQuotaError(err);
+  }
+};
+
+export const markMessagesSeen = async (messageIds: string[], userId: string) => {
+  if (!messageIds.length || !userId) return;
+  try {
+    const cached = JSON.parse(localStorage.getItem('ct_cache_messages') || '[]') as Message[];
+    if (cached.length > 0) {
+      const idSet = new Set(messageIds);
+      const updated = cached.map(m =>
+        idSet.has(m.id)
+          ? { ...m, read: true, seenBy: Array.from(new Set([...(m.seenBy || []), userId])) }
+          : m
+      );
+      localStorage.setItem('ct_cache_messages', JSON.stringify(updated));
+    }
+  } catch {}
+  if (isQuotaBlocked()) return;
+  try {
+    for (let i = 0; i < messageIds.length; i += 400) {
+      const chunk = messageIds.slice(i, i + 400);
+      const batch = writeBatch(db);
+      for (const id of chunk) {
+        batch.update(doc(db, 'messages', id), {
+          read: true,
+          seenBy: arrayUnion(userId)
+        });
+      }
+      await batch.commit();
+    }
+  } catch (err) {
+    handleWriteQuotaError(err);
+  }
+};
+
 export const subscribeToMessages = (callback: (messages: Message[]) => void) => {
   return onSnapshot(collection(db, 'messages'), (snapshot) => {
-    callback(snapshot.docs.map(doc => doc.data() as Message));
+    const msgs = snapshot.docs.map(doc => doc.data() as Message);
+    recordCollectionSnapshot('messages', msgs);
+    callback(msgs);
   }, (err) => {
     console.warn("Messages subscription error:", err);
   });
 };
 export const deleteMessage = async (messageId: string) => {
-  const msgs = await getMessages();
-  await saveMessages(msgs.filter(m => m.id !== messageId));
+  try {
+    const cached = JSON.parse(localStorage.getItem('ct_cache_messages') || '[]') as Message[];
+    localStorage.setItem('ct_cache_messages', JSON.stringify(cached.filter(m => m.id !== messageId)));
+    lastSyncedDocs.get('messages')?.delete(messageId);
+  } catch {}
+  if (isQuotaBlocked()) return;
+  try {
+    await deleteDoc(doc(db, 'messages', messageId));
+  } catch (err) {
+    handleWriteQuotaError(err);
+  }
+};
+
+export const toggleMessageReaction = async (messageId: string, emoji: string, userId: string): Promise<Record<string, string[]> | undefined> => {
+  let nextReactions: Record<string, string[]> | undefined;
+  try {
+    const cached = JSON.parse(localStorage.getItem('ct_cache_messages') || '[]') as Message[];
+    const target = cached.find(m => m.id === messageId);
+    if (target) {
+      const current = { ...(target.reactions || {}) };
+      const list = [...(current[emoji] || [])];
+      if (list.includes(userId)) {
+        const filtered = list.filter(id => id !== userId);
+        if (filtered.length === 0) delete current[emoji];
+        else current[emoji] = filtered;
+      } else {
+        current[emoji] = [...list, userId];
+      }
+      nextReactions = current;
+      localStorage.setItem('ct_cache_messages', JSON.stringify(cached.map(m => m.id === messageId ? { ...m, reactions: current } : m)));
+    }
+  } catch {}
+  if (isQuotaBlocked()) return nextReactions;
+  try {
+    const docRef = doc(db, 'messages', messageId);
+    const snap = await getDoc(docRef);
+    if (snap.exists()) {
+      const msg = snap.data() as Message;
+      const current = { ...(msg.reactions || {}) };
+      const list = [...(current[emoji] || [])];
+      if (list.includes(userId)) {
+        const filtered = list.filter(id => id !== userId);
+        if (filtered.length === 0) delete current[emoji];
+        else current[emoji] = filtered;
+      } else {
+        current[emoji] = [...list, userId];
+      }
+      nextReactions = current;
+      await updateDoc(docRef, { reactions: current });
+    }
+  } catch (err) {
+    handleWriteQuotaError(err);
+  }
+  return nextReactions;
 };
 
 export const getGroupChats = () => fetchCollection<GroupChat>('group_chats');
@@ -426,37 +627,151 @@ export const toggleGroupAdmin = async (groupId: string, userId: string) => {
   }
 };
 
+export const subscribeToGroupChat = (groupId: string, callback: (group: GroupChat | null) => void) => {
+  if (!groupId) return () => {};
+  return onSnapshot(doc(db, 'group_chats', groupId), (snap) => {
+    if (snap.exists()) {
+      callback(snap.data() as GroupChat);
+    } else {
+      callback(null);
+    }
+  }, () => {});
+};
+
 export const joinVoiceChannel = async (groupId: string, userId: string) => {
+  if (isQuotaBlocked()) return;
   try {
     const docRef = doc(db, 'group_chats', groupId);
     const snap = await getDoc(docRef);
     if (!snap.exists()) return;
     const group = snap.data() as GroupChat;
-    const voiceChannel = group.voiceChannel || { active: true, participants: [] };
-    if (!(voiceChannel.participants || []).includes(userId)) {
-      voiceChannel.participants.push(userId);
-      await updateDoc(docRef, { voiceChannel: { ...voiceChannel, active: true } });
-    }
+    const voiceChannel = group.voiceChannel || { active: true, participants: [], mutedUsers: [] };
+    const participants = Array.from(new Set([...(voiceChannel.participants || []), userId]));
+    const mutedUsers = (voiceChannel.mutedUsers || []).filter(id => id !== userId);
+    await updateDoc(docRef, {
+      voiceChannel: { active: true, participants, mutedUsers }
+    });
   } catch (err) {
-    handleFirestoreError(err, OperationType.UPDATE, `group_chats/${groupId}/join`);
+    handleWriteQuotaError(err);
   }
 };
 
 export const leaveVoiceChannel = async (groupId: string, userId: string) => {
+  if (isQuotaBlocked()) return;
   try {
     const docRef = doc(db, 'group_chats', groupId);
     const snap = await getDoc(docRef);
     if (!snap.exists()) return;
     const group = snap.data() as GroupChat;
     if (group.voiceChannel) {
-      group.voiceChannel.participants = group.voiceChannel.participants.filter(id => id !== userId);
-      if (group.voiceChannel.participants.length === 0) {
-        group.voiceChannel.active = false;
-      }
-      await updateDoc(docRef, { voiceChannel: group.voiceChannel });
+      const participants = (group.voiceChannel.participants || []).filter(id => id !== userId);
+      const mutedUsers = (group.voiceChannel.mutedUsers || []).filter(id => id !== userId);
+      await updateDoc(docRef, {
+        voiceChannel: {
+          active: participants.length > 0,
+          participants,
+          mutedUsers
+        }
+      });
     }
   } catch (err) {
-    handleFirestoreError(err, OperationType.UPDATE, `group_chats/${groupId}/leave`);
+    handleWriteQuotaError(err);
+  }
+};
+
+export const toggleVoiceChannelMute = async (groupId: string, userId: string, isMuted: boolean) => {
+  if (isQuotaBlocked()) return;
+  try {
+    const docRef = doc(db, 'group_chats', groupId);
+    const snap = await getDoc(docRef);
+    if (!snap.exists()) return;
+    const group = snap.data() as GroupChat;
+    const voiceChannel = group.voiceChannel || { active: true, participants: [userId], mutedUsers: [] };
+    const mutedUsers = isMuted
+      ? Array.from(new Set([...(voiceChannel.mutedUsers || []), userId]))
+      : (voiceChannel.mutedUsers || []).filter(id => id !== userId);
+    await updateDoc(docRef, {
+      voiceChannel: { ...voiceChannel, mutedUsers }
+    });
+  } catch (err) {
+    handleWriteQuotaError(err);
+  }
+};
+
+const getGroupVoiceDocId = (groupId: string, idA: string, idB: string) => {
+  const [minId, maxId] = [idA, idB].sort();
+  return `gv_${groupId}__${minId}__${maxId}`;
+};
+
+export const subscribeToGroupVoiceSignals = (groupId: string, userId: string, callback: (signals: any[]) => void) => {
+  if (!groupId || !userId) return () => {};
+  return onSnapshot(collection(db, 'calls'), (snap) => {
+    const signals = snap.docs
+      .map(d => d.data())
+      .filter((d: any) => d.status === 'group_voice' && d.groupId === groupId && (d.offererId === userId || d.answererId === userId));
+    callback(signals);
+  }, () => {});
+};
+
+export const sendGroupVoiceOffer = async (groupId: string, offererId: string, answererId: string, offer: any) => {
+  if (isQuotaBlocked()) return;
+  try {
+    const docId = getGroupVoiceDocId(groupId, offererId, answererId);
+    await setDoc(doc(db, 'calls', docId), {
+      id: docId,
+      status: 'group_voice',
+      groupId,
+      offererId,
+      answererId,
+      offer,
+      answer: null,
+      callerCandidates: [],
+      receiverCandidates: [],
+      updatedAt: Date.now()
+    });
+  } catch (err) {
+    handleWriteQuotaError(err);
+  }
+};
+
+export const sendGroupVoiceAnswer = async (groupId: string, offererId: string, answererId: string, answer: any) => {
+  if (isQuotaBlocked()) return;
+  try {
+    const docId = getGroupVoiceDocId(groupId, offererId, answererId);
+    await updateDoc(doc(db, 'calls', docId), {
+      answer,
+      updatedAt: Date.now()
+    });
+  } catch (err) {
+    handleWriteQuotaError(err);
+  }
+};
+
+export const addGroupVoiceCandidate = async (groupId: string, idA: string, idB: string, side: 'caller' | 'receiver', candidate: any) => {
+  if (isQuotaBlocked()) return;
+  try {
+    const docId = getGroupVoiceDocId(groupId, idA, idB);
+    await updateDoc(doc(db, 'calls', docId), {
+      [`${side}Candidates`]: arrayUnion(candidate)
+    });
+  } catch (err) {
+    handleWriteQuotaError(err);
+  }
+};
+
+export const cleanupGroupVoiceSignals = async (groupId: string, userId: string) => {
+  if (isQuotaBlocked()) return;
+  try {
+    const snap = await getDocs(collection(db, 'calls'));
+    const toDelete = snap.docs.filter(d => {
+      const data: any = d.data();
+      return data.status === 'group_voice' && data.groupId === groupId && (data.offererId === userId || data.answererId === userId);
+    });
+    for (const d of toDelete) {
+      await deleteDoc(doc(db, 'calls', d.id));
+    }
+  } catch (err) {
+    handleWriteQuotaError(err);
   }
 };
 
@@ -464,33 +779,31 @@ export const getUserStatuses = () => fetchCollection<UserStatus>('user_statuses'
 export const saveUserStatuses = (statuses: UserStatus[]) => saveCollection('user_statuses', statuses);
 
 export const updateTypingStatus = async (userId: string, isTyping: boolean, typingIn?: string) => {
+  if (isQuotaBlocked()) return;
   try {
     const docRef = doc(db, 'user_statuses', userId);
     await setDoc(docRef, {
       id: userId,
       userId,
       isTyping,
-      typingIn,
+      typingIn: typingIn || null,
       lastActive: Date.now()
     }, { merge: true });
   } catch (err) {
-    console.error("Error updating typing status:", err);
+    if (!handleWriteQuotaError(err)) {
+      console.error("Error updating typing status:", err);
+    }
   }
 };
 
 export const markMessagesFromUserAsRead = async (currentUserId: string, otherUserId: string) => {
   try {
     const allMsgs = await getMessages();
-    let hasChanged = false;
-    const updated = allMsgs.map(m => {
-      if (m.fromUserId === otherUserId && m.toUserId === currentUserId && !m.read) {
-        hasChanged = true;
-        return { ...m, read: true };
-      }
-      return m;
-    });
-    if (hasChanged) {
-      await saveMessages(updated);
+    const unreadIds = allMsgs
+      .filter(m => m.fromUserId === otherUserId && m.toUserId === currentUserId && !m.read)
+      .map(m => m.id);
+    if (unreadIds.length > 0) {
+      await markMessagesSeen(unreadIds, currentUserId);
     }
   } catch (err) {
     console.error("Error marking messages as read:", err);
@@ -500,12 +813,43 @@ export const markMessagesFromUserAsRead = async (currentUserId: string, otherUse
 export const getNotifications = () => fetchCollection<AppNotification>('notifications');
 export const saveNotifications = (notifications: AppNotification[]) => saveCollection('notifications', notifications);
 
+export const addNotifications = async (newNotifs: AppNotification[]) => {
+  if (!newNotifs.length) return;
+  try {
+    const cached = JSON.parse(localStorage.getItem('ct_cache_notifications') || '[]') as AppNotification[];
+    localStorage.setItem('ct_cache_notifications', JSON.stringify([...cached, ...newNotifs]));
+  } catch {}
+  if (isQuotaBlocked()) return;
+  try {
+    let knownMap = lastSyncedDocs.get('notifications');
+    if (!knownMap) {
+      knownMap = new Map<string, string>();
+      lastSyncedDocs.set('notifications', knownMap);
+    }
+    for (let i = 0; i < newNotifs.length; i += 400) {
+      const chunk = newNotifs.slice(i, i + 400);
+      const batch = writeBatch(db);
+      for (const n of chunk) {
+        const cleaned = deepClean(n);
+        batch.set(doc(db, 'notifications', n.id), cleaned, { merge: true });
+        knownMap.set(n.id, JSON.stringify(cleaned));
+      }
+      await batch.commit();
+    }
+  } catch (err) {
+    handleWriteQuotaError(err);
+  }
+};
+
 export const markNotificationAsRead = async (notificationId: string) => {
+  if (isQuotaBlocked()) return;
   try {
     const docRef = doc(db, 'notifications', notificationId);
     await updateDoc(docRef, { read: true });
   } catch (err) {
-    console.error("Error marking notification as read:", err);
+    if (!handleWriteQuotaError(err)) {
+      console.error("Error marking notification as read:", err);
+    }
   }
 };
 
@@ -605,6 +949,16 @@ export const deleteVideoFromDB = async (videoId: string) => {
 
 export const getStories = () => fetchCollection<Story>('stories');
 export const saveStories = (stories: Story[]) => saveCollection('stories', stories);
+export const markStoryViewed = async (storyId: string, userId: string) => {
+  if (isQuotaBlocked()) return;
+  try {
+    await updateDoc(doc(db, 'stories', storyId), {
+      viewers: arrayUnion(userId)
+    });
+  } catch (err) {
+    handleWriteQuotaError(err);
+  }
+};
 export const deleteStoryFromDB = async (storyId: string) => {
   try {
     const docRef = doc(db, 'stories', storyId);
@@ -721,21 +1075,7 @@ export const saveCentralProRequests = async (reqs: CentralProRequest[]) => {
   try {
     localStorage.setItem('centralpro_all_requests', JSON.stringify(reqs));
   } catch {}
-  try {
-    const batch = writeBatch(db);
-    reqs.forEach(req => {
-      const docRef = doc(db, 'centralpro_requests', req.id);
-      batch.set(docRef, deepClean(req), { merge: true });
-    });
-    await batch.commit();
-  } catch (err: any) {
-    for (const req of reqs) {
-      try {
-        const docRef = doc(db, 'centralpro_requests', req.id);
-        await setDoc(docRef, deepClean(req), { merge: true });
-      } catch (indErr) {}
-    }
-  }
+  await saveCollection('centralpro_requests', reqs);
 };
 
 export const requestCentralProVerification = async (user: User, plan: 'monthly' | 'forever') => {
@@ -890,18 +1230,7 @@ export const saveSneakPeek = async (peek: SneakPeek) => {
 
 export const saveSneakPeeks = async (peeks: SneakPeek[]) => {
   if (peeks.length === 0) return;
-  try {
-    const batch = writeBatch(db);
-    peeks.forEach(item => {
-      const docRef = doc(db, 'sneak_peeks', item.id);
-      const cleaned = deepClean(item);
-      batch.set(docRef, cleaned);
-    });
-    await batch.commit();
-  } catch (err) {
-    console.error("Error saving sneak peeks:", err);
-    handleFirestoreError(err, OperationType.WRITE, 'sneak_peeks');
-  }
+  await saveCollection('sneak_peeks', peeks);
 };
 
 export const deleteSneakPeekFromDB = async (peekId: string) => {

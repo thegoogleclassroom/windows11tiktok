@@ -1,11 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { Home, Compass, PlusSquare, MessageSquare, User, Moon, Sun, LogIn, ShieldAlert, X, HelpCircle, Bell, Gamepad2, ShieldCheck, Info, Rocket, Sparkles, Check, Copy, Flame, AlertTriangle, Search, Users, UserCheck, Tv } from 'lucide-react';
+import { Home, Compass, PlusSquare, MessageSquare, User, Moon, Sun, LogIn, ShieldAlert, X, HelpCircle, Bell, BellOff, Gamepad2, ShieldCheck, Info, Rocket, Sparkles, Check, Copy, Flame, AlertTriangle, Search, Users, UserCheck, Tv, Disc } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAppStore } from '../store';
 import { AuthModal } from './AuthModal';
 import { MiniPlayer } from './MiniPlayer';
-import { saveReports, getMessages, getUsers, getNotifications, markNotificationAsRead, getFAQPosts, subscribeToNotifications, saveGameData, getGameData, subscribeToIncomingCalls, subscribeToMessages, updateUser, requestCentralProVerification } from '../lib/db';
+import { saveReports, getMessages, getUsers, getNotifications, markNotificationAsRead, getFAQPosts, subscribeToNotifications, saveGameData, getGameData, subscribeToIncomingCalls, subscribeToMessages, updateUser, requestCentralProVerification, updateUserListeningState, subscribeToUserDoc, isQuotaBlocked } from '../lib/db';
+import { playNotificationSound } from '../lib/utils';
 import { TradientInfoModal } from './TradientInfoModal';
 import { HolographicBadge, CentralProBadge } from './UIPolish';
 import * as Types from '../types';
@@ -37,8 +38,14 @@ export function Layout({ children }: { children: React.ReactNode }) {
     isGameActive, 
     setIsGameActive,
     activeGameTitle,
+    setActiveGameTitle,
     activeGameUrl,
-    miniPlayerActive
+    setActiveGameUrl,
+    miniPlayerActive,
+    setMiniPlayerActive,
+    setMiniPlayerTitle,
+    listenAlongHostId,
+    setListenAlongHostId
   } = useAppStore();
   const [showSupportModal, setShowSupportModal] = useState(false);
   const [showForumChooser, setShowForumChooser] = useState(false);
@@ -73,6 +80,35 @@ export function Layout({ children }: { children: React.ReactNode }) {
   const isIntro = location.pathname === '/' && introPhase !== 'done';
   const [searchQuery, setSearchQuery] = useState('');
   const [suggestedUsers, setSuggestedUsers] = useState<Types.User[]>([]);
+  const [dndEnabled, setDndEnabled] = useState<boolean>(() => localStorage.getItem('ct_dnd_enabled') === 'true');
+  const [listenAlongHost, setListenAlongHost] = useState<Types.User | null>(null);
+  const dndRef = useRef(dndEnabled);
+  const soundRef = useRef<string>(currentUser?.notificationSound || localStorage.getItem('ct_notif_sound') || 'chime');
+
+  useEffect(() => {
+    const activeDnd = currentUser?.dndEnabled !== undefined ? currentUser.dndEnabled : (localStorage.getItem('ct_dnd_enabled') === 'true');
+    setDndEnabled(activeDnd);
+    dndRef.current = activeDnd;
+    soundRef.current = currentUser?.notificationSound || localStorage.getItem('ct_notif_sound') || 'chime';
+  }, [currentUser?.dndEnabled, currentUser?.notificationSound]);
+
+  const handleToggleDnd = async () => {
+    const next = !dndEnabled;
+    setDndEnabled(next);
+    dndRef.current = next;
+    localStorage.setItem('ct_dnd_enabled', String(next));
+    if (next) {
+      setMessageToast(null);
+      setForumToast(null);
+      setRewardToast(null);
+    }
+    if (currentUser) {
+      setCurrentUser({ ...currentUser, dndEnabled: next });
+      try {
+        await updateUser(currentUser.id, { dndEnabled: next });
+      } catch {}
+    }
+  };
 
   useEffect(() => {
     getUsers().then(users => {
@@ -105,9 +141,11 @@ export function Layout({ children }: { children: React.ReactNode }) {
       const freshUnread = incoming.filter(m => !m.read && !knownMessageIds.current.has(m.id));
       freshUnread.forEach(m => {
         knownMessageIds.current.add(m.id);
+        if (dndRef.current) return;
         const sender = users.find(user => user.id === m.fromUserId);
         if (sender) {
           setMessageToast({username: sender.username, avatarUrl: sender.avatarUrl, handle: sender.handle});
+          playNotificationSound(soundRef.current);
           if ('Notification' in window && Notification.permission === 'granted') {
             try {
               new Notification(`${sender.username} sent you a message`, {
@@ -156,7 +194,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
     const unsubscribe = subscribeToNotifications(currentUser.id, async (allUnreadNotifs) => {
       // Handle Forum Announcements
       const pendingForum = allUnreadNotifs.filter(n => n.type === 'forum_announcement' && !n.read);
-      if (pendingForum.length > 0) {
+      if (pendingForum.length > 0 && !dndRef.current) {
         const latest = pendingForum.sort((a, b) => b.timestamp - a.timestamp)[0];
         const sessionKey = `ct_shown_forum_${latest.id}`;
         if (!sessionStorage.getItem(sessionKey)) {
@@ -169,6 +207,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
             authorName: author?.username || 'Staff Team',
             authorAvatar: author?.avatarUrl
           });
+          playNotificationSound(soundRef.current);
 
           if ('Notification' in window && Notification.permission === 'granted') {
             new Notification('📢 CentralTok Announcement', {
@@ -181,7 +220,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
 
       // Handle Tradient Rewards
       const pendingRewards = allUnreadNotifs.filter(n => n.type === 'tradient_reward' && !n.read);
-      if (pendingRewards.length > 0) {
+      if (pendingRewards.length > 0 && !dndRef.current) {
         const latest = pendingRewards.sort((a, b) => b.timestamp - a.timestamp)[0];
         const sessionKey = `ct_shown_reward_${latest.id}`;
         if (!sessionStorage.getItem(sessionKey)) {
@@ -196,6 +235,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
             isImportant: latest.isImportant,
             actionButton: latest.actionButton
           });
+          playNotificationSound(soundRef.current);
 
           if ('Notification' in window && Notification.permission === 'granted') {
             new Notification('🎉 Tradient Reward!', {
@@ -264,6 +304,132 @@ export function Layout({ children }: { children: React.ReactNode }) {
     window.addEventListener('message', handleMessage);
     return () => window.removeEventListener('message', handleMessage);
   }, [currentUser?.id]);
+
+  // Sync current user's CentralMusic state to Firestore efficiently (no per-second write spam)
+  const lastSyncedListeningRef = useRef<{
+    title: string;
+    streamUrl: string;
+    isPlaying: boolean;
+    currentTime: number;
+    syncedAt: number;
+    trackSeq: number;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!currentUser) return;
+
+    const syncLocalTrackToFirestore = async () => {
+      if (isQuotaBlocked()) return;
+      if (currentUser.showActivityStatus === false || currentUser.isGhostMode) {
+        if (lastSyncedListeningRef.current !== null) {
+          lastSyncedListeningRef.current = null;
+          await updateUserListeningState(currentUser.id, null);
+        }
+        return;
+      }
+
+      const raw = localStorage.getItem('aura_current_track');
+      if (!raw) {
+        if (lastSyncedListeningRef.current !== null) {
+          lastSyncedListeningRef.current = null;
+          await updateUserListeningState(currentUser.id, null);
+        }
+        return;
+      }
+
+      try {
+        const parsed = JSON.parse(raw);
+        if (!parsed || !parsed.title || !parsed.streamUrl) return;
+        const now = Date.now();
+        const trackUpdatedAt = parsed.updatedAt || now;
+        const isStalePaused = !parsed.isPlaying && (now - trackUpdatedAt > 45000);
+        if (isStalePaused) {
+          if (lastSyncedListeningRef.current !== null) {
+            lastSyncedListeningRef.current = null;
+            await updateUserListeningState(currentUser.id, null);
+          }
+          return;
+        }
+
+        const prev = lastSyncedListeningRef.current;
+        const trackChanged = !prev || prev.title !== parsed.title || prev.streamUrl !== parsed.streamUrl;
+        const playToggled = !prev || prev.isPlaying !== Boolean(parsed.isPlaying);
+        const expectedTime = prev
+          ? (prev.isPlaying ? prev.currentTime + (now - prev.syncedAt) / 1000 : prev.currentTime)
+          : 0;
+        const scrubbed = prev ? Math.abs((parsed.currentTime || 0) - expectedTime) > 3.5 : false;
+        const heartbeatDue = !prev || (Boolean(parsed.isPlaying) && now - prev.syncedAt > 20000);
+
+        if (trackChanged || playToggled || scrubbed || heartbeatDue) {
+          const nextSeq = trackChanged ? ((prev?.trackSeq || 0) + 1) : (prev?.trackSeq || 1);
+          const payload = {
+            title: parsed.title,
+            artist: parsed.artist || 'Unknown Artist',
+            artwork: parsed.artwork || '',
+            streamUrl: parsed.streamUrl,
+            isPlaying: Boolean(parsed.isPlaying),
+            currentTime: Number(parsed.currentTime) || 0,
+            duration: Number(parsed.duration) || 0,
+            updatedAt: now,
+            trackSeq: nextSeq
+          };
+          lastSyncedListeningRef.current = {
+            title: payload.title,
+            streamUrl: payload.streamUrl,
+            isPlaying: payload.isPlaying,
+            currentTime: payload.currentTime,
+            syncedAt: now,
+            trackSeq: nextSeq
+          };
+          await updateUserListeningState(currentUser.id, payload);
+        }
+      } catch {}
+    };
+
+    syncLocalTrackToFirestore();
+    const interval = setInterval(syncLocalTrackToFirestore, 1500);
+    return () => clearInterval(interval);
+  }, [currentUser?.id, currentUser?.showActivityStatus, currentUser?.isGhostMode]);
+
+  // Listen Along synchronization when following a host's CentralMusic session
+  const lastHostSyncSigRef = useRef<string>('');
+  useEffect(() => {
+    if (!listenAlongHostId) {
+      setListenAlongHost(null);
+      lastHostSyncSigRef.current = '';
+      return;
+    }
+
+    const unsub = subscribeToUserDoc(listenAlongHostId, (hostUser) => {
+      setListenAlongHost(hostUser);
+      const ls = hostUser?.listeningState;
+      if (!ls || !ls.title || !ls.streamUrl) return;
+      const sig = `${ls.title}|${ls.streamUrl}|${ls.isPlaying}|${ls.updatedAt}|${ls.trackSeq || 0}`;
+      if (sig === lastHostSyncSigRef.current) return;
+      lastHostSyncSigRef.current = sig;
+
+      const syncPayload = {
+        ...ls,
+        hostHandle: hostUser?.handle || 'friend',
+        syncedAt: Date.now()
+      };
+      try {
+        localStorage.setItem('aura_listen_along_target', JSON.stringify(syncPayload));
+        localStorage.setItem('aura_player_command', JSON.stringify({
+          action: 'syncTrack',
+          ...syncPayload,
+          timestamp: Date.now()
+        }));
+      } catch {}
+
+      const iframe = document.getElementById('game-iframe') as HTMLIFrameElement | null;
+      if (iframe && iframe.contentWindow) {
+        iframe.contentWindow.postMessage({ type: 'CENTRALMUSIC_SYNC', payload: syncPayload }, '*');
+      }
+    });
+
+    return () => unsub();
+  }, [listenAlongHostId]);
 
   const handleSupportSubmit = async () => {
     if (!supportMessage.trim()) return;
@@ -391,6 +557,23 @@ export function Layout({ children }: { children: React.ReactNode }) {
               {unreadCount > 0 && (
                 <span className="absolute top-1 right-1 bg-[#FE2C55] text-white text-[9px] font-black w-4 h-4 rounded-full flex items-center justify-center animate-pulse">
                   {unreadCount}
+                </span>
+              )}
+            </button>
+
+            <button 
+              onClick={handleToggleDnd}
+              className={`relative p-2 rounded-full transition-colors ${
+                dndEnabled
+                  ? 'bg-amber-500/15 text-amber-500 hover:bg-amber-500/25'
+                  : 'text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800'
+              }`}
+              title={dndEnabled ? 'Do Not Disturb: ON (click to disable)' : 'Do Not Disturb: OFF (click to silence notifications)'}
+            >
+              {dndEnabled ? <BellOff size={20} /> : <Bell size={20} />}
+              {dndEnabled && (
+                <span className="absolute -bottom-0.5 right-0.5 text-[8px] font-black uppercase bg-amber-500 text-black px-1 rounded-full leading-tight">
+                  DND
                 </span>
               )}
             </button>
@@ -818,6 +1001,46 @@ export function Layout({ children }: { children: React.ReactNode }) {
               </div>
             )}
           </div>
+        </div>
+      )}
+      {listenAlongHostId && listenAlongHost?.listeningState && (
+        <div className="fixed bottom-20 md:bottom-4 left-4 z-[1600] flex items-center gap-3 bg-zinc-950/90 backdrop-blur-xl border border-cyan-500/40 text-white px-3.5 py-2.5 rounded-2xl shadow-2xl shadow-cyan-500/20 max-w-xs">
+          <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-cyan-500 to-blue-600 flex items-center justify-center shrink-0 animate-spin-sideways">
+            <Disc size={16} className="text-white" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-[10px] font-black uppercase tracking-wider text-cyan-400 flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping" />
+              Listening with @{listenAlongHost.handle}
+            </p>
+            <p className="text-xs font-bold truncate">{listenAlongHost.listeningState.title}</p>
+          </div>
+          {(!isGameActive || !activeGameUrl.includes('CentralMusic.html')) && (
+            <button
+              onClick={() => {
+                setActiveGameUrl('Apps/CentralMusic.html');
+                setActiveGameTitle('Central Music');
+                setMiniPlayerTitle('Central Music');
+                setMiniPlayerActive(false);
+                setIsGameActive(true);
+                localStorage.setItem('aura_in_music_app', 'true');
+                navigate('/games-apps');
+              }}
+              className="px-2.5 py-1 bg-cyan-500 hover:bg-cyan-400 text-zinc-950 font-black text-[10px] uppercase rounded-lg shrink-0"
+            >
+              Open
+            </button>
+          )}
+          <button
+            onClick={() => {
+              setListenAlongHostId(null);
+              localStorage.removeItem('aura_listen_along_target');
+            }}
+            className="p-1 text-zinc-400 hover:text-red-400 rounded-lg transition-colors"
+            title="Stop Listening Along"
+          >
+            <X size={15} />
+          </button>
         </div>
       )}
       <GlobalMusicBubble />
