@@ -3,6 +3,7 @@ import { User, Video, AppNotification } from './types';
 import { getUsers, getVideos, initDb } from './lib/db';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { db } from './lib/firebase';
+import { handleWriteQuotaError } from './lib/db';
 
 type AppState = {
   currentUser: User | null;
@@ -93,7 +94,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             }
             setIsLoading(false);
           }, (err) => {
-            console.warn("User subscription warning:", err);
+            if (!handleWriteQuotaError(err)) {
+              console.warn("User subscription warning:", err);
+            }
             setIsLoading(false);
           });
         } catch (e) {

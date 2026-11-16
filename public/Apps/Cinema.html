@@ -816,7 +816,7 @@
           <div class="feature-pill">⚡ 45+ Servers</div>
           <div class="feature-pill">🎬 4K Ready</div>
         </div>
-        <button class="disclaimer-btn" id="agreeBtn" onclick="enterExperience()">Enter Experience</button>
+        <button class="disclaimer-btn" id="agreeBtn">Enter Experience</button>
       </div>
     </div>
   </div>
@@ -944,7 +944,7 @@
       
       <div class="modal-body">
         <div class="video-area">
-          <iframe id="videoFrame" allowfullscreen allow="fullscreen; autoplay; encrypted-media; picture-in-picture; clipboard-write"></iframe>
+          <iframe id="videoFrame" allow="fullscreen; autoplay; encrypted-media; picture-in-picture; clipboard-write"></iframe>
           
           <div class="video-placeholder" id="videoPlaceholder">
             <div class="spinner"></div>
@@ -1153,7 +1153,7 @@
           const frame = document.getElementById('videoFrame');
           frame.src = 'about:blank';
           if (window._blockPopups) {
-            frame.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-forms allow-presentation allow-encrypted-media');
+            frame.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-forms allow-presentation');
           } else {
             frame.removeAttribute('sandbox');
           }
@@ -1167,10 +1167,10 @@
         aboutblank(url) {
           const frame = document.getElementById('videoFrame');
           frame.src = 'about:blank';
-          const sbox = window._blockPopups ? 'sandbox="allow-scripts allow-same-origin allow-forms allow-presentation allow-encrypted-media"' : '';
+          const sbox = window._blockPopups ? 'sandbox="allow-scripts allow-same-origin allow-forms allow-presentation"' : '';
           const html = `<!DOCTYPE html>
 <html><head><meta charset="UTF-8"><style>html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;}iframe{width:100%;height:100%;border:none;}</style></head>
-<body><iframe src="${url}" ${sbox} allowfullscreen allow="fullscreen; autoplay; encrypted-media; picture-in-picture; clipboard-write"></iframe></body></html>`;
+<body><iframe src="${url}" ${sbox} allow="fullscreen; autoplay; encrypted-media; picture-in-picture; clipboard-write"></iframe></body></html>`;
           
           setTimeout(() => {
             try {
@@ -1188,10 +1188,10 @@
 
         datauri(url) {
           const frame = document.getElementById('videoFrame');
-          const sbox = window._blockPopups ? 'sandbox="allow-scripts allow-same-origin allow-forms allow-presentation allow-encrypted-media"' : '';
+          const sbox = window._blockPopups ? 'sandbox="allow-scripts allow-same-origin allow-forms allow-presentation"' : '';
           const html = `<!DOCTYPE html>
 <html><head><meta charset="UTF-8"><style>html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;}iframe{width:100%;height:100%;border:none;}</style></head>
-<body><iframe src="${url}" ${sbox} allowfullscreen allow="fullscreen; autoplay; encrypted-media; picture-in-picture; clipboard-write"></iframe></body></html>`;
+<body><iframe src="${url}" ${sbox} allow="fullscreen; autoplay; encrypted-media; picture-in-picture; clipboard-write"></iframe></body></html>`;
           
           const base64 = btoa(unescape(encodeURIComponent(html)));
           frame.src = `data:text/html;base64,${base64}`;
@@ -1201,10 +1201,10 @@
 
         blob(url) {
           const frame = document.getElementById('videoFrame');
-          const sbox = window._blockPopups ? 'sandbox="allow-scripts allow-same-origin allow-forms allow-presentation allow-encrypted-media"' : '';
+          const sbox = window._blockPopups ? 'sandbox="allow-scripts allow-same-origin allow-forms allow-presentation"' : '';
           const html = `<!DOCTYPE html>
 <html><head><meta charset="UTF-8"><style>html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;}iframe{width:100%;height:100%;border:none;}</style></head>
-<body><iframe src="${url}" ${sbox} allowfullscreen allow="fullscreen; autoplay; encrypted-media; picture-in-picture; clipboard-write"></iframe></body></html>`;
+<body><iframe src="${url}" ${sbox} allow="fullscreen; autoplay; encrypted-media; picture-in-picture; clipboard-write"></iframe></body></html>`;
           
           if (frame._currentBlob) {
             URL.revokeObjectURL(frame._currentBlob);
@@ -1392,14 +1392,6 @@
         speed: 'medium',
         priority: 2,
         note: 'Multi-host Mirror'
-      },
-      { 
-        name: 'VidSrc PM', 
-        url: 'https://vidsrc.pm/embed/${t}?tmdb=${id}${sea}', 
-        quality: 'HD', 
-        speed: 'fast',
-        priority: 2,
-        note: 'Alternative 1'
       },
       { 
         name: '111movies', 
