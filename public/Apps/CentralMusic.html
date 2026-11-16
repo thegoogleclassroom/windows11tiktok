@@ -346,11 +346,12 @@
                     streamUrl: track.streamUrl
                 };
                 audio.src = track.streamUrl;
+                broadcastState();
                 document.getElementById('art-zone').innerHTML = `<img src="${track.artwork || ''}">`;
                 bgBlur.style.backgroundImage = `url(${track.artwork || ''})`;
                 document.getElementById('track-title').innerText = track.title;
                 document.getElementById('track-artist').innerText = track.artist;
-                audio.play();
+                audio.play().catch(() => {});
                 document.getElementById('play-btn').innerText = '⏸';
                 updateQueueUI();
                 if (isLyricMode) fetchLyrics(track.artist, track.title);
@@ -576,6 +577,12 @@
             broadcastState();
         };
         audio.onseeked = () => broadcastState();
+
+        setInterval(() => {
+            if (currentTrackData && !audio.paused && !isApplyingSync) {
+                broadcastState();
+            }
+        }, 5000);
 
         audio.ontimeupdate = () => {
             const b = document.getElementById('seek-bar');

@@ -121,7 +121,7 @@ export function Inbox() {
     };
     
     loadInbox();
-    const interval = setInterval(loadInbox, 5000);
+    const interval = setInterval(loadInbox, 30000);
     return () => clearInterval(interval);
   }, [currentUser]);
 

@@ -18,7 +18,9 @@ export const subscribeToSuggestions = (callback: (suggestions: AppSuggestion[]) 
   return onSnapshot(collection(db, 'app_suggestions'), (snapshot) => {
     callback(snapshot.docs.map(doc => doc.data() as AppSuggestion));
   }, (err) => {
-    console.warn("Suggestions subscription permission denied or error:", err);
+    if (!isQuotaError(err)) {
+      console.warn("Suggestions subscription permission denied or error:", err);
+    }
   });
 };
 
@@ -83,7 +85,9 @@ export const subscribeToVerificationRequests = (callback: (requests: Verificatio
   return onSnapshot(collection(db, 'verification_requests'), (snapshot) => {
     callback(snapshot.docs.map(doc => doc.data() as VerificationRequest));
   }, (err) => {
-    console.warn("Verification requests subscription permission denied or error:", err);
+    if (!handleWriteQuotaError(err)) {
+      console.warn("Verification requests subscription permission denied or error:", err);
+    }
   });
 };
 
@@ -130,7 +134,9 @@ export const subscribeToAnnouncements = (callback: (announcements: Announcement[
     const announcements = snapshot.docs.map(doc => doc.data() as Announcement);
     callback(announcements);
   }, (err) => {
-    console.error("Announcement subscription error:", err);
+    if (!isQuotaError(err)) {
+      console.error("Announcement subscription error:", err);
+    }
   });
 };
 
@@ -185,7 +191,26 @@ export const initDb = async () => {};
 
 // Track last known serialized docs per collection so saveCollection only writes changed/new items
 const lastSyncedDocs = new Map<string, Map<string, string>>();
+const readCache = new Map<string, { data: any[]; fetchedAt: number }>();
+const inflightFetches = new Map<string, Promise<any[]>>();
 let quotaBlockedUntil = 0;
+
+const COLLECTION_TTL_MS: Record<string, number> = {
+  users: 60_000,
+  videos: 45_000,
+  stories: 45_000,
+  announcements: 45_000,
+  faq_categories: 60_000,
+  faq_posts: 45_000,
+  sneak_peeks: 45_000,
+  app_suggestions: 45_000,
+  messages: 15_000,
+  notifications: 20_000,
+  group_chats: 25_000,
+  user_statuses: 10_000,
+};
+
+const getCollectionTtl = (collName: string) => COLLECTION_TTL_MS[collName] ?? 30_000;
 
 export const isQuotaBlocked = () => Date.now() < quotaBlockedUntil;
 
@@ -197,12 +222,37 @@ export const isQuotaError = (err: any): boolean => {
 
 export const handleWriteQuotaError = (err: any) => {
   if (isQuotaError(err)) {
-    // Pause Firestore writes for 5 minutes to avoid SDK retry storms
+    const wasAlreadyBlocked = isQuotaBlocked();
+    // Pause Firestore reads/writes for 5 minutes to avoid SDK retry storms & console spam
     quotaBlockedUntil = Date.now() + 5 * 60 * 1000;
-    console.warn('Firestore daily write quota reached — pausing remote writes and keeping local cache active.');
+    if (!wasAlreadyBlocked) {
+      console.warn('Firestore free daily quota reached — pausing remote sync for 5 minutes and using local cache.');
+    }
     return true;
   }
   return false;
+};
+
+const getCachedCollection = <T>(collName: string): T[] => {
+  const mem = readCache.get(collName);
+  if (mem?.data) return mem.data as T[];
+  try {
+    const cached = localStorage.getItem(`ct_cache_${collName}`);
+    if (cached) {
+      const parsed = JSON.parse(cached) as T[];
+      readCache.set(collName, { data: parsed, fetchedAt: 0 });
+      return parsed;
+    }
+  } catch {}
+  return [];
+};
+
+const setCachedCollection = <T>(collName: string, items: T[], updateTimestamp = true) => {
+  const prev = readCache.get(collName);
+  readCache.set(collName, { data: items, fetchedAt: updateTimestamp ? Date.now() : (prev?.fetchedAt || 0) });
+  try {
+    localStorage.setItem(`ct_cache_${collName}`, JSON.stringify(items));
+  } catch {}
 };
 
 const recordCollectionSnapshot = <T extends { id?: string }>(collName: string, items: T[]) => {
@@ -221,35 +271,48 @@ const recordCollectionSnapshot = <T extends { id?: string }>(collName: string, i
 };
 
 const fetchCollection = async <T>(collName: string): Promise<T[]> => {
-  try {
-    const snapshot = await getDocs(collection(db, collName));
-    const items = snapshot.docs.map(doc => doc.data() as T);
-    recordCollectionSnapshot(collName, items as any[]);
-    try {
-      localStorage.setItem(`ct_cache_${collName}`, JSON.stringify(items));
-    } catch {}
-    return items;
-  } catch (err: any) {
-    handleWriteQuotaError(err);
-    const msg = err?.message || String(err);
-    if (!msg.includes('Missing or insufficient permissions') && !msg.includes('permission-denied')) {
-      console.warn(`Note on fetching ${collName}:`, msg);
-    }
-    try {
-      const cached = localStorage.getItem(`ct_cache_${collName}`);
-      if (cached) {
-        return JSON.parse(cached) as T[];
-      }
-    } catch {}
-    return [];
+  const cachedMem = readCache.get(collName);
+  if (cachedMem && Date.now() - cachedMem.fetchedAt < getCollectionTtl(collName)) {
+    return cachedMem.data as T[];
   }
+
+  if (isQuotaBlocked()) {
+    return getCachedCollection<T>(collName);
+  }
+
+  const pending = inflightFetches.get(collName);
+  if (pending) {
+    return pending as Promise<T[]>;
+  }
+
+  const req = (async (): Promise<T[]> => {
+    try {
+      const snapshot = await getDocs(collection(db, collName));
+      const items = snapshot.docs.map(doc => doc.data() as T);
+      recordCollectionSnapshot(collName, items as any[]);
+      setCachedCollection(collName, items, true);
+      return items;
+    } catch (err: any) {
+      const isQuota = handleWriteQuotaError(err);
+      if (!isQuota) {
+        const msg = err?.message || String(err);
+        if (!msg.includes('Missing or insufficient permissions') && !msg.includes('permission-denied')) {
+          console.warn(`Note on fetching ${collName}:`, msg);
+        }
+      }
+      return getCachedCollection<T>(collName);
+    } finally {
+      inflightFetches.delete(collName);
+    }
+  })();
+
+  inflightFetches.set(collName, req);
+  return req;
 };
 
 const saveCollection = async <T extends { id: string }>(collName: string, items: T[]) => {
   if (!items || items.length === 0) return;
-  try {
-    localStorage.setItem(`ct_cache_${collName}`, JSON.stringify(items));
-  } catch {}
+  setCachedCollection(collName, items, false);
   if (isQuotaBlocked()) return;
 
   try {
@@ -299,17 +362,30 @@ const saveCollection = async <T extends { id: string }>(collName: string, items:
 export const getUsers = () => fetchCollection<User>('users');
 
 export const getUser = async (id: string): Promise<User | null> => {
-  const docRef = doc(db, 'users', id);
-  const snap = await getDoc(docRef);
-  return snap.exists() ? snap.data() as User : null;
+  const cachedMem = readCache.get('users');
+  if (cachedMem && (isQuotaBlocked() || Date.now() - cachedMem.fetchedAt < getCollectionTtl('users'))) {
+    const found = (cachedMem.data as User[]).find(u => u.id === id);
+    if (found || isQuotaBlocked()) return found || null;
+  }
+  if (isQuotaBlocked()) {
+    return getCachedCollection<User>('users').find(u => u.id === id) || null;
+  }
+  try {
+    const docRef = doc(db, 'users', id);
+    const snap = await getDoc(docRef);
+    return snap.exists() ? snap.data() as User : null;
+  } catch (err) {
+    handleWriteQuotaError(err);
+    return getCachedCollection<User>('users').find(u => u.id === id) || null;
+  }
 };
 export const saveUsers = (users: User[]) => saveCollection('users', users);
 
 export const updateUser = async (userId: string, data: Partial<User>) => {
   try {
-    const cached = JSON.parse(localStorage.getItem('ct_cache_users') || '[]') as User[];
+    const cached = getCachedCollection<User>('users');
     if (cached.length > 0) {
-      localStorage.setItem('ct_cache_users', JSON.stringify(cached.map(u => u.id === userId ? { ...u, ...data } : u)));
+      setCachedCollection('users', cached.map(u => u.id === userId ? { ...u, ...data } : u), false);
     }
   } catch {}
   if (isQuotaBlocked()) return;
@@ -326,10 +402,21 @@ export const updateUser = async (userId: string, data: Partial<User>) => {
 };
 
 export const updateUserListeningState = async (userId: string, listeningState: User['listeningState']) => {
-  if (!userId || isQuotaBlocked()) return;
+  if (!userId) return;
+  const cleaned = listeningState ? deepClean(listeningState) : null;
+  try {
+    const cached = getCachedCollection<User>('users');
+    if (cached.length > 0) {
+      setCachedCollection('users', cached.map(u => u.id === userId ? { ...u, listeningState: cleaned || undefined } : u), false);
+    }
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('ct-user-listening-updated', { detail: { userId, listeningState: cleaned } }));
+    }
+  } catch {}
+  if (isQuotaBlocked()) return;
   try {
     await updateDoc(doc(db, 'users', userId), {
-      listeningState: listeningState ? deepClean(listeningState) : null
+      listeningState: cleaned
     });
   } catch (err) {
     handleWriteQuotaError(err);
@@ -340,11 +427,20 @@ export const subscribeToUserDoc = (userId: string, callback: (user: User | null)
   if (!userId) return () => {};
   return onSnapshot(doc(db, 'users', userId), (snap) => {
     if (snap.exists()) {
-      callback(snap.data() as User);
+      const userData = snap.data() as User;
+      try {
+        const cached = getCachedCollection<User>('users');
+        if (cached.length > 0) {
+          setCachedCollection('users', cached.map(u => u.id === userId ? { ...u, ...userData } : u), false);
+        }
+      } catch {}
+      callback(userData);
     } else {
       callback(null);
     }
-  }, () => {});
+  }, (err) => {
+    handleWriteQuotaError(err);
+  });
 };
 
 export const updateUserGame = async (userId: string, gameTitle: string | null) => {
@@ -462,8 +558,8 @@ export const saveMessages = (messages: Message[]) => saveCollection('messages', 
 
 export const addMessage = async (msg: Message) => {
   try {
-    const cached = JSON.parse(localStorage.getItem('ct_cache_messages') || '[]') as Message[];
-    localStorage.setItem('ct_cache_messages', JSON.stringify([...cached, msg]));
+    const cached = getCachedCollection<Message>('messages');
+    setCachedCollection('messages', [...cached, msg], false);
   } catch {}
   if (isQuotaBlocked()) return;
   try {
@@ -484,7 +580,7 @@ export const addMessage = async (msg: Message) => {
 export const markMessagesSeen = async (messageIds: string[], userId: string) => {
   if (!messageIds.length || !userId) return;
   try {
-    const cached = JSON.parse(localStorage.getItem('ct_cache_messages') || '[]') as Message[];
+    const cached = getCachedCollection<Message>('messages');
     if (cached.length > 0) {
       const idSet = new Set(messageIds);
       const updated = cached.map(m =>
@@ -492,7 +588,7 @@ export const markMessagesSeen = async (messageIds: string[], userId: string) => 
           ? { ...m, read: true, seenBy: Array.from(new Set([...(m.seenBy || []), userId])) }
           : m
       );
-      localStorage.setItem('ct_cache_messages', JSON.stringify(updated));
+      setCachedCollection('messages', updated, false);
     }
   } catch {}
   if (isQuotaBlocked()) return;
@@ -517,15 +613,18 @@ export const subscribeToMessages = (callback: (messages: Message[]) => void) => 
   return onSnapshot(collection(db, 'messages'), (snapshot) => {
     const msgs = snapshot.docs.map(doc => doc.data() as Message);
     recordCollectionSnapshot('messages', msgs);
+    setCachedCollection('messages', msgs, true);
     callback(msgs);
   }, (err) => {
-    console.warn("Messages subscription error:", err);
+    if (!handleWriteQuotaError(err)) {
+      console.warn("Messages subscription error:", err);
+    }
   });
 };
 export const deleteMessage = async (messageId: string) => {
   try {
-    const cached = JSON.parse(localStorage.getItem('ct_cache_messages') || '[]') as Message[];
-    localStorage.setItem('ct_cache_messages', JSON.stringify(cached.filter(m => m.id !== messageId)));
+    const cached = getCachedCollection<Message>('messages');
+    setCachedCollection('messages', cached.filter(m => m.id !== messageId), false);
     lastSyncedDocs.get('messages')?.delete(messageId);
   } catch {}
   if (isQuotaBlocked()) return;
@@ -539,7 +638,7 @@ export const deleteMessage = async (messageId: string) => {
 export const toggleMessageReaction = async (messageId: string, emoji: string, userId: string): Promise<Record<string, string[]> | undefined> => {
   let nextReactions: Record<string, string[]> | undefined;
   try {
-    const cached = JSON.parse(localStorage.getItem('ct_cache_messages') || '[]') as Message[];
+    const cached = getCachedCollection<Message>('messages');
     const target = cached.find(m => m.id === messageId);
     if (target) {
       const current = { ...(target.reactions || {}) };
@@ -552,7 +651,7 @@ export const toggleMessageReaction = async (messageId: string, emoji: string, us
         current[emoji] = [...list, userId];
       }
       nextReactions = current;
-      localStorage.setItem('ct_cache_messages', JSON.stringify(cached.map(m => m.id === messageId ? { ...m, reactions: current } : m)));
+      setCachedCollection('messages', cached.map(m => m.id === messageId ? { ...m, reactions: current } : m), false);
     }
   } catch {}
   if (isQuotaBlocked()) return nextReactions;
@@ -816,8 +915,8 @@ export const saveNotifications = (notifications: AppNotification[]) => saveColle
 export const addNotifications = async (newNotifs: AppNotification[]) => {
   if (!newNotifs.length) return;
   try {
-    const cached = JSON.parse(localStorage.getItem('ct_cache_notifications') || '[]') as AppNotification[];
-    localStorage.setItem('ct_cache_notifications', JSON.stringify([...cached, ...newNotifs]));
+    const cached = getCachedCollection<AppNotification>('notifications');
+    setCachedCollection('notifications', [...cached, ...newNotifs], false);
   } catch {}
   if (isQuotaBlocked()) return;
   try {
@@ -855,12 +954,13 @@ export const markNotificationAsRead = async (notificationId: string) => {
 
 export const subscribeToNotifications = (userId: string, callback: (notifications: AppNotification[]) => void) => {
   return onSnapshot(collection(db, 'notifications'), (snapshot) => {
-    const notifs = snapshot.docs
-      .map(doc => doc.data() as AppNotification)
-      .filter(n => n.userId === userId);
-    callback(notifs);
+    const allNotifs = snapshot.docs.map(doc => doc.data() as AppNotification);
+    setCachedCollection('notifications', allNotifs, true);
+    callback(allNotifs.filter(n => n.userId === userId));
   }, (err) => {
-    console.warn("Notification subscription error:", err);
+    if (!handleWriteQuotaError(err)) {
+      console.warn("Notification subscription error:", err);
+    }
   });
 };
 
@@ -1246,36 +1346,37 @@ export const subscribeToSneakPeeks = (callback: (peeks: SneakPeek[]) => void) =>
   return onSnapshot(collection(db, 'sneak_peeks'), (snapshot) => {
     callback(snapshot.docs.map(doc => doc.data() as SneakPeek));
   }, (err) => {
-    console.warn("Sneak peeks subscription warning:", err);
+    if (!handleWriteQuotaError(err)) {
+      console.warn("Sneak peeks subscription warning:", err);
+    }
   });
 };
 
 export const getAppSettings = async () => {
+  const fallback = {
+    useCache: true,
+    youtubeApiKeyIndex: 0,
+    serverCrashed: false,
+    gamesAppsCrashed: false
+  };
+  if (isQuotaBlocked()) return fallback;
   try {
     const docRef = doc(db, 'app_settings', 'global');
     const snap = await getDoc(docRef);
     if (snap.exists()) {
-      return snap.data() as { 
-        useCache: boolean; 
-        youtubeApiKeyIndex: number; 
-        serverCrashed: boolean; 
-        gamesAppsCrashed: boolean; 
+      return snap.data() as {
+        useCache: boolean;
+        youtubeApiKeyIndex: number;
+        serverCrashed: boolean;
+        gamesAppsCrashed: boolean;
       };
     }
-    return { 
-      useCache: true, 
-      youtubeApiKeyIndex: 0, 
-      serverCrashed: false, 
-      gamesAppsCrashed: false 
-    };
+    return fallback;
   } catch (err) {
-    console.error("Error fetching app settings:", err);
-    return { 
-      useCache: true, 
-      youtubeApiKeyIndex: 0, 
-      serverCrashed: false, 
-      gamesAppsCrashed: false 
-    };
+    if (!handleWriteQuotaError(err)) {
+      console.error("Error fetching app settings:", err);
+    }
+    return fallback;
   }
 };
 

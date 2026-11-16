@@ -127,8 +127,25 @@ export function Profile() {
         setProfileUser(prev => prev ? { ...prev, ...updated } : updated);
       }
     });
-    return () => unsub();
-  }, [profileUser?.id]);
+    const onLocalListeningUpdate = (e: Event) => {
+      const detail = (e as CustomEvent)?.detail;
+      if (detail && detail.userId === profileUser.id) {
+        setProfileUser(prev => prev ? { ...prev, listeningState: detail.listeningState || undefined } : prev);
+      }
+    };
+    const onStorageChange = (e: StorageEvent) => {
+      if (e.key === 'aura_current_track' && currentUser?.id === profileUser.id) {
+        setNowTick(Date.now());
+      }
+    };
+    window.addEventListener('ct-user-listening-updated', onLocalListeningUpdate);
+    window.addEventListener('storage', onStorageChange);
+    return () => {
+      unsub();
+      window.removeEventListener('ct-user-listening-updated', onLocalListeningUpdate);
+      window.removeEventListener('storage', onStorageChange);
+    };
+  }, [profileUser?.id, currentUser?.id]);
 
   // Smooth live timeline ticker while listening modal is open
   useEffect(() => {
@@ -137,6 +154,26 @@ export function Profile() {
     const id = setInterval(() => setNowTick(Date.now()), 250);
     return () => clearInterval(id);
   }, [showListeningModal]);
+
+  const activeListeningState = React.useMemo(() => {
+    let ls = profileUser?.listeningState;
+    if ((!ls || !ls.title) && isOwnProfile) {
+      try {
+        const raw = localStorage.getItem('aura_current_track');
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (parsed && parsed.title && parsed.streamUrl) {
+            ls = parsed;
+          }
+        }
+      } catch {}
+    }
+    if (!ls || !ls.title || !profileUser) return null;
+    if (profileUser.showActivityStatus === false || profileUser.isGhostMode || profileUser.isSystemWiped) return null;
+    const age = Math.abs(Date.now() - (ls.updatedAt || Date.now()));
+    const isFresh = ls.isPlaying ? age < 15 * 60 * 1000 : age < 90_000;
+    return isFresh ? ls : null;
+  }, [profileUser, isOwnProfile, nowTick]);
 
   const handleFollow = async () => {
     if (!currentUser || !profileUser) return;
@@ -315,16 +352,8 @@ export function Profile() {
             </div>
 
             {(() => {
-              const ls = profileUser.listeningState;
-              const isListeningVisible = Boolean(
-                ls &&
-                ls.title &&
-                profileUser.showActivityStatus !== false &&
-                !profileUser.isGhostMode &&
-                !profileUser.isSystemWiped &&
-                (ls.isPlaying ? Date.now() - ls.updatedAt < 180000 : Date.now() - ls.updatedAt < 45000)
-              );
-              if (!isListeningVisible || !ls) return null;
+              const ls = activeListeningState;
+              if (!ls) return null;
               return (
                 <div className="flex justify-center md:justify-start mb-4">
                   <button
@@ -705,9 +734,9 @@ export function Profile() {
 
       {/* Live CentralMusic Detail & Listen Along Modal */}
       <AnimatePresence>
-        {showListeningModal && profileUser?.listeningState && (() => {
-          const ls = profileUser.listeningState!;
-          const elapsed = ls.isPlaying ? Math.max(0, (nowTick - ls.updatedAt) / 1000) : 0;
+        {showListeningModal && activeListeningState && (() => {
+          const ls = activeListeningState!;
+          const elapsed = ls.isPlaying ? Math.max(0, (nowTick - (ls.updatedAt || nowTick)) / 1000) : 0;
           const duration = ls.duration || 0;
           const liveTime = duration > 0 ? Math.min(duration, (ls.currentTime || 0) + elapsed) : (ls.currentTime || 0) + elapsed;
           const pct = duration > 0 ? Math.min(100, Math.max(0, (liveTime / duration) * 100)) : 0;

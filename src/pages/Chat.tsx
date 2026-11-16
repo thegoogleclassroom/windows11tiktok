@@ -179,7 +179,7 @@ export function Chat() {
     };
     
     loadChat();
-    const interval = setInterval(loadChat, 3500);
+    const interval = setInterval(loadChat, 12000);
     return () => clearInterval(interval);
   }, [handle, groupId, currentUser?.id, navigate, otherUser?.id]);
 

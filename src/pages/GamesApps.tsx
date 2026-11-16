@@ -43,8 +43,10 @@ export function GamesApps() {
       const users = await getUsers();
       setAllUsers(users);
     };
-    fetchAllUsers();
-    const userInterval = setInterval(fetchAllUsers, 10000);
+    if (!isGameActive) {
+      fetchAllUsers();
+    }
+    const userInterval = isGameActive ? null : setInterval(fetchAllUsers, 60000);
 
     const handleMessage = (event: MessageEvent) => {
       if (event.data.type === 'CINEMA_PLAYING') {
@@ -60,9 +62,9 @@ export function GamesApps() {
     return () => {
       unsub();
       window.removeEventListener('message', handleMessage);
-      clearInterval(userInterval);
+      if (userInterval) clearInterval(userInterval);
     };
-  }, []);
+  }, [isGameActive]);
 
   useEffect(() => {
     let timerId: any;

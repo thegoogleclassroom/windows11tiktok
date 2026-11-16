@@ -175,8 +175,11 @@ export function CallOverlay() {
           }
         }
       });
-    }, (err) => {
-      console.warn("Incoming calls snapshot warning:", err);
+    }, (err: any) => {
+      const msg = String(err?.message || '').toLowerCase();
+      if (!msg.includes('quota') && err?.code !== 'resource-exhausted') {
+        console.warn("Incoming calls snapshot warning:", err);
+      }
     });
 
     return () => unsub();

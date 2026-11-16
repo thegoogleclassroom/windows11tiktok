@@ -248,7 +248,7 @@ export function Admin() {
   useEffect(() => {
     if (isMod && activeTab === 'centralpro') {
       refreshCentralProList();
-      const interval = setInterval(refreshCentralProList, 4000);
+      const interval = setInterval(refreshCentralProList, 30000);
       return () => clearInterval(interval);
     }
   }, [isMod, activeTab]);
