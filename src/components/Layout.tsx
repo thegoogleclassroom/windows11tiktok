@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { useAppStore } from '../store';
 import { AuthModal } from './AuthModal';
 import { MiniPlayer } from './MiniPlayer';
-import { saveReports, getMessages, getUsers, getNotifications, markNotificationAsRead, getFAQPosts, subscribeToNotifications, saveGameData, getGameData, subscribeToIncomingCalls, subscribeToMessages, updateUser, requestCentralProVerification, updateUserListeningState, subscribeToUserDoc, isQuotaBlocked } from '../lib/db';
+import { saveReports, getMessages, getUsers, getNotifications, markNotificationAsRead, getFAQPosts, subscribeToNotifications, saveGameData, getGameData, subscribeToIncomingCalls, subscribeToMessages, updateUser, requestCentralProVerification, updateUserListeningState, subscribeToUserDoc, isQuotaBlocked, subscribeToLiveStreams } from '../lib/db';
 import { playNotificationSound } from '../lib/utils';
 import { TradientInfoModal } from './TradientInfoModal';
 import { HolographicBadge, CentralProBadge } from './UIPolish';
@@ -51,7 +51,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
   const [showForumChooser, setShowForumChooser] = useState(false);
   const [showVerificationModal, setShowVerificationModal] = useState(false);
   const [showCentralProModal, setShowCentralProModal] = useState(false);
-  const [showLiveComingSoon, setShowLiveComingSoon] = useState(false);
+  const [liveCount, setLiveCount] = useState(0);
   const [supportMessage, setSupportMessage] = useState('');
   const [supportType, setSupportType] = useState<'support' | 'bug' | null>(null);
   const [supportSent, setSupportSent] = useState(false);
@@ -114,6 +114,10 @@ export function Layout({ children }: { children: React.ReactNode }) {
     getUsers().then(users => {
       setSuggestedUsers(users.slice(0, 4));
     }).catch(() => {});
+    const unsubLive = subscribeToLiveStreams(streams => {
+      setLiveCount(streams.length);
+    });
+    return () => unsubLive();
   }, []);
 
   const handleSearchSubmit = (e: React.FormEvent) => {
@@ -471,11 +475,6 @@ export function Layout({ children }: { children: React.ReactNode }) {
   }
 
   const handleNavClick = (e: React.MouseEvent, path: string) => {
-    if (path === '/live') {
-      e.preventDefault();
-      setShowLiveComingSoon(true);
-      return;
-    }
     if (path === '#' || (['/messages', '/upload'].includes(path) && !currentUser)) {
       e.preventDefault();
       setShowAuthModal(true);
@@ -644,7 +643,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
                     <span className="text-base tracking-tight">{item.label}</span>
                     {item.badge === 'LIVE' && (
                       <span className="ml-auto bg-[#FE2C55] text-white text-[10px] font-black px-1.5 py-0.5 rounded tracking-wider shadow-[0_0_8px_rgba(254,44,85,0.6)] animate-pulse">
-                        LIVE
+                        {liveCount > 0 ? `${liveCount} LIVE` : 'LIVE'}
                       </span>
                     )}
                     {isMessages && unreadCount > 0 && (
@@ -904,6 +903,13 @@ export function Layout({ children }: { children: React.ReactNode }) {
             <Compass size={26} className={location.pathname === '/explore' ? 'text-pink-600 fill-current drop-shadow-[0_0_8px_rgba(236,72,153,0.5)]' : 'text-zinc-500'} />
             {location.pathname === '/explore' && <motion.div layoutId="mob-nav" className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-1.5 h-1.5 bg-pink-600 rounded-full" />}
           </Link>
+          <Link to="/live" onClick={(e) => handleNavClick(e, '/live')} className="p-2.5 relative">
+            <LiveBroadcastIcon size={24} className={location.pathname.startsWith('/live') ? 'text-[#FE2C55]' : 'text-zinc-500'} />
+            {liveCount > 0 && (
+              <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-[#FE2C55] animate-ping" />
+            )}
+            {location.pathname.startsWith('/live') && <motion.div layoutId="mob-nav" className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-1.5 h-1.5 bg-[#FE2C55] rounded-full" />}
+          </Link>
           <Link to="/upload" onClick={(e) => handleNavClick(e, '/upload')} className="p-1 transform hover:scale-110 active:scale-95 transition-transform">
             <div className="w-12 h-8 rounded-xl bg-gradient-to-br from-cyan-400 via-pink-500 to-purple-600 p-[2px] shadow-lg shadow-pink-500/20">
               <div className="w-full h-full bg-black dark:bg-zinc-900 rounded-[10px] flex items-center justify-center">
@@ -1046,7 +1052,6 @@ export function Layout({ children }: { children: React.ReactNode }) {
       <GlobalMusicBubble />
       <IframeDomainNotice />
       <CentralProModal isOpen={showCentralProModal} onClose={() => setShowCentralProModal(false)} />
-      <LiveComingSoonModal isOpen={showLiveComingSoon} onClose={() => setShowLiveComingSoon(false)} />
     </div>
   );
 }

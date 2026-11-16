@@ -22,6 +22,40 @@ export const GAMES: GameItem[] = [
     frameColor: 'yellow',
     badge: 'New!!'
   },
+  {
+    id: 'magic-tiles-3',
+    title: 'Magic Tiles 3',
+    url: 'Games/Magic Tiles 3.html',
+    category: 'Rhythm',
+    color: 'cyan',
+    icon: 'https://cdn.jsdelivr.net/gh/Arcticons-Team/Arcticons/icons/black/piano_tiles_2.svg',
+    isNew: true,
+    frameColor: 'yellow',
+    badge: 'New!!'
+  },
+  {
+    id: 'retro-bowl-college',
+    title: 'Retro Bowl College',
+    url: 'Games/Retro Bowl College.html',
+    category: 'Sports',
+    color: 'amber',
+    icon: 'https://cdn.jsdelivr.net/gh/Arcticons-Team/Arcticons/icons/black/retro_bowl.svg',
+    isNew: true,
+    frameColor: 'yellow',
+    badge: 'New!!'
+  },
+  {
+    id: 'supreme-duelist',
+    title: 'Supreme Duelist',
+    url: 'Games/Supreme Duelist.html',
+    category: 'Fighting',
+    color: 'red',
+    icon: 'https://cdn.jsdelivr.net/gh/Arcticons-Team/Arcticons/icons/black/stickman_hook.svg',
+    isNew: true,
+    frameColor: 'yellow',
+    badge: 'New!!'
+  },
+  { id: 'fnf-sonic-exe', title: 'FNF Vs. Sonic.EXE 3.0/4.0', url: 'Games/FNF Vs. Sonic.EXE 3.0_4.0.html', category: 'Rhythm', color: 'indigo', icon: 'https://cdn.jsdelivr.net/gh/Arcticons-Team/Arcticons/icons/black/fnf.svg' },
   { id: '2048-merge', title: '2048 Merge Run', url: 'Games/2048 Merge Run.html', category: 'Puzzle', color: 'orange', icon: 'https://cdn.jsdelivr.net/gh/Arcticons-Team/Arcticons/icons/black/merge_master.svg' },
   { id: 'adofai', title: 'A Dance of Fire and Ice', url: 'Games/A Dance of Fire and Ice.html', category: 'Rhythm', color: 'red', icon: 'https://cdn.jsdelivr.net/gh/Arcticons-Team/Arcticons/icons/black/dance_of_fire_and_ice.svg' },
   { id: 'adventure-cap', title: 'Adventure Capatalist', url: 'Games/Adventure Capatalist.html', category: 'Idle', color: 'green', icon: 'https://cdn.jsdelivr.net/gh/Arcticons-Team/Arcticons/icons/black/adventure_capitalist.svg' },

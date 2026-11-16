@@ -1,7 +1,7 @@
-import { collection, doc, getDocs, setDoc, updateDoc, writeBatch, arrayUnion, getDoc, onSnapshot, deleteDoc } from 'firebase/firestore';
+import { collection, doc, getDocs, setDoc, updateDoc, writeBatch, arrayUnion, arrayRemove, getDoc, onSnapshot, deleteDoc, increment } from 'firebase/firestore';
 import { db, auth } from './firebase';
 export { db, doc, updateDoc, getDoc };
-import { User, Video, Message, AppNotification, Report, Appeal, AuditLog, Comment, Story, FAQCategory, FAQPost, ForumEditRequest, GroupChat, UserStatus, GameData, WatchParty, Announcement, Call, VerificationRequest, AppSuggestion, SneakPeek, CentralProRequest } from '../types';
+import { User, Video, Message, AppNotification, Report, Appeal, AuditLog, Comment, Story, FAQCategory, FAQPost, ForumEditRequest, GroupChat, UserStatus, GameData, WatchParty, Announcement, Call, VerificationRequest, AppSuggestion, SneakPeek, CentralProRequest, LiveStream, LiveRtcSignal } from '../types';
 
 export const submitSuggestion = async (suggestion: AppSuggestion) => {
   try {
@@ -1548,3 +1548,241 @@ export const subscribeToCall = (callId: string, callback: (call: Call | null) =>
     // Suppress connection warning
   });
 };
+
+// ==========================================
+// LIVE STREAMING & LIVE CHAT / WEBRTC
+// Stored inside watch_parties / messages / calls to match active Firestore rules
+// ==========================================
+
+const LIVE_STREAM_MAX_AGE_MS = 6 * 60 * 60 * 1000;
+
+export const getLiveRtcDocId = (streamId: string, viewerId: string) => {
+  return `live_rtc_${streamId}__${viewerId}`;
+};
+
+export const subscribeToLiveStreams = (callback: (streams: LiveStream[]) => void) => {
+  return onSnapshot(collection(db, 'watch_parties'), (snap) => {
+    const now = Date.now();
+    const streams = snap.docs
+      .map(d => d.data() as any)
+      .filter((d): d is LiveStream => Boolean(d?.isLiveStream) && d.status === 'live' && (now - (d.updatedAt || d.startedAt || now) < LIVE_STREAM_MAX_AGE_MS))
+      .sort((a, b) => (b.startedAt || 0) - (a.startedAt || 0));
+    try {
+      localStorage.setItem('ct_cache_live_streams', JSON.stringify(streams));
+    } catch {}
+    callback(streams);
+  }, () => {
+    try {
+      const cached = JSON.parse(localStorage.getItem('ct_cache_live_streams') || '[]') as LiveStream[];
+      callback(cached.filter(s => s.status === 'live'));
+    } catch {
+      callback([]);
+    }
+  });
+};
+
+export const subscribeToLiveStream = (streamId: string, callback: (stream: LiveStream | null) => void) => {
+  if (!streamId) return () => {};
+  return onSnapshot(doc(db, 'watch_parties', streamId), (snap) => {
+    if (snap.exists()) {
+      const data = snap.data() as any;
+      if (data?.isLiveStream) {
+        callback(data as LiveStream);
+        return;
+      }
+    }
+    callback(null);
+  }, () => {});
+};
+
+export const createLiveStream = async (stream: LiveStream) => {
+  if (isQuotaBlocked()) return;
+  try {
+    const cleaned = deepClean(stream);
+    await setDoc(doc(db, 'watch_parties', stream.id), cleaned);
+  } catch (err) {
+    if (!handleWriteQuotaError(err)) {
+      console.error('Error creating live stream:', err);
+      throw err;
+    }
+  }
+};
+
+export const updateLiveStream = async (streamId: string, updates: Partial<LiveStream>) => {
+  if (!streamId || isQuotaBlocked()) return;
+  try {
+    const cleaned = deepClean({ ...updates, updatedAt: Date.now() });
+    await updateDoc(doc(db, 'watch_parties', streamId), cleaned);
+  } catch (err) {
+    handleWriteQuotaError(err);
+  }
+};
+
+export const joinLiveStream = async (streamId: string, viewerId: string) => {
+  if (!streamId || !viewerId || isQuotaBlocked()) return;
+  try {
+    await updateDoc(doc(db, 'watch_parties', streamId), {
+      viewers: arrayUnion(viewerId),
+      updatedAt: Date.now()
+    });
+  } catch (err) {
+    handleWriteQuotaError(err);
+  }
+};
+
+export const leaveLiveStream = async (streamId: string, viewerId: string) => {
+  if (!streamId || !viewerId || isQuotaBlocked()) return;
+  try {
+    await updateDoc(doc(db, 'watch_parties', streamId), {
+      viewers: arrayRemove(viewerId)
+    });
+  } catch (err) {
+    handleWriteQuotaError(err);
+  }
+};
+
+export const sendLiveReaction = async (streamId: string, emoji: string, senderName: string) => {
+  if (!streamId || isQuotaBlocked()) return;
+  try {
+    await updateDoc(doc(db, 'watch_parties', streamId), {
+      likes: increment(1),
+      recentReaction: {
+        id: `rx_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        emoji,
+        senderName,
+        timestamp: Date.now()
+      }
+    });
+  } catch (err) {
+    handleWriteQuotaError(err);
+  }
+};
+
+export const voteLivePoll = async (streamId: string, userId: string, optionIndex: number) => {
+  if (!streamId || !userId || isQuotaBlocked()) return;
+  try {
+    await updateDoc(doc(db, 'watch_parties', streamId), {
+      [`poll.votes.${userId}`]: optionIndex,
+      updatedAt: Date.now()
+    });
+  } catch (err) {
+    handleWriteQuotaError(err);
+  }
+};
+
+export const cleanupLiveRtcForViewer = async (streamId: string, viewerId: string) => {
+  if (!streamId || !viewerId || isQuotaBlocked()) return;
+  try {
+    await deleteDoc(doc(db, 'calls', getLiveRtcDocId(streamId, viewerId)));
+  } catch (err) {
+    handleWriteQuotaError(err);
+  }
+};
+
+export const endLiveStream = async (streamId: string) => {
+  if (!streamId || isQuotaBlocked()) return;
+  try {
+    await updateDoc(doc(db, 'watch_parties', streamId), {
+      status: 'ended',
+      updatedAt: Date.now()
+    });
+  } catch (err) {
+    handleWriteQuotaError(err);
+  }
+  try {
+    const snap = await getDocs(collection(db, 'calls'));
+    const toDelete = snap.docs.filter(d => {
+      const data = d.data() as any;
+      return data?.status === 'live_rtc' && data?.streamId === streamId;
+    });
+    for (const d of toDelete) {
+      await deleteDoc(doc(db, 'calls', d.id));
+    }
+  } catch {}
+};
+
+export const subscribeToLiveChat = (streamId: string, callback: (messages: Message[]) => void) => {
+  const channelId = `live_chat_${streamId}`;
+  return onSnapshot(collection(db, 'messages'), (snapshot) => {
+    const msgs = snapshot.docs
+      .map(d => d.data() as Message)
+      .filter(m => m.groupId === channelId)
+      .sort((a, b) => a.timestamp - b.timestamp);
+    callback(msgs);
+  }, () => {});
+};
+
+export const sendLiveChatMessage = async (streamId: string, msg: Message) => {
+  return addMessage({
+    ...msg,
+    groupId: `live_chat_${streamId}`
+  });
+};
+
+export const subscribeToLiveRtcHost = (streamId: string, callback: (signals: LiveRtcSignal[]) => void) => {
+  if (!streamId) return () => {};
+  return onSnapshot(collection(db, 'calls'), (snap) => {
+    const signals = snap.docs
+      .map(d => d.data() as any)
+      .filter((d): d is LiveRtcSignal => d?.status === 'live_rtc' && d.streamId === streamId);
+    callback(signals);
+  }, () => {});
+};
+
+export const subscribeToLiveRtcViewer = (streamId: string, viewerId: string, callback: (signal: LiveRtcSignal | null) => void) => {
+  if (!streamId || !viewerId) return () => {};
+  return onSnapshot(doc(db, 'calls', getLiveRtcDocId(streamId, viewerId)), (snap) => {
+    if (snap.exists()) {
+      callback(snap.data() as LiveRtcSignal);
+    } else {
+      callback(null);
+    }
+  }, () => {});
+};
+
+export const sendLiveRtcOffer = async (streamId: string, hostId: string, viewerId: string, offer: any) => {
+  if (isQuotaBlocked()) return;
+  try {
+    const docId = getLiveRtcDocId(streamId, viewerId);
+    await setDoc(doc(db, 'calls', docId), {
+      id: docId,
+      status: 'live_rtc',
+      streamId,
+      hostId,
+      viewerId,
+      offer,
+      answer: null,
+      hostCandidates: [],
+      viewerCandidates: [],
+      updatedAt: Date.now()
+    });
+  } catch (err) {
+    handleWriteQuotaError(err);
+  }
+};
+
+export const sendLiveRtcAnswer = async (streamId: string, viewerId: string, answer: any) => {
+  if (isQuotaBlocked()) return;
+  try {
+    const docId = getLiveRtcDocId(streamId, viewerId);
+    await updateDoc(doc(db, 'calls', docId), {
+      answer,
+      updatedAt: Date.now()
+    });
+  } catch (err) {
+    handleWriteQuotaError(err);
+  }
+};
+
+export const addLiveRtcCandidate = async (streamId: string, viewerId: string, side: 'host' | 'viewer', candidate: any) => {
+  if (isQuotaBlocked()) return;
+  try {
+    const docId = getLiveRtcDocId(streamId, viewerId);
+    await updateDoc(doc(db, 'calls', docId), {
+      [`${side}Candidates`]: arrayUnion(candidate)
+    });
+  } catch (err) {
+    handleWriteQuotaError(err);
+  }
+};
+

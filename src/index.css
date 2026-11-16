@@ -65,3 +65,19 @@
   transform-style: preserve-3d;
 }
 
+@keyframes floatReactionUp {
+  0% {
+    opacity: 0;
+    transform: translateY(0) scale(0.7);
+  }
+  15% {
+    opacity: 1;
+    transform: translateY(-20px) scale(1.15);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-260px) scale(1);
+  }
+}
+
+

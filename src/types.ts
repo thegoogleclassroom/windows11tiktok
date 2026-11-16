@@ -385,3 +385,65 @@ export type AppSuggestion = {
   status: 'pending' | 'reviewed' | 'implemented';
   createdAt: number;
 };
+
+export type LivePoll = {
+  id: string;
+  question: string;
+  options: string[];
+  votes: Record<string, number>; // User ID -> option index
+  active: boolean;
+  createdAt: number;
+};
+
+export type LiveStream = {
+  id: string;
+  isLiveStream: true;
+  hostId: string;
+  hostUsername: string;
+  hostHandle: string;
+  hostAvatar: string;
+  hostVerified?: boolean;
+  hostCentralPro?: boolean;
+  title: string;
+  category: 'Just Chatting' | 'Gaming' | 'Music' | 'Creative' | 'Q&A' | 'Study Room';
+  sourceType: 'camera' | 'screen' | 'audio';
+  status: 'live' | 'ended';
+  viewers: string[];
+  peakViewers?: number;
+  likes: number;
+  chatEnabled: boolean;
+  slowModeSec: number;
+  pinnedMessage?: string | null;
+  mutedChatters?: string[];
+  bannedChatters?: string[];
+  poll?: LivePoll | null;
+  activeQuestion?: {
+    id: string;
+    senderName: string;
+    senderHandle: string;
+    text: string;
+    timestamp: number;
+  } | null;
+  recentReaction?: {
+    id: string;
+    emoji: string;
+    senderName: string;
+    timestamp: number;
+  } | null;
+  startedAt: number;
+  updatedAt: number;
+};
+
+export type LiveRtcSignal = {
+  id: string;
+  status: 'live_rtc';
+  streamId: string;
+  hostId: string;
+  viewerId: string;
+  offer?: any;
+  answer?: any;
+  hostCandidates?: any[];
+  viewerCandidates?: any[];
+  updatedAt: number;
+};
+

@@ -371,14 +371,21 @@ export function GamesApps() {
                       <img 
                         src={item.icon} 
                         alt="" 
+                        onError={(e) => {
+                          e.currentTarget.style.display = 'none';
+                          const fallback = e.currentTarget.nextElementSibling as HTMLElement | null;
+                          if (fallback) fallback.style.display = 'flex';
+                        }}
                         className="w-16 h-16 md:w-20 md:h-20 object-contain drop-shadow-2xl brightness-0 invert" 
                       />
-                    ) : (
-                      <>
-                        <Gamepad2 size={48} className="text-white/20 absolute -bottom-4 -right-4 rotate-12 scale-150" />
-                        <span className="text-white font-black text-4xl drop-shadow-lg">{item.title[0]}</span>
-                      </>
-                    )}
+                    ) : null}
+                    <div
+                      style={{ display: item.icon ? 'none' : 'flex' }}
+                      className="items-center justify-center w-full h-full relative"
+                    >
+                      <Gamepad2 size={48} className="text-white/20 absolute -bottom-4 -right-4 rotate-12 scale-150" />
+                      <span className="text-white font-black text-4xl drop-shadow-lg">{item.title[0]}</span>
+                    </div>
                   </div>
 
                   <div className="flex-1 p-5 flex flex-col justify-between">
