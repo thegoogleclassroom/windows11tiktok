@@ -11,6 +11,17 @@ export interface GameItem {
 }
 
 export const GAMES: GameItem[] = [
+  {
+    id: 'skribbl-io',
+    title: 'skribbl.io',
+    url: 'https://skribbl.io/',
+    category: 'Multiplayer',
+    color: 'blue',
+    icon: 'https://cdn.jsdelivr.net/gh/Arcticons-Team/Arcticons/icons/black/paint.svg',
+    isNew: true,
+    frameColor: 'yellow',
+    badge: 'New!!'
+  },
   { 
     id: 'gta-5-6', 
     title: 'GTA 5/6', 

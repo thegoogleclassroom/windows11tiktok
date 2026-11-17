@@ -22,6 +22,7 @@
 
     // 2. Anti-Ad Popup Shield: Intercept unwanted window.open spam popups on video player clicks
     window._blockPopups = true;
+    window._strictSandbox = false;
     try {
       const origOpen = window.open;
       window.open = function(url, target, features) {
@@ -966,24 +967,33 @@
           <div class="sidebar-section">
             <div class="sidebar-title">Unblock Method</div>
             <div class="method-tabs" id="methodTabs">
-              <div class="method-tab" data-method="direct">Direct</div>
+              <div class="method-tab active" data-method="direct">Direct (Best)</div>
               <div class="method-tab" data-method="aboutblank">about:blank</div>
               <div class="method-tab" data-method="datauri">Data URI</div>
-              <!-- NEW: VidSrc CC [Recommended] is now default -->
-              <div class="method-tab active" data-method="blob">Blob URL</div>
+              <div class="method-tab" data-method="blob">Blob URL</div>
             </div>
           </div>
 
           <!-- Popup & Anti-Ad Shield -->
           <div class="sidebar-section">
-            <div class="sidebar-title">Ad & Popup Shield <span style="color: var(--success); font-size: 10px;">[ACTIVE]</span></div>
+            <div class="sidebar-title">Ad & Popup Shield <span id="shieldStatusBadge" style="color: var(--success); font-size: 10px;">[ACTIVE]</span></div>
             <div class="skip-toggle active" id="popupShieldToggle" onclick="togglePopupShield()">
               <div class="skip-info">
                 <div class="skip-label">
                   Block Ad Popups
                   <span class="skip-badge" style="background: rgba(34, 197, 94, 0.2); color: var(--success);">Protected</span>
                 </div>
-                <div class="skip-desc">Blocks popups on play & keeps console history</div>
+                <div class="skip-desc">Blocks popup windows without breaking video players</div>
+              </div>
+              <div class="toggle-switch"></div>
+            </div>
+            <div class="skip-toggle" id="strictSandboxToggle" onclick="toggleStrictSandbox()" style="margin-top: 8px;">
+              <div class="skip-info">
+                <div class="skip-label">
+                  Strict Iframe Sandbox
+                  <span class="skip-badge">Optional</span>
+                </div>
+                <div class="skip-desc">Extra lock (turn OFF if player refuses to play)</div>
               </div>
               <div class="toggle-switch"></div>
             </div>
@@ -1116,8 +1126,8 @@
       API_KEY: '3a73619bbb8fc6d47742d1b5b2b707b5',
       BASE_URL: 'https://api.themoviedb.org/3',
       IMG_URL: 'https://image.tmdb.org/t/p/w500',
-      // VidSrc PM is now the default server
-      DEFAULT_METHOD: 'blob',
+      // Direct mode avoids opaque blob/data origin blocks on streaming embeds
+      DEFAULT_METHOD: 'direct',
       CURRENT_CATEGORY: 'all',
       MAX_RETRIES: 3,
       RETRY_DELAY: 2000,
@@ -1152,7 +1162,7 @@
         direct(url) {
           const frame = document.getElementById('videoFrame');
           frame.src = 'about:blank';
-          if (window._blockPopups) {
+          if (window._strictSandbox) {
             frame.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-forms allow-presentation');
           } else {
             frame.removeAttribute('sandbox');
@@ -1166,8 +1176,9 @@
 
         aboutblank(url) {
           const frame = document.getElementById('videoFrame');
+          frame.removeAttribute('sandbox');
           frame.src = 'about:blank';
-          const sbox = window._blockPopups ? 'sandbox="allow-scripts allow-same-origin allow-forms allow-presentation"' : '';
+          const sbox = window._strictSandbox ? 'sandbox="allow-scripts allow-same-origin allow-forms allow-presentation"' : '';
           const html = `<!DOCTYPE html>
 <html><head><meta charset="UTF-8"><style>html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;}iframe{width:100%;height:100%;border:none;}</style></head>
 <body><iframe src="${url}" ${sbox} allow="fullscreen; autoplay; encrypted-media; picture-in-picture; clipboard-write"></iframe></body></html>`;
@@ -1188,7 +1199,8 @@
 
         datauri(url) {
           const frame = document.getElementById('videoFrame');
-          const sbox = window._blockPopups ? 'sandbox="allow-scripts allow-same-origin allow-forms allow-presentation"' : '';
+          frame.removeAttribute('sandbox');
+          const sbox = window._strictSandbox ? 'sandbox="allow-scripts allow-same-origin allow-forms allow-presentation"' : '';
           const html = `<!DOCTYPE html>
 <html><head><meta charset="UTF-8"><style>html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;}iframe{width:100%;height:100%;border:none;}</style></head>
 <body><iframe src="${url}" ${sbox} allow="fullscreen; autoplay; encrypted-media; picture-in-picture; clipboard-write"></iframe></body></html>`;
@@ -1201,7 +1213,8 @@
 
         blob(url) {
           const frame = document.getElementById('videoFrame');
-          const sbox = window._blockPopups ? 'sandbox="allow-scripts allow-same-origin allow-forms allow-presentation"' : '';
+          frame.removeAttribute('sandbox');
+          const sbox = window._strictSandbox ? 'sandbox="allow-scripts allow-same-origin allow-forms allow-presentation"' : '';
           const html = `<!DOCTYPE html>
 <html><head><meta charset="UTF-8"><style>html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;}iframe{width:100%;height:100%;border:none;}</style></head>
 <body><iframe src="${url}" ${sbox} allow="fullscreen; autoplay; encrypted-media; picture-in-picture; clipboard-write"></iframe></body></html>`;
@@ -1221,8 +1234,7 @@
 
       load(url, method = this.currentMethod) {
         const now = Date.now();
-        if (now - this.lastLoadTime < 500) {
-          console.log('Rate limited: too many rapid load attempts');
+        if (now - this.lastLoadTime < 150) {
           return false;
         }
 
@@ -1269,448 +1281,354 @@
     };
 
     // ==========================================
-    // VIDEO SOURCES - VidSrc CC [Recommended] is Priority 1
+    // VIDEO SOURCES - Priority-ordered active TMDB streaming servers
     // ==========================================
     
     const VideoSources = [
-      { 
-        name: 'AutoEmbed VIP', 
-        url: 'https://player.autoembed.cc/embed/${t}/${id}${se}', 
-        quality: '4K', 
+      {
+        name: 'VidLink Pro (4K)',
+        url: 'https://vidlink.pro/${t}/${id}${se}',
+        quality: '4K',
         speed: 'fast',
         priority: 1,
-        note: 'Super Fast, Zero Popups'
+        note: 'Top Clean 4K Player'
       },
-      { 
-        name: 'Embed.su (Ultra)', 
-        url: 'https://embed.su/embed/${t}/${id}${se}', 
-        quality: 'HD', 
+      {
+        name: 'Videasy (Multi)',
+        url: 'https://player.videasy.net/${t}/${id}${se}',
+        quality: '4K',
         speed: 'fast',
         priority: 1,
-        note: 'Ultra Reliable & Clean HTML5'
+        note: 'Fast Multi-Server & Anime'
       },
-      { 
-        name: 'RiveStream', 
-        url: 'https://rivestream.live/embed?type=${t}&id=${id}${sea}', 
-        quality: 'HD', 
+      {
+        name: 'VidFast Pro',
+        url: 'https://vidfast.pro/${t}/${id}${se}',
+        quality: '4K',
+        speed: 'fast',
+        priority: 1,
+        note: 'High Speed HD/4K'
+      },
+      {
+        name: 'VidRock',
+        url: 'https://vidrock.net/${t}/${id}${se}',
+        quality: '4K',
+        speed: 'fast',
+        priority: 1,
+        note: 'Clean Adaptive Stream'
+      },
+      {
+        name: '111Movies',
+        url: 'https://111movies.com/${t}/${id}${se}',
+        quality: '4K',
+        speed: 'fast',
+        priority: 1,
+        note: 'Fast Backup Node'
+      },
+      {
+        name: 'VidSrc CC v2',
+        url: 'https://vidsrc.cc/v2/embed/${t}/${id}${se}',
+        quality: 'HD',
+        speed: 'fast',
+        priority: 1,
+        note: 'Popular Reliable Embed'
+      },
+      {
+        name: 'VidSrc CC v3',
+        url: 'https://vidsrc.cc/v3/embed/${t}/${id}${se}',
+        quality: 'HD',
+        speed: 'fast',
+        priority: 1,
+        note: 'Newest VidSrc v3 Engine'
+      },
+      {
+        name: 'AutoEmbed VIP',
+        url: 'https://player.autoembed.cc/embed/${t}/${id}${se}',
+        quality: '4K',
+        speed: 'fast',
+        priority: 1,
+        note: 'Auto-Switching Sources'
+      },
+      {
+        name: 'Embed.su',
+        url: 'https://embed.su/embed/${t}/${id}${se}',
+        quality: 'HD',
+        speed: 'fast',
+        priority: 1,
+        note: 'Ultra Clean HTML5'
+      },
+      {
+        name: 'VidPlus',
+        url: 'https://player.vidplus.to/embed/${t}/${id}${se}',
+        quality: '4K',
+        speed: 'fast',
+        priority: 1,
+        note: 'Fast 4K Streamer'
+      },
+      {
+        name: 'VidZee',
+        url: 'https://player.vidzee.wtf/embed/${t}/${id}${se}',
+        quality: '4K',
+        speed: 'fast',
+        priority: 1,
+        note: 'Multi-Audio & Subtitles'
+      },
+      {
+        name: 'RiveStream',
+        url: 'https://rivestream.org/embed?type=${t}&id=${id}${sea}',
+        quality: 'HD',
         speed: 'fast',
         priority: 1,
         note: 'Clean High-Speed Player'
       },
-      { 
-        name: 'VidLink Pro (Fixed)', 
-        url: 'https://vidlink.pro/${t}/${id}${seq}', 
-        quality: '4K', 
-        speed: 'fast',
-        priority: 1,
-        note: 'Fast 4K, Fixed TV Route'
-      },
-      { 
-        name: 'VidSrc VIP (Unblocked)', 
-        url: 'https://vidsrc.vip/embed/${t}/${id}${se}', 
-        quality: '4K', 
-        speed: 'fast',
-        priority: 1,
-        note: 'Default Server (School-Bypass 4K)'
-      },
-      { 
-        name: 'SmashyStream', 
-        url: 'https://player.smashystream.com/${t}/${id}${se}', 
-        quality: 'HD', 
-        speed: 'fast',
-        priority: 1,
-        note: 'Cisco / LanSchool Resilient'
-      },
-      { 
-        name: 'VidSrc To (Shielded)', 
-        url: 'https://vidsrc.to/embed/${t}/${id}${se}', 
-        quality: 'HD', 
-        speed: 'fast',
-        priority: 2,
-        note: 'Top Mirror (Shield Blocks Popups)'
-      },
-      { 
-        name: 'VidSrc CC', 
-        url: 'https://vidsrc.cc/v2/embed/${t}/${id}${se}', 
-        quality: 'HD', 
-        speed: 'fast',
-        priority: 2,
-        note: 'High Speed'
-      },
-      { 
-        name: 'VidBinge', 
-        url: 'https://www.vidbinge.to/${t}/${id}${se}', 
-        quality: 'HD', 
-        speed: 'fast',
-        priority: 1,
-        note: 'MoviesAPI Successor'
-      },
       {
-        name: 'Videasy',
-        url: 'https://videasy.net/embed/${t}/${id}',
+        name: 'RiveStream Live',
+        url: 'https://rivestream.live/embed?type=${t}&id=${id}${sea}',
         quality: 'HD',
         speed: 'fast',
         priority: 1,
-        note: 'Best for Anime & TV'
+        note: 'RiveStream Mirror'
       },
-      { 
-        name: 'VidLink Pro (Fixed)', 
-        url: 'https://vidlink.pro/${t}/${id}${seq}', 
-        quality: '4K', 
+      {
+        name: 'VidKing',
+        url: 'https://www.vidking.net/embed/${t}/${id}${se}',
+        quality: 'HD',
+        speed: 'fast',
+        priority: 1,
+        note: 'Fast Subtitled Stream'
+      },
+      {
+        name: 'SmashyStream',
+        url: 'https://embed.smashystream.com/playere.php?tmdb=${id}${ses}',
+        quality: 'HD',
+        speed: 'fast',
+        priority: 1,
+        note: 'Multi-Server Embed'
+      },
+      {
+        name: 'Mapple TV',
+        url: 'https://mapple.tv/watch/${t}/${id}${sed}',
+        quality: '4K',
+        speed: 'fast',
+        priority: 1,
+        note: 'Clean 4K Player'
+      },
+      {
+        name: 'VidSrc SU',
+        url: 'https://vidsrc.su/embed/${t}/${id}${se}',
+        quality: 'HD',
         speed: 'fast',
         priority: 2,
-        note: 'Fixed TV Route (No 404)'
+        note: 'Low-Latency Mirror'
       },
-      { 
-        name: 'VidLink Stream', 
-        url: 'https://vidlink.stream/${t}/${id}${se}', 
-        quality: '4K', 
+      {
+        name: 'VidSrc XYZ',
+        url: 'https://vidsrc.xyz/embed/${t}/${id}${se}',
+        quality: 'HD',
         speed: 'fast',
         priority: 2,
-        note: 'VidLink Alternative Mirror'
+        note: 'Classic VidSrc Mirror'
       },
-      { 
-        name: 'VidJoy', 
-        url: 'https://vidjoy.pro/embed/${t}/${id}${se}', 
-        quality: 'HD', 
+      {
+        name: 'VidSrc VIP',
+        url: 'https://vidsrc.vip/embed/${t}/${id}${se}',
+        quality: '4K',
+        speed: 'fast',
+        priority: 2,
+        note: 'VidSrc VIP Mirror'
+      },
+      {
+        name: 'VidSrc To',
+        url: 'https://vidsrc.to/embed/${t}/${id}${se}',
+        quality: 'HD',
+        speed: 'fast',
+        priority: 2,
+        note: 'VidSrc To Mirror'
+      },
+      {
+        name: 'VidSrc Rip',
+        url: 'https://vidsrc.rip/embed/${t}/${id}${se}',
+        quality: 'HD',
+        speed: 'fast',
+        priority: 2,
+        note: 'Fast Mirror'
+      },
+      {
+        name: 'VidSrc Me',
+        url: 'https://vidsrc.me/embed/${t}?tmdb=${id}${sea}',
+        quality: 'HD',
+        speed: 'fast',
+        priority: 2,
+        note: 'Alternative VidSrc Domain'
+      },
+      {
+        name: 'VidSrc In',
+        url: 'https://vidsrc.in/embed/${t}?tmdb=${id}${sea}',
+        quality: 'HD',
+        speed: 'fast',
+        priority: 2,
+        note: 'VidSrc IN Mirror'
+      },
+      {
+        name: 'VidSrc Net',
+        url: 'https://vidsrc.net/embed/${t}?tmdb=${id}${sea}',
+        quality: 'HD',
+        speed: 'medium',
+        priority: 2,
+        note: 'VidSrc Net Mirror'
+      },
+      {
+        name: 'VidSrc ICU',
+        url: 'https://vidsrc.icu/embed/${t}/${id}${se}',
+        quality: 'HD',
+        speed: 'medium',
+        priority: 2,
+        note: 'ICU Domain Mirror'
+      },
+      {
+        name: 'VidJoy',
+        url: 'https://vidjoy.pro/embed/${t}/${id}${se}',
+        quality: 'HD',
         speed: 'fast',
         priority: 2,
         note: 'Fast Streaming Node'
       },
-      { 
-        name: 'Moviee HD', 
-        url: 'https://moviee.tv/embed/${t}/${id}${se}', 
-        quality: 'HD', 
+      {
+        name: 'RGShows',
+        url: 'https://embed.rgshows.me/api/1/${t}/?id=${id}${ses}',
+        quality: 'HD',
         speed: 'fast',
         priority: 2,
-        note: 'Direct Cloud Node'
+        note: 'Direct Stream Node'
       },
-      { 
-        name: 'NontonGo', 
-        url: 'https://www.nontongo.win/embed/${t}/${id}${se}', 
-        quality: 'HD', 
-        speed: 'medium',
+      {
+        name: 'UEmbed',
+        url: 'https://uembed.site/?id=${id}${ses}',
+        quality: 'HD',
+        speed: 'fast',
         priority: 2,
+        note: 'Universal Embed'
+      },
+      {
+        name: 'CinemaOS',
+        url: 'https://cinemaos.tech/player/${id}',
+        quality: 'HD',
+        speed: 'fast',
+        priority: 2,
+        type: 'movie',
+        note: 'CinemaOS Movie Player'
+      },
+      {
+        name: 'MoviesAPI',
+        url: 'https://moviesapi.club/${t}/${id}${sed}',
+        quality: 'HD',
+        speed: 'medium',
+        priority: 3,
+        note: 'MoviesAPI Club'
+      },
+      {
+        name: 'MultiEmbed VIP',
+        url: 'https://multiembed.mov/directstream.php?video_id=${id}&tmdb=1${ses}',
+        quality: 'HD',
+        speed: 'medium',
+        priority: 3,
+        note: 'Direct Stream Variant'
+      },
+      {
+        name: 'SuperEmbed',
+        url: 'https://multiembed.mov/?video_id=${id}&tmdb=1${ses}',
+        quality: 'HD',
+        speed: 'medium',
+        priority: 3,
+        note: 'MultiEmbed Fallback'
+      },
+      {
+        name: '2Embed CC',
+        url: 'https://www.2embed.cc/${etv}${id}${ses}',
+        quality: 'HD',
+        speed: 'medium',
+        priority: 3,
+        note: '2Embed Official'
+      },
+      {
+        name: '2Embed Skin',
+        url: 'https://www.2embed.skin/${etv}${id}${ses}',
+        quality: 'HD',
+        speed: 'medium',
+        priority: 3,
+        note: '2Embed Skin Mirror'
+      },
+      {
+        name: '2Embed RU',
+        url: 'https://www.2embed.ru/${etv}${id}${ses}',
+        quality: 'HD',
+        speed: 'medium',
+        priority: 3,
+        note: '2Embed RU Mirror'
+      },
+      {
+        name: 'NontonGo',
+        url: 'https://www.nontongo.win/embed/${t}/${id}${se}',
+        quality: 'HD',
+        speed: 'medium',
+        priority: 3,
         note: 'Multi-host Mirror'
       },
-      { 
-        name: '111movies', 
-        url: 'https://111movies.com/embed/\${t}/\${id}', 
-        quality: 'HD', 
-        speed: 'fast',
-        priority: 2,
-        note: 'Alternative 2'
-      },
-      
-      // Priority 2
-      { 
-        name: 'Vidora', 
-        url: 'https://vidora.su/${t}/${id}${se}', 
-        quality: 'HD', 
-        speed: 'medium',
-        priority: 2 
-      },
-      { 
-        name: 'VidSrc Pro', 
-        url: 'https://vidsrc.xyz/embed/${t}?tmdb=${id}${sea}', 
-        quality: 'HD', 
-        speed: 'fast',
-        priority: 2 
-      },
-      
-      // Priority 3
-      { 
-        name: 'AutoEmbed', 
-        url: 'https://player.autoembed.cc/embed/${t}/${id}${se}', 
-        quality: 'HD', 
-        speed: 'medium',
-        priority: 3 
-      },
-      { 
-        name: 'MoviesAPI', 
-        url: 'https://moviesapi.club/${t}/${id}${sed}', 
-        quality: 'HD', 
-        speed: 'medium',
-        priority: 3 
-      },
-      
-      // Priority 4
-      { 
-        name: '2Embed', 
-        url: 'https://www.2embed.cc/embed/${t}/${id}${se}', 
-        quality: 'HD', 
-        speed: 'medium',
-        priority: 4 
-      },
-      { 
-        name: 'SuperEmbed', 
-        url: 'https://multiembed.mov/?video_id=${id}&tmdb=1${ses}', 
-        quality: 'SD', 
-        speed: 'slow',
-        priority: 4 
-      },
-      { 
-        name: 'Flicky', 
-        url: 'https://flicky.host/embed/${t}/${id}${se}', 
-        quality: 'HD', 
-        speed: 'medium',
-        priority: 4 
-      },
-      { 
-        name: 'Smashy', 
-        url: 'https://player.smashy.stream/${t}/${id}${se}', 
-        quality: '4K', 
-        speed: 'medium',
-        priority: 4 
-      },
-      
-      // Priority 5-6
-      { 
-        name: 'VidSrc ICU', 
-        url: 'https://vidsrc.icu/embed/${t}/${id}${se}', 
-        quality: 'HD', 
-        speed: 'slow',
-        priority: 5 
-      },
-      { 
-        name: 'MovieKex', 
-        url: 'https://moviekex.online/embed/${t}/${id}${se}', 
-        quality: 'HD', 
-        speed: 'slow',
-        priority: 5 
-      },
-
-      // NEW SERVERS ADDED
-      { 
-        name: 'VidBinge', 
-        url: 'https://www.vidbinge.to/${t}/${id}${se}', 
-        quality: 'HD', 
-        speed: 'fast',
-        priority: 1,
-        note: 'MoviesAPI successor - Reliable'
-      },
-      { 
-        name: 'VidSrc VIP', 
-        url: 'https://vidsrc.vip/embed/${t}/${id}${se}', 
-        quality: 'HD', 
-        speed: 'fast',
-        priority: 1,
-        note: 'Premium VidSrc instance'
-      },
-      { 
-        name: 'VidSrc Me', 
-        url: 'https://vidsrc.me/embed/${t}?tmdb=${id}${sea}', 
-        quality: 'HD', 
-        speed: 'fast',
-        priority: 2,
-        note: 'Alternative VidSrc domain'
-      },
-      { 
-        name: 'VidSrc In', 
-        url: 'https://vidsrc.in/embed/${t}?tmdb=${id}${sea}', 
-        quality: 'HD', 
-        speed: 'fast',
-        priority: 2,
-        note: 'Indian VidSrc mirror'
-      },
-      
-      { 
-        name: 'VidSrc Net', 
-        url: 'https://vidsrc.net/embed/${t}?tmdb=${id}${sea}', 
-        quality: 'HD', 
-        speed: 'medium',
-        priority: 2,
-        note: 'Network mirror'
-      },
-      { 
-        name: 'VidSrc Stream', 
-        url: 'https://vidsrc.stream/embed/${t}?tmdb=${id}${sea}', 
-        quality: 'HD', 
-        speed: 'medium',
-        priority: 2,
-        note: 'Streaming optimized'
-      },
-      { 
-        name: 'VidSrc Icu', 
-        url: 'https://vidsrc.icu/embed/${t}/${id}${se}', 
-        quality: 'HD', 
-        speed: 'slow',
-        priority: 2,
-        note: 'ICU domain'
-      },
-      { 
-        name: '2Embed Russian', 
-        url: 'https://www.2embed.ru/embed/${t}/${id}${se}', 
-        quality: 'HD', 
+      {
+        name: 'Moviee HD',
+        url: 'https://moviee.tv/embed/${t}/${id}${se}',
+        quality: 'HD',
         speed: 'medium',
         priority: 3,
-        note: '2Embed mirror'
+        note: 'Direct Cloud Node'
       },
-      { 
-        name: '2Embed Skin', 
-        url: 'https://www.2embed.skin/embed/${t}/${id}${se}', 
-        quality: 'HD', 
+      {
+        name: 'Vidora',
+        url: 'https://vidora.su/${t}/${id}${se}',
+        quality: 'HD',
         speed: 'medium',
         priority: 3,
-        note: '2Embed skin domain'
+        note: 'Vidora Embed'
       },
-      { 
-        name: 'Embed CIA', 
-        url: 'https://embed.cia/${t}/${id}${se}', 
-        quality: 'HD', 
-        speed: 'medium',
-        priority: 3,
-        note: 'CIA embed service'
-      },
-      { 
-        name: 'MultiEmbed VIP', 
-        url: 'https://multiembed.mov/directstream.php?video_id=${id}&tmdb=1${ses}', 
-        quality: 'HD', 
-        speed: 'medium',
-        priority: 3,
-        note: 'Direct stream variant'
-      },
-      { 
-        name: 'VidPlay', 
-        url: 'https://vidplay.online/e/${id}', 
-        quality: 'HD', 
-        speed: 'fast',
-        priority: 2,
-        type: 'movie',
-        note: 'VidPlay hosting'
-      },
-      { 
-        name: 'FileMoon', 
-        url: 'https://filemoon.sx/e/${id}', 
-        quality: 'HD', 
+      {
+        name: 'Flicky',
+        url: 'https://flicky.host/embed/${t}/${id}${se}',
+        quality: 'HD',
         speed: 'medium',
         priority: 4,
-        type: 'movie',
-        note: 'FileMoon hosting'
+        note: 'Flicky Host'
       },
-      { 
-        name: 'StreamWish', 
-        url: 'https://streamwish.to/e/${id}', 
-        quality: 'HD', 
+      {
+        name: 'Smashy Stream',
+        url: 'https://player.smashy.stream/${t}/${id}${se}',
+        quality: '4K',
         speed: 'medium',
         priority: 4,
-        type: 'movie',
-        note: 'StreamWish hosting'
+        note: 'Smashy Fallback'
       },
-      { 
-        name: 'VidHide', 
-        url: 'https://vidhidepro.com/v/${id}', 
-        quality: 'HD', 
+      {
+        name: 'PrimeWire',
+        url: 'https://www.primewire.tf/embed/${t}/${id}${se}',
+        quality: 'HD',
         speed: 'medium',
         priority: 4,
-        type: 'movie',
-        note: 'VidHide hosting'
+        note: 'PrimeWire Embed'
       },
-      { 
-        name: 'VidStack', 
-        url: 'https://vidstack.io/embed/${t}/${id}${se}', 
-        quality: '4K', 
-        speed: 'fast',
-        priority: 1,
-        note: 'VidStack player'
-      },
-      { 
-        name: 'NSBX', 
-        url: 'https://nsbx.wtf/embed/${t}/${id}${se}', 
-        quality: 'HD', 
-        speed: 'fast',
-        priority: 2,
-        note: 'NSBX streaming'
-      },
-      { 
-        name: 'CineSync', 
-        url: 'https://cinesync.app/embed/${t}/${id}${se}', 
-        quality: 'HD', 
-        speed: 'medium',
-        priority: 3,
-        note: 'CineSync player'
-      },
-      { 
-        name: 'PrimeWire', 
-        url: 'https://www.primewire.tf/embed/${t}/${id}${se}', 
-        quality: 'HD', 
-        speed: 'medium',
-        priority: 4,
-        note: 'PrimeWire embed'
-      },
-      { 
-        name: '123Embed', 
-        url: 'https://123embed.net/embed/${t}/${id}${se}', 
-        quality: 'SD', 
+      {
+        name: '123Embed',
+        url: 'https://123embed.net/embed/${t}/${id}${se}',
+        quality: 'SD',
         speed: 'slow',
         priority: 5,
-        note: '123Movies embed'
+        note: '123Movies Embed'
       },
-      { 
-        name: 'VidGuard', 
-        url: 'https://vidguard.to/e/${id}', 
-        quality: 'HD', 
-        speed: 'medium',
-        priority: 4,
-        type: 'movie',
-        note: 'VidGuard hosting'
-      },
-      { 
-        name: 'UpCloud', 
-        url: 'https://upcloud.to/embed/${t}/${id}${se}', 
-        quality: 'HD', 
-        speed: 'medium',
-        priority: 3,
-        note: 'UpCloud streaming'
-      },
-      { 
-        name: 'VidMoly', 
-        url: 'https://vidmoly.to/embed/${t}/${id}${se}', 
-        quality: 'HD', 
-        speed: 'medium',
-        priority: 4,
-        note: 'VidMoly hosting'
-      },
-      { 
-        name: 'DoodStream', 
-        url: 'https://doodstream.com/e/${id}', 
-        quality: 'HD', 
-        speed: 'medium',
-        priority: 5,
-        type: 'movie',
-        note: 'DoodStream hosting'
-      },
-      { 
-        name: 'MixDrop', 
-        url: 'https://mixdrop.co/e/${id}', 
-        quality: 'HD', 
-        speed: 'medium',
-        priority: 5,
-        type: 'movie',
-        note: 'MixDrop hosting'
-      },
-      { 
-        name: 'GoMovies', 
-        url: 'https://gomo.to/${t}/${id}${se}', 
-        quality: 'SD', 
+      {
+        name: 'MovieKex',
+        url: 'https://moviekex.online/embed/${t}/${id}${se}',
+        quality: 'HD',
         speed: 'slow',
-        priority: 6 
-      },
-      { 
-        name: 'StreamTape', 
-        url: 'https://streamtape.com/e/${id}', 
-        quality: 'HD', 
-        speed: 'medium',
-        type: 'movie',
-        priority: 6 
-      },
-      { 
-        name: 'DoodStream', 
-        url: 'https://dood.ws/e/${id}', 
-        quality: 'HD', 
-        speed: 'medium',
-        type: 'movie',
-        priority: 6 
+        priority: 5,
+        note: 'MovieKex Backup'
       }
     ];
 
@@ -1744,7 +1662,9 @@
       const isTv = item.media_type === 'tv' || item.first_air_date;
       const t = isTv ? 'tv' : 'movie';
       
-      url = url.replace('${t}', t).replace('${id}', item.id);
+      url = url.replace('${t}', t)
+               .replace('${id}', item.id)
+               .replace('${etv}', isTv ? 'embedtv/' : 'embed/');
       
       if (isTv && season && episode) {
         url = url.replace('${se}', `/${season}/${episode}`)
@@ -1879,32 +1799,50 @@
     function togglePopupShield() {
       window._blockPopups = !window._blockPopups;
       const toggle = document.getElementById('popupShieldToggle');
+      const titleSpan = document.getElementById('shieldStatusBadge');
       if (toggle) {
         toggle.classList.toggle('active', window._blockPopups);
-        const titleSpan = toggle.parentElement.querySelector('span');
-        if (titleSpan) {
-          titleSpan.textContent = window._blockPopups ? '[ACTIVE]' : '[OFF]';
-          titleSpan.style.color = window._blockPopups ? 'var(--success)' : 'var(--danger)';
-        }
       }
-      if (currentItem && VideoSources[currentServer]) {
+      if (titleSpan) {
+        titleSpan.textContent = window._blockPopups ? '[ACTIVE]' : '[OFF]';
+        titleSpan.style.color = window._blockPopups ? 'var(--success)' : 'var(--danger)';
+      }
+    }
+
+    function toggleStrictSandbox() {
+      window._strictSandbox = !window._strictSandbox;
+      const toggle = document.getElementById('strictSandboxToggle');
+      if (toggle) {
+        toggle.classList.toggle('active', window._strictSandbox);
+      }
+      if (currentItem) {
         const isTv = currentItem.media_type === 'tv' || currentItem.first_air_date;
-        const s = isTv ? DOM.seasonSelect?.value : null;
-        const e = isTv ? DOM.episodeSelect?.value : null;
-        loadVideo(VideoSources[currentServer], currentItem, s, e);
+        const sources = VideoSources.filter(s => !s.type || s.type === (isTv ? 'tv' : 'movie'));
+        const srcObj = sources[currentServer] || sources[0];
+        if (srcObj) {
+          const s = isTv ? DOM.seasonSelect?.value : null;
+          const e = isTv ? DOM.episodeSelect?.value : null;
+          loadVideo(srcObj, currentItem, s, e);
+        }
       }
     }
 
     // Mini Player Logic
     function toggleMiniPlayer() {
       if (!currentItem) return;
+      const isTv = currentItem.media_type === 'tv' || currentItem.first_air_date;
+      const sources = VideoSources.filter(s => !s.type || s.type === (isTv ? 'tv' : 'movie'));
+      const srcObj = sources[currentServer] || sources[0];
+      const s = isTv ? DOM.seasonSelect?.value : null;
+      const e = isTv ? DOM.episodeSelect?.value : null;
+      const activeUrl = srcObj ? buildUrl(srcObj, currentItem, s, e) : '';
       
       // Notify parent that we want to minimize
       if (window.parent !== window) {
         window.parent.postMessage({
           type: 'CINEMA_MINIMIZE',
           title: currentItem.title || currentItem.name,
-          url: currentServer ? currentServer.url : ''
+          url: activeUrl
         }, '*');
       }
     }
@@ -2264,6 +2202,18 @@
         const activeServer = document.querySelector('.server-btn.active');
         if (activeServer) activeServer.click();
       });
+
+      const nextServerBtn = document.getElementById('nextServerBtn');
+      if (nextServerBtn) {
+        nextServerBtn.addEventListener('click', () => {
+          UnblockEngine.hideError();
+          const btns = Array.from(document.querySelectorAll('.server-btn'));
+          if (btns.length > 0) {
+            const nextIdx = (currentServer + 1) % btns.length;
+            btns[nextIdx].click();
+          }
+        });
+      }
     });
   </script>
 </body>
