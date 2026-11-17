@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { Phone, PhoneOff, Video, X } from 'lucide-react';
 import { Call, User } from '../types';
@@ -10,6 +11,7 @@ interface IncomingCallModalProps {
 }
 
 export function IncomingCallModal({ call, onClose }: IncomingCallModalProps) {
+  const navigate = useNavigate();
   const [caller, setCaller] = useState<User | null>(null);
 
   useEffect(() => {
@@ -32,8 +34,9 @@ export function IncomingCallModal({ call, onClose }: IncomingCallModalProps) {
   const handleAccept = async () => {
     await updateCallStatus(call.id, 'answered');
     onClose();
-    // In a real app, this would open the call interface
-    window.location.href = `/messages/${caller?.handle}?call=${call.id}`;
+    if (caller?.handle) {
+      navigate(`/messages/${caller.handle}?call=${call.id}`);
+    }
   };
 
   const handleDecline = async () => {

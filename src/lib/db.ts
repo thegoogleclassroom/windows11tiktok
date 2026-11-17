@@ -453,6 +453,30 @@ export const getUser = async (id: string): Promise<User | null> => {
     return getCachedCollection<User>('users').find(u => u.id === id) || null;
   }
 };
+export const getUserFresh = async (id: string): Promise<User | null> => {
+  if (!id) return null;
+  if (isQuotaBlocked()) {
+    return getCachedCollection<User>('users').find(u => u.id === id) || null;
+  }
+  try {
+    const snap = await getDoc(doc(db, 'users', id));
+    if (snap.exists()) {
+      const userData = snap.data() as User;
+      try {
+        const cached = getCachedCollection<User>('users');
+        if (cached.length > 0) {
+          const exists = cached.some(u => u.id === id);
+          setCachedCollection('users', exists ? cached.map(u => u.id === id ? userData : u) : [...cached, userData], false);
+        }
+      } catch {}
+      return userData;
+    }
+    return null;
+  } catch (err) {
+    handleWriteQuotaError(err);
+    return getCachedCollection<User>('users').find(u => u.id === id) || null;
+  }
+};
 export const saveUsers = (users: User[]) => saveCollection('users', users);
 
 export const updateUser = async (userId: string, data: Partial<User>) => {
@@ -489,9 +513,9 @@ export const updateUserListeningState = async (userId: string, listeningState: U
   } catch {}
   if (isQuotaBlocked()) return;
   try {
-    await updateDoc(doc(db, 'users', userId), {
+    await setDoc(doc(db, 'users', userId), {
       listeningState: cleaned
-    });
+    }, { merge: true });
   } catch (err) {
     handleWriteQuotaError(err);
   }
@@ -705,6 +729,19 @@ export const subscribeToMessages = (callback: (messages: Message[]) => void) => 
     if (!handleWriteQuotaError(err)) {
       console.warn("Messages subscription error:", err);
     }
+  });
+};
+
+export const subscribeToChannelMessages = (channelId: string, callback: (messages: Message[]) => void) => {
+  if (!channelId) return () => {};
+  return onSnapshot(collection(db, 'messages'), (snapshot) => {
+    const allMsgs = mergeWithUnsyncedMessages('messages', snapshot.docs.map(d => d.data() as Message));
+    const filtered = allMsgs
+      .filter(m => m.groupId === channelId)
+      .sort((a, b) => a.timestamp - b.timestamp);
+    callback(filtered);
+  }, (err) => {
+    handleWriteQuotaError(err);
   });
 };
 export const deleteMessage = async (messageId: string) => {
@@ -1168,6 +1205,104 @@ export const resolveReport = async (
     handleWriteQuotaError(err);
     console.warn("Report resolved in local cache; remote Firestore sync deferred:", err);
   }
+};
+
+export const getReportById = async (reportId: string): Promise<Report | null> => {
+  if (!reportId) return null;
+  try {
+    const cached = getCachedCollection<Report>('reports');
+    const found = cached.find(r => r.id === reportId);
+    if (isQuotaBlocked()) return found || null;
+    const snap = await withTimeout(getDoc(doc(db, 'reports', reportId)), 5000);
+    if (snap.exists()) {
+      const r = snap.data() as Report;
+      const next = found ? cached.map(x => x.id === reportId ? r : x) : [...cached, r];
+      setCachedCollection('reports', next, false);
+      return r;
+    }
+    return found || null;
+  } catch (err) {
+    handleWriteQuotaError(err);
+    return getCachedCollection<Report>('reports').find(r => r.id === reportId) || null;
+  }
+};
+
+export const subscribeToReport = (reportId: string, callback: (report: Report | null) => void) => {
+  if (!reportId) return () => {};
+  return onSnapshot(doc(db, 'reports', reportId), (snap) => {
+    if (snap.exists()) {
+      const rep = snap.data() as Report;
+      try {
+        const cached = getCachedCollection<Report>('reports');
+        const exists = cached.some(r => r.id === reportId);
+        setCachedCollection('reports', exists ? cached.map(r => r.id === reportId ? rep : r) : [...cached, rep], false);
+      } catch {}
+      callback(rep);
+    } else {
+      callback(null);
+    }
+  }, (err) => {
+    handleWriteQuotaError(err);
+  });
+};
+
+export const updateReportIntercom = async (
+  report: Report,
+  staffUser: User,
+  updates: { intercomStatus?: 'open' | 'closed'; intercomMuted?: boolean },
+  systemContent?: string
+): Promise<Report> => {
+  const now = Date.now();
+  const nextReport: Report = {
+    ...report,
+    ...updates,
+    intercomStaffId: staffUser.id,
+    intercomStaffName: staffUser.username || staffUser.handle,
+    intercomUpdatedAt: now
+  };
+
+  try {
+    const cached = getCachedCollection<Report>('reports');
+    const exists = cached.some(r => r.id === report.id);
+    setCachedCollection('reports', exists ? cached.map(r => r.id === report.id ? nextReport : r) : [...cached, nextReport], false);
+    recordCollectionSnapshot('reports', [nextReport]);
+  } catch {}
+
+  if (!isQuotaBlocked()) {
+    try {
+      await withTimeout(setDoc(doc(db, 'reports', report.id), deepClean(nextReport), { merge: true }), 8000);
+    } catch (err) {
+      handleWriteQuotaError(err);
+    }
+  }
+
+  if (systemContent) {
+    await addMessage({
+      id: `sys_ic_${now}_${Math.random().toString(36).slice(2, 6)}`,
+      fromUserId: 'system',
+      groupId: `intercom_${report.id}`,
+      content: systemContent,
+      timestamp: now,
+      seenBy: [staffUser.id]
+    });
+  }
+
+  if (updates.intercomStatus === 'open' && report.reporterId && report.reporterId !== 'anonymous' && report.reporterId !== staffUser.id) {
+    await addNotifications([{
+      id: `notif_intercom_${report.id}_${now}`,
+      userId: report.reporterId,
+      type: 'intercom',
+      fromUserId: staffUser.id,
+      reportId: report.id,
+      title: 'Staff Intercom Opened',
+      message: `${staffUser.username || '@' + staffUser.handle} opened an Intercom DM with you regarding your report.`,
+      read: false,
+      timestamp: now,
+      isImportant: true
+    }]);
+  }
+
+  return nextReport;
 };
 
 export const getAppeals = () => fetchCollection<Appeal>('appeals');

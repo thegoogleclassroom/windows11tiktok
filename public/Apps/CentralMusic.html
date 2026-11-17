@@ -365,12 +365,14 @@
                 
                 currentTrackData = data;
                 audio.src = data.streamUrl;
+                broadcastState();
                 document.getElementById('art-zone').innerHTML = `<img src="${data.artwork}">`;
                 bgBlur.style.backgroundImage = `url(${data.artwork})`;
                 document.getElementById('track-title').innerText = data.song || data.title;
                 document.getElementById('track-artist').innerText = data.artist;
-                audio.play();
+                audio.play().catch(() => {});
                 document.getElementById('play-btn').innerText = '⏸';
+                broadcastState();
                 updateQueueUI();
                 
                 if (isLyricMode) fetchLyrics(data.artist, data.song || data.title);
@@ -378,12 +380,14 @@
                 if (track.url && (track.url.startsWith('http://') || track.url.startsWith('https://'))) {
                     currentTrackData = track;
                     audio.src = track.url;
+                    broadcastState();
                     document.getElementById('art-zone').innerHTML = `<img src="${track.artwork || ''}">`;
                     bgBlur.style.backgroundImage = `url(${track.artwork || ''})`;
                     document.getElementById('track-title').innerText = track.title;
                     document.getElementById('track-artist').innerText = track.artist;
-                    audio.play();
+                    audio.play().catch(() => {});
                     document.getElementById('play-btn').innerText = '⏸';
+                    broadcastState();
                     updateQueueUI();
                 } else {
                     alert("Playback Error: Unable to stream track.");
@@ -440,18 +444,30 @@
             }
         }
 
-        function broadcastState() {
+        let lastBroadcastAt = 0;
+        function broadcastState(throttled = false) {
             if (!currentTrackData) return;
-            localStorage.setItem('aura_current_track', JSON.stringify({
+            const now = Date.now();
+            if (throttled && now - lastBroadcastAt < 1000) return;
+            lastBroadcastAt = now;
+            const payload = {
                 title: currentTrackData.song || currentTrackData.title,
-                artist: currentTrackData.artist,
-                artwork: currentTrackData.artwork,
+                artist: currentTrackData.artist || 'Unknown Artist',
+                artwork: currentTrackData.artwork || '',
                 streamUrl: audio.src || currentTrackData.streamUrl || '',
                 isPlaying: !audio.paused,
                 currentTime: audio.currentTime || 0,
                 duration: audio.duration || 0,
-                updatedAt: Date.now()
-            }));
+                updatedAt: now
+            };
+            try {
+                localStorage.setItem('aura_current_track', JSON.stringify(payload));
+            } catch {}
+            try {
+                if (window.parent && window.parent !== window) {
+                    window.parent.postMessage({ type: 'CENTRALMUSIC_TRACK_STATE', payload }, '*');
+                }
+            } catch {}
         }
 
         let pendingSyncTargetTime = null;
@@ -589,7 +605,7 @@
             b.max = audio.duration || 0; b.value = audio.currentTime;
             document.getElementById('time-cur').innerText = formatTime(audio.currentTime);
             document.getElementById('time-dur').innerText = formatTime(audio.duration);
-            if (!isApplyingSync) broadcastState();
+            if (!isApplyingSync) broadcastState(true);
 
             if (isLyricMode && lyricsData.length > 0) {
                 const idx = lyricsData.findIndex((l, i) => audio.currentTime >= l.time && (!lyricsData[i+1] || audio.currentTime < lyricsData[i+1].time));

@@ -1,9 +1,10 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAppStore } from '../store';
-import { getUsers, getReports, saveReports, resolveReport, getAppeals, saveAppeals, getAuditLogs, saveAuditLogs, addAuditLog, saveUsers, updateUser, getVideos, saveVideos, getAppSettings, saveAppSettings, saveNotifications, addNotifications, getNotifications, getAnnouncements, saveAnnouncement, deleteAnnouncement, subscribeToAnnouncements, subscribeToVerificationRequests, voteOnVerificationRequest, updateVerificationRequestStatus, updateUserVerificationStatus, subscribeToSuggestions, getVerificationRequests, updateDoc, doc, db, wipeUserFromSystem, getCentralProRequests, approveCentralProPayment, declineCentralProPayment } from '../lib/db';
+import { getUsers, getReports, saveReports, resolveReport, getAppeals, saveAppeals, getAuditLogs, saveAuditLogs, addAuditLog, saveUsers, updateUser, getVideos, saveVideos, getAppSettings, saveAppSettings, saveNotifications, addNotifications, getNotifications, getAnnouncements, saveAnnouncement, deleteAnnouncement, subscribeToAnnouncements, subscribeToVerificationRequests, voteOnVerificationRequest, updateVerificationRequestStatus, updateUserVerificationStatus, subscribeToSuggestions, getVerificationRequests, updateDoc, doc, db, wipeUserFromSystem, getCentralProRequests, approveCentralProPayment, declineCentralProPayment, updateReportIntercom } from '../lib/db';
 import { setDoc } from 'firebase/firestore';
 import { User, Report, Appeal, AuditLog, Video, AppNotification, Announcement, VerificationRequest, AppSuggestion, CentralProRequest } from '../types';
-import { ShieldAlert, AlertTriangle, Users, FileText, CheckCircle, XCircle, Trash2, Ban, Search, Filter, RotateCcw, Loader2, Power, Gamepad2, Settings, Megaphone, Plus, Calendar, Palette, Maximize, Target, Layout as LayoutIcon, Ghost, X, Lightbulb, UserCheck, HelpCircle, Rocket } from 'lucide-react';
+import { ShieldAlert, AlertTriangle, Users, FileText, CheckCircle, XCircle, Trash2, Ban, Search, Filter, RotateCcw, Loader2, Power, Gamepad2, Settings, Megaphone, Plus, Calendar, Palette, Maximize, Target, Layout as LayoutIcon, Ghost, X, Lightbulb, UserCheck, HelpCircle, Rocket, MessageCircle, Lock, Unlock, Volume2, VolumeX } from 'lucide-react';
 import { getDeviceId } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
 import { GAMES, APPS } from '../data/games';
@@ -11,7 +12,9 @@ import { ResponsiveContainer, BarChart, Bar, LineChart, Line, XAxis, YAxis, Cart
 
 export function Admin() {
   const { currentUser } = useAppStore();
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<'reports' | 'users' | 'appeals' | 'logs' | 'announcements' | 'verification' | 'centralpro' | 'suggestions' | 'settings' | 'analytics'>('reports');
+  const [reportFilter, setReportFilter] = useState<'pending' | 'intercom' | 'all'>('pending');
   
   const [reports, setReports] = useState<Report[]>([]);
   const [users, setUsers] = useState<User[]>([]);
@@ -173,6 +176,8 @@ export function Admin() {
   const [pinInput, setPinInput] = useState('');
   const [pinError, setPinError] = useState(false);
   const [countdown, setCountdown] = useState<number | null>(null);
+  const crashTargetRef = useRef<'server' | 'games' | null>(null);
+  const crashExecutedRef = useRef(false);
   
   const [confirmModal, setConfirmModal] = useState<{
     isOpen: boolean;
@@ -525,6 +530,51 @@ export function Admin() {
     }, true, 'Moderator Note / Reason', 'State why this report is resolved...');
   };
 
+  const handleOpenIntercom = async (report: Report) => {
+    if (!currentUser) return;
+    if (!report.intercomStatus) {
+      const updated = await updateReportIntercom(
+        report,
+        currentUser,
+        { intercomStatus: 'open', intercomMuted: false },
+        `Staff (@${currentUser.handle}) opened an Intercom DM with you regarding this report.`
+      );
+      setReports(prev => prev.map(r => r.id === report.id ? updated : r));
+      await logAction('intercom_open', report.id, `Opened Intercom DM with reporter ${report.reporterId}`);
+    }
+    navigate(`/messages/intercom/${report.id}`);
+  };
+
+  const handleToggleIntercomStatus = async (report: Report) => {
+    if (!currentUser) return;
+    const nextStatus = report.intercomStatus === 'closed' ? 'open' : 'closed';
+    const updated = await updateReportIntercom(
+      report,
+      currentUser,
+      { intercomStatus: nextStatus },
+      nextStatus === 'closed'
+        ? `Intercom DM closed by staff (@${currentUser.handle}).`
+        : `Intercom DM reopened by staff (@${currentUser.handle}).`
+    );
+    setReports(prev => prev.map(r => r.id === report.id ? updated : r));
+    await logAction(`intercom_${nextStatus}`, report.id, `Intercom DM ${nextStatus} by @${currentUser.handle}`);
+  };
+
+  const handleToggleIntercomMute = async (report: Report) => {
+    if (!currentUser) return;
+    const nextMuted = !report.intercomMuted;
+    const updated = await updateReportIntercom(
+      report,
+      currentUser,
+      { intercomMuted: nextMuted },
+      nextMuted
+        ? `Reporter muted in Intercom DM by staff (@${currentUser.handle}).`
+        : `Reporter unmuted in Intercom DM by staff (@${currentUser.handle}).`
+    );
+    setReports(prev => prev.map(r => r.id === report.id ? updated : r));
+    await logAction(nextMuted ? 'intercom_mute' : 'intercom_unmute', report.id, `${nextMuted ? 'Muted' : 'Unmuted'} reporter in Intercom DM`);
+  };
+
   // User Ban actions
   const applyBan = (user: User, type: 'temp' | 'perm' | 'hwid', days?: number) => {
     const title = type === 'temp' 
@@ -665,10 +715,28 @@ export function Admin() {
     await logAction('update_api_index', 'system', `Updated YouTube API strategy to ${index === 0 ? 'Automatic' : `Key ${index}`}`);
   };
 
+  const finalizeCrash = async (targetType: 'server' | 'games', immediate = false) => {
+    if (crashExecutedRef.current) return;
+    crashExecutedRef.current = true;
+    const newSettings = targetType === 'server'
+      ? { ...appSettings, serverCrashed: true }
+      : { ...appSettings, gamesAppsCrashed: true };
+    setAppSettings(newSettings);
+    await saveAppSettings(newSettings);
+    await logAction(`${targetType}_crash`, 'system', `Crashed ${targetType} intentionally${immediate ? ' (cutscene skipped)' : ''}`);
+    if (immediate) {
+      setCountdown(null);
+    } else {
+      setTimeout(() => setCountdown(null), 2500);
+    }
+  };
+
   const handleCrashAction = (type: 'server' | 'games', currentStatus: boolean) => {
     if (!isOwner) return;
     setPinInput('');
     setPinError(false);
+    crashTargetRef.current = type;
+    crashExecutedRef.current = false;
     setPinModal({
       isOpen: true,
       title: currentStatus ? `Recover ${type === 'server' ? 'Server' : 'Games & Apps'}` : `Shutdown ${type === 'server' ? 'Server' : 'Games & Apps'}`,
@@ -682,6 +750,8 @@ export function Admin() {
            await saveAppSettings(newSettings);
            await logAction(`${type}_recover`, 'system', `Recovered ${type}`);
         } else {
+           crashTargetRef.current = type;
+           crashExecutedRef.current = false;
            // Start countdown
            setCountdown(10);
         }
@@ -692,20 +762,11 @@ export function Admin() {
   useEffect(() => {
     if (countdown === null) return;
     if (countdown > 0) {
-      const timer = setTimeout(() => setCountdown(countdown - 1), 1000);
+      const timer = setTimeout(() => setCountdown(c => (c !== null && c > 0 ? c - 1 : c)), 1000);
       return () => clearTimeout(timer);
     } else {
-      const executeCrash = async () => {
-        const type = pinModal.title.includes('Server') ? 'server' : 'games';
-        const newSettings = type === 'server' 
-          ? { ...appSettings, serverCrashed: true } 
-          : { ...appSettings, gamesAppsCrashed: true };
-        setAppSettings(newSettings);
-        await saveAppSettings(newSettings);
-        await logAction(`${type}_crash`, 'system', `Crashed ${type} intentionally`);
-        setTimeout(() => setCountdown(null), 3000);
-      };
-      executeCrash();
+      const type = crashTargetRef.current || (pinModal.title.includes('Server') ? 'server' : 'games');
+      finalizeCrash(type, false);
     }
   }, [countdown]);
 
@@ -764,13 +825,53 @@ export function Admin() {
           
           {activeTab === 'reports' && (
             <div className="space-y-4">
-              <h2 className="text-xl font-bold mb-4">Pending Reports and Support</h2>
-              {reports.filter(r => r.status === 'pending').map(report => {
+              <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+                <h2 className="text-xl font-bold">Reports & Support</h2>
+                <div className="flex items-center gap-2">
+                  {[
+                    { id: 'pending', label: `Pending (${reports.filter(r => r.status === 'pending').length})` },
+                    { id: 'intercom', label: `Intercom (${reports.filter(r => Boolean(r.intercomStatus)).length})` },
+                    { id: 'all', label: `All (${reports.length})` }
+                  ].map(f => (
+                    <button
+                      key={f.id}
+                      onClick={() => setReportFilter(f.id as any)}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-colors ${
+                        reportFilter === f.id
+                          ? 'bg-pink-600 text-white'
+                          : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700'
+                      }`}
+                    >
+                      {f.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              {reports
+                .filter(r => reportFilter === 'pending' ? r.status === 'pending' : reportFilter === 'intercom' ? Boolean(r.intercomStatus) : true)
+                .sort((a, b) => b.timestamp - a.timestamp)
+                .map(report => {
                 const vid = report.videoId ? videos.find(v => v.id === report.videoId) : null;
                 const repUser = users.find(u => u.id === report.reporterId);
                 return (
                   <div key={report.id} className="border border-zinc-200 dark:border-zinc-800 rounded-xl p-4 flex flex-col md:flex-row gap-4">
-                    {vid ? (
+                    {report.mediaUrl ? (
+                      <div className="w-36 h-32 bg-black shrink-0 rounded-lg overflow-hidden relative border border-zinc-700">
+                        {report.mediaType === 'video' ? (
+                          <video src={report.mediaUrl} controls playsInline className="w-full h-full object-cover" />
+                        ) : (
+                          <img
+                            src={report.mediaUrl}
+                            alt="Issue proof"
+                            onClick={() => setZoomedImage(report.mediaUrl!)}
+                            className="w-full h-full object-cover cursor-zoom-in hover:scale-105 transition-transform"
+                          />
+                        )}
+                        <span className="absolute top-1 left-1 bg-black/75 text-white text-[9px] font-black uppercase px-1.5 py-0.5 rounded pointer-events-none">
+                          {report.mediaType === 'video' ? 'Video Proof' : 'Screenshot'}
+                        </span>
+                      </div>
+                    ) : vid ? (
                       <div className="w-24 h-32 bg-black shrink-0 rounded-lg overflow-hidden relative">
                          {vid.isYouTube ? (
                            <img src={`https://img.youtube.com/vi/${vid.youtubeId}/default.jpg`} className="w-full h-full object-cover opacity-50" />
@@ -784,28 +885,80 @@ export function Admin() {
                       </div>
                     )}
                     <div className="flex-1">
-                      <p className="font-semibold text-red-500 mb-1">{report.category === 'support' ? 'Support Request' : report.category === 'bug' ? 'Bug / Issue' : 'Report'}: {report.reason}</p>
-                      <p className="text-sm text-zinc-500 mb-2">Reported by: @{repUser?.handle}</p>
+                      <div className="flex flex-wrap items-center gap-2 mb-1">
+                        <p className="font-semibold text-red-500">{report.category === 'support' ? 'Support Request' : report.category === 'bug' ? 'Bug / Issue' : 'Report'}: {report.reason}</p>
+                        {report.status !== 'pending' && (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-zinc-200 dark:bg-zinc-800 text-zinc-500">
+                            {report.status}
+                          </span>
+                        )}
+                        {report.intercomStatus && (
+                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase ${
+                            report.intercomStatus === 'closed'
+                              ? 'bg-red-500/20 text-red-400'
+                              : report.intercomMuted
+                              ? 'bg-amber-500/20 text-amber-400'
+                              : 'bg-emerald-500/20 text-emerald-400'
+                          }`}>
+                            Intercom {report.intercomStatus === 'closed' ? 'Closed' : report.intercomMuted ? 'Muted' : 'Open'}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-sm text-zinc-500 mb-1">Reported by: @{repUser?.handle || 'anonymous'}</p>
                       <p className="text-xs text-zinc-400 mb-4">{new Date(report.timestamp).toLocaleString()}</p>
-                      <div className="flex gap-2">
+                      <div className="flex flex-wrap gap-2">
                         {vid && (
-                          <button onClick={() => setPreviewVideo(vid)} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg text-sm flex items-center gap-1">
-                            <Search size={16} /> View Video
+                          <button onClick={() => setPreviewVideo(vid)} className="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg text-sm flex items-center gap-1.5">
+                            <Search size={15} /> View Video
                           </button>
                         )}
-                        <button onClick={() => handleResolveReport(report, 'accepted')} className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-semibold rounded-lg text-sm flex items-center gap-1">
-                          {report.category === 'video' ? <Trash2 size={16} /> : <CheckCircle size={16} />}
-                          {report.category === 'video' ? 'Take Down' : 'Resolve'}
+                        <button
+                          onClick={() => handleOpenIntercom(report)}
+                          className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-lg text-sm flex items-center gap-1.5"
+                        >
+                          <MessageCircle size={15} /> Intercom
                         </button>
-                        <button onClick={() => handleResolveReport(report, 'rejected')} className="px-4 py-2 bg-zinc-200 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-700 font-semibold rounded-lg text-sm">
-                          Dismiss
-                        </button>
+                        {report.intercomStatus && (
+                          <>
+                            <button
+                              onClick={() => handleToggleIntercomStatus(report)}
+                              className="px-3 py-2 bg-zinc-200 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-700 font-semibold rounded-lg text-sm flex items-center gap-1.5"
+                            >
+                              {report.intercomStatus === 'closed' ? <Unlock size={15} /> : <Lock size={15} />}
+                              {report.intercomStatus === 'closed' ? 'Reopen DM' : 'Close DM'}
+                            </button>
+                            <button
+                              onClick={() => handleToggleIntercomMute(report)}
+                              className={`px-3 py-2 font-semibold rounded-lg text-sm flex items-center gap-1.5 ${
+                                report.intercomMuted
+                                  ? 'bg-amber-600 hover:bg-amber-700 text-white'
+                                  : 'bg-zinc-200 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-700'
+                              }`}
+                            >
+                              {report.intercomMuted ? <Volume2 size={15} /> : <VolumeX size={15} />}
+                              {report.intercomMuted ? 'Unmute' : 'Mute'}
+                            </button>
+                          </>
+                        )}
+                        {report.status === 'pending' && (
+                          <>
+                            <button onClick={() => handleResolveReport(report, 'accepted')} className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-semibold rounded-lg text-sm flex items-center gap-1">
+                              {report.category === 'video' ? <Trash2 size={16} /> : <CheckCircle size={16} />}
+                              {report.category === 'video' ? 'Take Down' : 'Resolve'}
+                            </button>
+                            <button onClick={() => handleResolveReport(report, 'rejected')} className="px-4 py-2 bg-zinc-200 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-700 font-semibold rounded-lg text-sm">
+                              Dismiss
+                            </button>
+                          </>
+                        )}
                       </div>
                     </div>
                   </div>
                 );
               })}
-              {reports.filter(r => r.status === 'pending').length === 0 && <p className="text-zinc-500">No pending reports.</p>}
+              {reports.filter(r => reportFilter === 'pending' ? r.status === 'pending' : reportFilter === 'intercom' ? Boolean(r.intercomStatus) : true).length === 0 && (
+                <p className="text-zinc-500">No reports match this filter.</p>
+              )}
             </div>
           )}
 
@@ -2161,8 +2314,20 @@ export function Admin() {
                  animate={{ scale: 1 }}
                  className="mt-8 text-2xl font-black text-red-600 uppercase"
                >
-                 {pinModal.title.includes('Server') ? 'Servers has crashed' : 'Games & Apps has crashed'}
+                 {(crashTargetRef.current === 'server' || pinModal.title.includes('Server')) ? 'Servers has crashed' : 'Games & Apps has crashed'}
                </motion.div>
+            )}
+            {countdown > 0 && (
+              <button
+                type="button"
+                onClick={() => {
+                  const type = crashTargetRef.current || (pinModal.title.includes('Server') ? 'server' : 'games');
+                  finalizeCrash(type, true);
+                }}
+                className="mt-10 px-6 py-3 rounded-2xl bg-red-600 hover:bg-red-700 text-white font-black text-xs uppercase tracking-widest shadow-xl shadow-red-600/30 transition-all hover:scale-105 active:scale-95 cursor-pointer"
+              >
+                Skip Cutscene &amp; Shut Down Now
+              </button>
             )}
           </motion.div>
         )}

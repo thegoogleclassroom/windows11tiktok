@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Gamepad2, Rocket, Stars, Sparkles, AlertCircle, Play, Info, Square, LayoutGrid, Users, Lightbulb, X, Send, AlertTriangle, Search } from 'lucide-react';
-import { subscribeToAppSettings, getUsers, updateUserGame, submitSuggestion } from '../lib/db';
+import { subscribeToAppSettings, getUsers, updateUserGame, submitSuggestion, updateUserListeningState } from '../lib/db';
 import { useAppStore } from '../store';
 import { User, AppSuggestion } from '../types';
 import { GAMES, APPS, GameItem } from '../data/games';
@@ -124,7 +124,11 @@ export function GamesApps() {
   };
 
   const handleExit = async () => {
+    const exitingMusic = activeGameUrl.includes('CentralMusic.html');
     localStorage.setItem('aura_in_music_app', 'false');
+    if (exitingMusic) {
+      localStorage.removeItem('aura_current_track');
+    }
     if (activeGameUrl.includes('Cinema.html') && miniPlayerUrl) {
       setMiniPlayerActive(true);
     }
@@ -134,6 +138,9 @@ export function GamesApps() {
     
     if (currentUser) {
       await updateUserGame(currentUser.id, null);
+      if (exitingMusic) {
+        await updateUserListeningState(currentUser.id, null);
+      }
     }
   };
 

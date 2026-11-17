@@ -154,13 +154,11 @@ export const AmbientGlow: React.FC<{ children: React.ReactNode, src?: string, ty
 
   return (
     <div className="relative w-full h-full overflow-hidden group">
-      {/* Dynamic Glow Layer (disabled in Low Quality to eliminate GPU blur overhead) */}
-      {src && !isLow && (
-        <div className="absolute inset-0 z-0 opacity-40 blur-[80px] scale-110 pointer-events-none transition-opacity duration-700">
-          {type === 'video' ? (
-            <video src={src} muted loop className="w-full h-full object-cover" />
-          ) : (
-            <img src={src} className="w-full h-full object-cover" alt="" />
+      {/* Dynamic Glow Layer (uses lightweight gradient/image only — never blurred <video> frames which cause green GPU flicker) */}
+      {!isLow && (
+        <div className="absolute inset-0 z-0 opacity-45 pointer-events-none transition-opacity duration-700 bg-gradient-to-br from-pink-950/50 via-zinc-950 to-indigo-950/50">
+          {src && type === 'image' && (
+            <img src={src} className="w-full h-full object-cover blur-2xl scale-105 opacity-70" alt="" />
           )}
         </div>
       )}

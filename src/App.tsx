@@ -182,6 +182,7 @@ export default function App() {
               <Route path="/messages" element={<Inbox />} />
               <Route path="/messages/:handle" element={<Chat />} />
               <Route path="/messages/group/:groupId" element={<Chat />} />
+              <Route path="/messages/intercom/:reportId" element={<Chat />} />
               <Route path="/forum" element={<Forum />} />
               <Route path="/forum/updates" element={<UpdatesAnnouncements />} />
               <Route path="/forum/announcements" element={<UpdatesAnnouncements />} />

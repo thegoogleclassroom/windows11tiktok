@@ -1,10 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { useAppStore } from '../store';
-import { getNotifications, getMessages, getUsers, getGroupChats, saveGroupChats } from '../lib/db';
-import { AppNotification, Message, User, GroupChat } from '../types';
-import { Heart, MessageCircle, UserPlus, Bell, ShieldCheck, Users, Plus, X, Search, Check, LifeBuoy, Phone, Activity, Server, Database, Sparkles, Youtube, ShieldAlert } from 'lucide-react';
+import { getNotifications, getMessages, getUsers, getGroupChats, saveGroupChats, getReports, addReport } from '../lib/db';
+import { AppNotification, Message, User, GroupChat, Report } from '../types';
+import { Heart, MessageCircle, UserPlus, Bell, ShieldCheck, Users, Plus, X, Search, Check, LifeBuoy, Phone, Activity, Server, Database, Sparkles, Youtube, ShieldAlert, Paperclip } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { addReport } from '../lib/db';
 import { checkSystemHealth, SystemStatus } from '../lib/diagnostics';
 import { HolographicBadge } from '../components/UIPolish';
 
@@ -14,14 +13,19 @@ export function Inbox() {
     setCallData, 
     setIsCalling 
   } = useAppStore();
-  const [notifications, setNotifications] = useState<(Notification & { fromUser: User })[]>([]);
+  const [notifications, setNotifications] = useState<(AppNotification & { fromUser: User })[]>([]);
   const [conversations, setConversations] = useState<{ user?: User, group?: GroupChat, lastMessage: Message }[]>([]);
+  const [intercomReports, setIntercomReports] = useState<Report[]>([]);
   const [activeTab, setActiveTab] = useState<'activity' | 'messages' | 'groups'>('activity');
   const [showNotificationPrompt, setShowNotificationPrompt] = useState(false);
   
   // Support state
   const [showSupportModal, setShowSupportModal] = useState(false);
   const [supportReason, setSupportReason] = useState('');
+  const [supportMediaUrl, setSupportMediaUrl] = useState('');
+  const [supportMediaType, setSupportMediaType] = useState<'image' | 'video' | undefined>(undefined);
+  const [supportMediaUploading, setSupportMediaUploading] = useState(false);
+  const [supportMediaError, setSupportMediaError] = useState<string | null>(null);
   const [supportSubmitted, setSupportSubmitted] = useState(false);
 
   // Diagnostics state
@@ -41,10 +45,18 @@ export function Inbox() {
     setShowNotificationPrompt(localStorage.getItem('notificationPromptDismissed') !== 'true');
     
     const loadInbox = async () => {
-      const allUsers = await getUsers();
-      const allNotifs = await getNotifications();
-      const allMsgs = await getMessages();
-      const allGroups = await getGroupChats();
+      const [allUsers, allNotifs, allMsgs, allGroups, allReports] = await Promise.all([
+        getUsers(),
+        getNotifications(),
+        getMessages(),
+        getGroupChats(),
+        getReports()
+      ]);
+      const isStaff = currentUser.role === 'staff' || currentUser.role === 'owner';
+      const relevantIntercoms = allReports
+        .filter(r => r.intercomStatus && (r.reporterId === currentUser.id || (isStaff && r.intercomStaffId === currentUser.id)))
+        .sort((a, b) => (b.intercomUpdatedAt || b.timestamp) - (a.intercomUpdatedAt || a.timestamp));
+      setIntercomReports(relevantIntercoms);
       
       const userNotifs = allNotifs
         .filter(n => n.userId === currentUser.id)
@@ -158,6 +170,69 @@ export function Inbox() {
     if (enabled && 'Notification' in window) await window.Notification.requestPermission();
   };
 
+  const handleSupportMediaUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setSupportMediaError(null);
+    setSupportMediaUploading(true);
+    try {
+      const isVideo = file.type.startsWith('video/');
+      const isImage = file.type.startsWith('image/');
+      if (!isVideo && !isImage) {
+        setSupportMediaError('Please select an image or video file.');
+        return;
+      }
+      if (isImage) {
+        const reader = new FileReader();
+        const dataUrl = await new Promise<string>((resolve, reject) => {
+          reader.onload = () => resolve(String(reader.result || ''));
+          reader.onerror = () => reject(new Error('Failed to read image'));
+          reader.readAsDataURL(file);
+        });
+        const { compressImage } = await import('../lib/imageUtils');
+        let compressed = await compressImage(dataUrl, 900, 900, 0.65);
+        if (compressed.length > 650_000) {
+          compressed = await compressImage(compressed, 640, 640, 0.45);
+        }
+        setSupportMediaUrl(compressed);
+        setSupportMediaType('image');
+      } else {
+        if (file.size > 15 * 1024 * 1024) {
+          setSupportMediaError('Video must be 15MB or smaller.');
+          return;
+        }
+        if (file.size <= 650_000) {
+          const reader = new FileReader();
+          const dataUrl = await new Promise<string>((resolve, reject) => {
+            reader.onload = () => resolve(String(reader.result || ''));
+            reader.onerror = () => reject(new Error('Failed to read video'));
+            reader.readAsDataURL(file);
+          });
+          setSupportMediaUrl(dataUrl);
+          setSupportMediaType('video');
+        } else {
+          const formData = new FormData();
+          formData.append('file', file);
+          formData.append('upload_preset', 'centraltok');
+          const res = await fetch('https://api.cloudinary.com/v1_1/dzpocbcl/auto/upload', { method: 'POST', body: formData });
+          if (res.ok) {
+            const data = await res.json();
+            if (data?.secure_url) {
+              setSupportMediaUrl(data.secure_url);
+              setSupportMediaType('video');
+              return;
+            }
+          }
+          setSupportMediaError('Video too large to attach. Try a shorter clip or screenshot.');
+        }
+      }
+    } catch {
+      setSupportMediaError('Could not process attachment. Try a smaller file.');
+    } finally {
+      setSupportMediaUploading(false);
+    }
+  };
+
   const submitSupport = async () => {
     if (!supportReason.trim() || !currentUser) return;
     await addReport({
@@ -165,13 +240,17 @@ export function Inbox() {
       reason: supportReason.trim(),
       status: 'pending',
       timestamp: Date.now(),
-      category: 'support'
+      category: 'support',
+      ...(supportMediaUrl ? { mediaUrl: supportMediaUrl, mediaType: supportMediaType } : {})
     });
     setSupportSubmitted(true);
     setTimeout(() => {
       setShowSupportModal(false);
       setSupportSubmitted(false);
       setSupportReason('');
+      setSupportMediaUrl('');
+      setSupportMediaType(undefined);
+      setSupportMediaError(null);
     }, 2000);
   };
 
@@ -261,18 +340,30 @@ export function Inbox() {
                   <div className="relative">
                     <img src={n.fromUser.avatarUrl} alt="" className="w-12 h-12 rounded-full" />
                     <div className={`absolute -bottom-1 -right-1 w-6 h-6 rounded-full border-2 border-white dark:border-zinc-950 flex items-center justify-center text-white
-                      ${n.type === 'like' ? 'bg-pink-600' : n.type === 'follow' ? 'bg-blue-500' : n.type === 'forum_announcement' ? 'bg-[#5865F2]' : n.type === 'tradient_reward' ? 'bg-indigo-600' : n.type === 'moderation' ? 'bg-amber-600' : 'bg-green-500'}`}>
+                      ${n.type === 'like' ? 'bg-pink-600' : n.type === 'follow' ? 'bg-blue-500' : n.type === 'forum_announcement' ? 'bg-[#5865F2]' : n.type === 'tradient_reward' ? 'bg-indigo-600' : n.type === 'moderation' ? 'bg-amber-600' : n.type === 'intercom' ? 'bg-emerald-600' : 'bg-green-500'}`}>
                       {n.type === 'like' && <Heart size={12} className="fill-current" />}
                       {n.type === 'follow' && <UserPlus size={12} />}
                       {n.type === 'mention' && <span className="text-[10px] font-bold">@</span>}
                       {n.type === 'forum_announcement' && <span className="text-[10px]">📢</span>}
                       {n.type === 'tradient_reward' && <ShieldCheck size={12} />}
                       {n.type === 'moderation' && <ShieldAlert size={12} />}
+                      {n.type === 'intercom' && <MessageCircle size={12} />}
                     </div>
                   </div>
                   <div className="flex-1">
                     <p className="text-sm">
-                      {n.type === 'forum_announcement' ? (
+                      {n.type === 'intercom' && n.reportId ? (
+                        <>
+                          <span className="font-bold text-emerald-600 dark:text-emerald-400">🛡️ Staff Intercom DM:</span>{' '}
+                          <span className="text-zinc-800 dark:text-zinc-200">{n.message}</span>{' '}
+                          <Link
+                            to={`/messages/intercom/${n.reportId}`}
+                            className="inline-flex items-center gap-1 ml-1 px-2.5 py-0.5 rounded-full bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-700 transition-colors"
+                          >
+                            Open Intercom
+                          </Link>
+                        </>
+                      ) : n.type === 'forum_announcement' ? (
                         <>
                           <span className="font-bold text-[#5865F2]">📢 Forum Announcement:</span>{' '}
                           <Link to="/forum/updates" className="font-semibold hover:underline">{n.title || n.message}</Link>
@@ -310,7 +401,35 @@ export function Inbox() {
           </div>
         ) : activeTab === 'messages' ? (
           <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
-            {conversations.filter(c => !c.group).length === 0 ? (
+            {intercomReports.map(rep => (
+              <Link
+                key={`intercom_${rep.id}`}
+                to={`/messages/intercom/${rep.id}`}
+                className="p-4 flex items-center gap-4 bg-emerald-500/5 hover:bg-emerald-500/10 transition-colors"
+              >
+                <div className="w-12 h-12 rounded-2xl bg-emerald-600 text-white flex items-center justify-center shrink-0">
+                  <ShieldAlert size={22} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-bold text-sm truncate text-emerald-700 dark:text-emerald-300">
+                      Staff Intercom {rep.intercomStaffName ? `with ${rep.intercomStaffName}` : ''}
+                    </h3>
+                    <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${
+                      rep.intercomStatus === 'closed'
+                        ? 'bg-red-500/20 text-red-500'
+                        : rep.intercomMuted
+                        ? 'bg-amber-500/20 text-amber-500'
+                        : 'bg-emerald-500/20 text-emerald-500'
+                    }`}>
+                      {rep.intercomStatus === 'closed' ? 'Closed' : rep.intercomMuted ? 'Muted' : 'Open'}
+                    </span>
+                  </div>
+                  <p className="text-xs text-zinc-500 truncate mt-0.5">{rep.reason}</p>
+                </div>
+              </Link>
+            ))}
+            {conversations.filter(c => !c.group).length === 0 && intercomReports.length === 0 ? (
               <div className="p-8 text-center text-zinc-500 flex flex-col items-center">
                 <MessageCircle size={48} className="mb-4 text-zinc-300 dark:text-zinc-700" />
                 <p>Messages will appear here</p>
@@ -487,12 +606,37 @@ export function Inbox() {
                   value={supportReason}
                   onChange={e => setSupportReason(e.target.value)}
                   placeholder="Tell us what's wrong..."
-                  className="w-full bg-zinc-100 dark:bg-zinc-900 rounded-2xl p-4 min-h-[160px] focus:ring-2 focus:ring-pink-500 outline-none resize-none mb-6 text-sm"
+                  className="w-full bg-zinc-100 dark:bg-zinc-900 rounded-2xl p-4 min-h-[140px] focus:ring-2 focus:ring-pink-500 outline-none resize-none mb-4 text-sm"
                 />
+
+                <div className="w-full mb-5 text-left">
+                  <label className="flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl border border-dashed border-zinc-300 dark:border-zinc-700 hover:border-pink-500 cursor-pointer text-xs font-bold text-zinc-600 dark:text-zinc-300 transition-colors">
+                    <Paperclip size={14} />
+                    <span>{supportMediaUploading ? 'Uploading attachment...' : supportMediaUrl ? 'Replace Image / Video' : 'Attach Screenshot or Video (Optional)'}</span>
+                    <input type="file" accept="image/*,video/*" onChange={handleSupportMediaUpload} className="hidden" disabled={supportMediaUploading} />
+                  </label>
+                  {supportMediaError && <p className="text-xs text-red-500 mt-1">{supportMediaError}</p>}
+                  {supportMediaUrl && (
+                    <div className="mt-2 rounded-xl overflow-hidden border border-zinc-200 dark:border-zinc-800 bg-black">
+                      {supportMediaType === 'video' ? (
+                        <video src={supportMediaUrl} controls playsInline className="w-full max-h-40 object-contain" />
+                      ) : (
+                        <img src={supportMediaUrl} alt="Support attachment" className="w-full max-h-40 object-contain" />
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => { setSupportMediaUrl(''); setSupportMediaType(undefined); }}
+                        className="w-full py-1 bg-red-600 text-white text-[10px] font-bold uppercase tracking-wider"
+                      >
+                        Remove Attachment
+                      </button>
+                    </div>
+                  )}
+                </div>
                 
                 <button 
                   onClick={submitSupport}
-                  disabled={!supportReason.trim()}
+                  disabled={!supportReason.trim() || supportMediaUploading}
                   className="w-full py-4 bg-pink-600 hover:bg-pink-700 text-white font-bold rounded-2xl shadow-xl shadow-pink-600/20 transition-all disabled:opacity-50 active:scale-95"
                 >
                   Send Support Request

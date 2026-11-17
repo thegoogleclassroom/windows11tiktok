@@ -478,16 +478,13 @@ export function Home() {
         {/* Ambient background glow */}
         <div className="absolute w-96 h-96 bg-gradient-to-tr from-pink-600/25 to-blue-600/25 rounded-full blur-3xl animate-pulse pointer-events-none" />
 
-        {/* Black Hole expansion */}
+        {/* Smooth transition overlay (safe GPU fade instead of huge blur/scale texture) */}
         {introPhase === 'expanding' && (
-          <motion.div 
-            initial={{ scale: 0, opacity: 0 }}
-            animate={{ scale: 120, opacity: 1 }}
-            transition={{ duration: 0.9, ease: [0.16, 1, 0.3, 1] }}
-            className="absolute z-50 w-16 h-16 bg-black rounded-full"
-            style={{ 
-              boxShadow: '0 0 150px 80px rgba(0,0,0,1)' 
-            }}
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.35, ease: 'easeOut' }}
+            className="fixed inset-0 z-50 bg-black pointer-events-none"
           />
         )}
 
@@ -641,6 +638,10 @@ export const VideoItem: React.FC<{
   const [showAIChat, setShowAIChat] = useState(false);
   const [showReport, setShowReport] = useState(false);
   const [reportReason, setReportReason] = useState('');
+  const [reportMediaUrl, setReportMediaUrl] = useState('');
+  const [reportMediaType, setReportMediaType] = useState<'image' | 'video' | undefined>(undefined);
+  const [reportMediaUploading, setReportMediaUploading] = useState(false);
+  const [reportMediaError, setReportMediaError] = useState<string | null>(null);
   const [reportSubmitted, setReportSubmitted] = useState(false);
   const [youtubeError, setYoutubeError] = useState<number | null>(null);
   const [showShare, setShowShare] = useState(false);
@@ -936,6 +937,69 @@ export const VideoItem: React.FC<{
     setTimeout(() => { setShowShare(false); setSharedTo(null); }, 1200);
   };
 
+  const handleReportMediaUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setReportMediaError(null);
+    setReportMediaUploading(true);
+    try {
+      const isVideo = file.type.startsWith('video/');
+      const isImage = file.type.startsWith('image/');
+      if (!isVideo && !isImage) {
+        setReportMediaError('Please select an image or video file.');
+        return;
+      }
+      if (isImage) {
+        const reader = new FileReader();
+        const dataUrl = await new Promise<string>((resolve, reject) => {
+          reader.onload = () => resolve(String(reader.result || ''));
+          reader.onerror = () => reject(new Error('Failed to read image'));
+          reader.readAsDataURL(file);
+        });
+        const { compressImage } = await import('../lib/imageUtils');
+        let compressed = await compressImage(dataUrl, 900, 900, 0.65);
+        if (compressed.length > 650_000) {
+          compressed = await compressImage(compressed, 640, 640, 0.45);
+        }
+        setReportMediaUrl(compressed);
+        setReportMediaType('image');
+      } else {
+        if (file.size > 15 * 1024 * 1024) {
+          setReportMediaError('Video must be 15MB or smaller.');
+          return;
+        }
+        if (file.size <= 650_000) {
+          const reader = new FileReader();
+          const dataUrl = await new Promise<string>((resolve, reject) => {
+            reader.onload = () => resolve(String(reader.result || ''));
+            reader.onerror = () => reject(new Error('Failed to read video'));
+            reader.readAsDataURL(file);
+          });
+          setReportMediaUrl(dataUrl);
+          setReportMediaType('video');
+        } else {
+          const formData = new FormData();
+          formData.append('file', file);
+          formData.append('upload_preset', 'centraltok');
+          const res = await fetch('https://api.cloudinary.com/v1_1/dzpocbcl/auto/upload', { method: 'POST', body: formData });
+          if (res.ok) {
+            const data = await res.json();
+            if (data?.secure_url) {
+              setReportMediaUrl(data.secure_url);
+              setReportMediaType('video');
+              return;
+            }
+          }
+          setReportMediaError('Video too large to attach. Try a shorter clip or screenshot.');
+        }
+      }
+    } catch {
+      setReportMediaError('Could not process attachment. Try a smaller file.');
+    } finally {
+      setReportMediaUploading(false);
+    }
+  };
+
   const submitReport = async () => {
     if (!currentUser || !reportReason) return;
     
@@ -946,7 +1010,8 @@ export const VideoItem: React.FC<{
       reason: reportReason,
       status: 'pending',
       timestamp: Date.now(),
-      category: 'video'
+      category: 'video',
+      ...(reportMediaUrl ? { mediaUrl: reportMediaUrl, mediaType: reportMediaType } : {})
     });
     
     setReportSubmitted(true);
@@ -954,6 +1019,9 @@ export const VideoItem: React.FC<{
       setShowReport(false);
       setReportSubmitted(false);
       setReportReason('');
+      setReportMediaUrl('');
+      setReportMediaType(undefined);
+      setReportMediaError(null);
     }, 2000);
   };
 
@@ -1396,7 +1464,7 @@ export const VideoItem: React.FC<{
 
       {showReport && (
         <div className="absolute inset-0 bg-black/80 z-50 flex items-center justify-center p-4 pointer-events-auto">
-          <div className="bg-white dark:bg-zinc-900 rounded-2xl p-6 w-full max-w-sm" onClick={e => e.stopPropagation()}>
+          <div className="bg-white dark:bg-zinc-900 rounded-2xl p-6 w-full max-w-sm max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
             <h3 className="text-xl font-bold mb-4 dark:text-white">Report Video</h3>
             {reportSubmitted ? (
               <div className="text-center py-8 text-green-600 font-medium">
@@ -1417,11 +1485,37 @@ export const VideoItem: React.FC<{
                   <option value="Harmful or dangerous acts">Harmful or dangerous acts</option>
                   <option value="Copyright violation">Copyright violation</option>
                 </select>
+                <div>
+                  <label className="block text-xs font-bold text-zinc-500 uppercase tracking-wider mb-1.5">
+                    Attach Screenshot or Video (Optional)
+                  </label>
+                  <label className="flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl border border-dashed border-zinc-300 dark:border-zinc-700 hover:border-pink-500 cursor-pointer text-xs font-semibold text-zinc-600 dark:text-zinc-300 transition-colors">
+                    <span>{reportMediaUploading ? 'Processing attachment...' : reportMediaUrl ? 'Replace Image / Video' : 'Upload Image or Video'}</span>
+                    <input type="file" accept="image/*,video/*" onChange={handleReportMediaUpload} className="hidden" disabled={reportMediaUploading} />
+                  </label>
+                  {reportMediaError && <p className="text-xs text-red-500 mt-1">{reportMediaError}</p>}
+                  {reportMediaUrl && (
+                    <div className="mt-2 relative rounded-xl overflow-hidden border border-zinc-200 dark:border-zinc-800 bg-black">
+                      {reportMediaType === 'video' ? (
+                        <video src={reportMediaUrl} controls playsInline className="w-full max-h-40 object-contain" />
+                      ) : (
+                        <img src={reportMediaUrl} alt="Report proof" className="w-full max-h-40 object-contain" />
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => { setReportMediaUrl(''); setReportMediaType(undefined); }}
+                        className="mt-1 w-full py-1 bg-red-600/90 text-white text-[10px] font-bold uppercase tracking-wider"
+                      >
+                        Remove Attachment
+                      </button>
+                    </div>
+                  )}
+                </div>
                 <div className="flex gap-2 mt-6">
                   <button onClick={() => setShowReport(false)} className="flex-1 py-3 rounded-xl font-semibold bg-zinc-100 dark:bg-zinc-800 dark:text-white">Cancel</button>
                   <button 
                     onClick={submitReport} 
-                    disabled={!reportReason}
+                    disabled={!reportReason || reportMediaUploading}
                     className="flex-1 py-3 rounded-xl font-semibold bg-pink-600 text-white disabled:opacity-50"
                   >
                     Submit Report

@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { Home, Compass, PlusSquare, MessageSquare, User, Moon, Sun, LogIn, ShieldAlert, X, HelpCircle, Bell, BellOff, Gamepad2, ShieldCheck, Info, Rocket, Sparkles, Check, Copy, Flame, AlertTriangle, Search, Users, UserCheck, Tv, Disc, Zap, RefreshCw, Sliders } from 'lucide-react';
+import { Home, Compass, PlusSquare, MessageSquare, User, Moon, Sun, LogIn, ShieldAlert, X, HelpCircle, Bell, BellOff, Gamepad2, ShieldCheck, Info, Rocket, Sparkles, Check, Copy, Flame, AlertTriangle, Search, Users, UserCheck, Tv, Disc, Zap, RefreshCw, Sliders, Paperclip, MessageCircle } from 'lucide-react';
 import { motion, AnimatePresence, MotionConfig } from 'motion/react';
 import { useAppStore } from '../store';
 import { AuthModal } from './AuthModal';
@@ -58,8 +58,19 @@ export function Layout({ children }: { children: React.ReactNode }) {
   const [liveCount, setLiveCount] = useState(0);
   const [supportMessage, setSupportMessage] = useState('');
   const [supportType, setSupportType] = useState<'support' | 'bug' | null>(null);
+  const [supportMediaUrl, setSupportMediaUrl] = useState('');
+  const [supportMediaType, setSupportMediaType] = useState<'image' | 'video' | undefined>(undefined);
+  const [supportUploading, setSupportUploading] = useState(false);
+  const [supportMediaError, setSupportMediaError] = useState<string | null>(null);
   const [supportSent, setSupportSent] = useState(false);
   const [messageToast, setMessageToast] = useState<{username: string; avatarUrl: string; handle: string} | null>(null);
+  const [intercomToast, setIntercomToast] = useState<{
+    id: string;
+    reportId: string;
+    staffName: string;
+    staffAvatar?: string;
+    message: string;
+  } | null>(null);
   const [forumToast, setForumToast] = useState<{
     id: string;
     title: string;
@@ -105,6 +116,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
       setMessageToast(null);
       setForumToast(null);
       setRewardToast(null);
+      setIntercomToast(null);
     }
     if (currentUser) {
       setCurrentUser({ ...currentUser, dndEnabled: next });
@@ -253,6 +265,33 @@ export function Layout({ children }: { children: React.ReactNode }) {
           }
         }
       }
+
+      // Handle Staff Intercom DM notifications
+      const pendingIntercom = allUnreadNotifs.filter(n => n.type === 'intercom' && n.reportId && !n.read);
+      if (pendingIntercom.length > 0 && !dndRef.current) {
+        const latest = pendingIntercom.sort((a, b) => b.timestamp - a.timestamp)[0];
+        const sessionKey = `ct_shown_intercom_${latest.id}`;
+        if (!sessionStorage.getItem(sessionKey)) {
+          sessionStorage.setItem(sessionKey, 'true');
+          const users = await getUsers();
+          const staff = users.find(u => u.id === latest.fromUserId);
+          setIntercomToast({
+            id: latest.id,
+            reportId: latest.reportId!,
+            staffName: staff?.username || 'Staff Team',
+            staffAvatar: staff?.avatarUrl,
+            message: latest.message || 'Staff opened an Intercom DM with you.'
+          });
+          playNotificationSound(soundRef.current);
+
+          if ('Notification' in window && Notification.permission === 'granted') {
+            new Notification('🛡️ Staff Intercom DM', {
+              body: latest.message || 'Staff wants to speak with you about your report.',
+              icon: staff?.avatarUrl
+            });
+          }
+        }
+      }
     });
 
     const unsubCalls = currentUser ? subscribeToIncomingCalls(currentUser.id, async (calls) => {
@@ -347,7 +386,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
 
       try {
         const parsed = JSON.parse(raw);
-        if (!parsed || !parsed.title || !parsed.streamUrl) return;
+        if (!parsed || !parsed.title) return;
         const now = Date.now();
         const trackUpdatedAt = parsed.updatedAt || now;
         const isStalePaused = !parsed.isPlaying && (now - trackUpdatedAt > 45000);
@@ -360,7 +399,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
         }
 
         const prev = lastSyncedListeningRef.current;
-        const trackChanged = !prev || prev.title !== parsed.title || prev.streamUrl !== parsed.streamUrl;
+        const trackChanged = !prev || prev.title !== parsed.title || prev.streamUrl !== (parsed.streamUrl || '');
         const playToggled = !prev || prev.isPlaying !== Boolean(parsed.isPlaying);
         const expectedTime = prev
           ? (prev.isPlaying ? prev.currentTime + (now - prev.syncedAt) / 1000 : prev.currentTime)
@@ -374,7 +413,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
             title: parsed.title,
             artist: parsed.artist || 'Unknown Artist',
             artwork: parsed.artwork || '',
-            streamUrl: parsed.streamUrl,
+            streamUrl: parsed.streamUrl || '',
             isPlaying: Boolean(parsed.isPlaying),
             currentTime: Number(parsed.currentTime) || 0,
             duration: Number(parsed.duration) || 0,
@@ -394,9 +433,29 @@ export function Layout({ children }: { children: React.ReactNode }) {
       } catch {}
     };
 
+    const handleMusicMessage = (event: MessageEvent) => {
+      if (event.data && event.data.type === 'CENTRALMUSIC_TRACK_STATE' && event.data.payload) {
+        try {
+          localStorage.setItem('aura_current_track', JSON.stringify(event.data.payload));
+        } catch {}
+        syncLocalTrackToFirestore();
+      }
+    };
+    const handleStorage = (e: StorageEvent) => {
+      if (e.key === 'aura_current_track') {
+        syncLocalTrackToFirestore();
+      }
+    };
+
+    window.addEventListener('message', handleMusicMessage);
+    window.addEventListener('storage', handleStorage);
     syncLocalTrackToFirestore();
     const interval = setInterval(syncLocalTrackToFirestore, 1500);
-    return () => clearInterval(interval);
+    return () => {
+      window.removeEventListener('message', handleMusicMessage);
+      window.removeEventListener('storage', handleStorage);
+      clearInterval(interval);
+    };
   }, [currentUser?.id, currentUser?.showActivityStatus, currentUser?.isGhostMode]);
 
   // Listen Along synchronization when following a host's CentralMusic session
@@ -439,6 +498,69 @@ export function Layout({ children }: { children: React.ReactNode }) {
     return () => unsub();
   }, [listenAlongHostId]);
 
+  const handleSupportMediaUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setSupportMediaError(null);
+    setSupportUploading(true);
+    try {
+      const isVideo = file.type.startsWith('video/');
+      const isImage = file.type.startsWith('image/');
+      if (!isVideo && !isImage) {
+        setSupportMediaError('Please select an image or video file.');
+        return;
+      }
+      if (isImage) {
+        const reader = new FileReader();
+        const dataUrl = await new Promise<string>((resolve, reject) => {
+          reader.onload = () => resolve(String(reader.result || ''));
+          reader.onerror = () => reject(new Error('Failed to read image'));
+          reader.readAsDataURL(file);
+        });
+        const { compressImage } = await import('../lib/imageUtils');
+        let compressed = await compressImage(dataUrl, 900, 900, 0.65);
+        if (compressed.length > 650_000) {
+          compressed = await compressImage(compressed, 640, 640, 0.45);
+        }
+        setSupportMediaUrl(compressed);
+        setSupportMediaType('image');
+      } else {
+        if (file.size > 15 * 1024 * 1024) {
+          setSupportMediaError('Video must be 15MB or smaller.');
+          return;
+        }
+        if (file.size <= 650_000) {
+          const reader = new FileReader();
+          const dataUrl = await new Promise<string>((resolve, reject) => {
+            reader.onload = () => resolve(String(reader.result || ''));
+            reader.onerror = () => reject(new Error('Failed to read video'));
+            reader.readAsDataURL(file);
+          });
+          setSupportMediaUrl(dataUrl);
+          setSupportMediaType('video');
+        } else {
+          const formData = new FormData();
+          formData.append('file', file);
+          formData.append('upload_preset', 'centraltok');
+          const res = await fetch('https://api.cloudinary.com/v1_1/dzpocbcl/auto/upload', { method: 'POST', body: formData });
+          if (res.ok) {
+            const data = await res.json();
+            if (data?.secure_url) {
+              setSupportMediaUrl(data.secure_url);
+              setSupportMediaType('video');
+              return;
+            }
+          }
+          setSupportMediaError('Video too large to attach. Try a shorter clip or screenshot.');
+        }
+      }
+    } catch {
+      setSupportMediaError('Could not process attachment. Try a smaller file.');
+    } finally {
+      setSupportUploading(false);
+    }
+  };
+
   const handleSupportSubmit = async () => {
     if (!supportMessage.trim()) return;
     const { addReport } = await import('../lib/db');
@@ -448,7 +570,8 @@ export function Layout({ children }: { children: React.ReactNode }) {
       reason: `${supportType === 'bug' ? 'Bug/Issue' : 'Support'}: ${supportMessage}`,
       timestamp: Date.now(),
       status: 'pending',
-      category: supportType || 'support'
+      category: supportType || 'support',
+      ...(supportMediaUrl ? { mediaUrl: supportMediaUrl, mediaType: supportMediaType } : {})
     });
     setSupportSent(true);
     setTimeout(() => {
@@ -456,6 +579,9 @@ export function Layout({ children }: { children: React.ReactNode }) {
       setSupportSent(false);
       setSupportMessage('');
       setSupportType(null);
+      setSupportMediaUrl('');
+      setSupportMediaType(undefined);
+      setSupportMediaError(null);
     }, 2000);
   };
 
@@ -918,6 +1044,43 @@ export function Layout({ children }: { children: React.ReactNode }) {
       )}
 
       <TradientInfoModal isOpen={showTradientInfo} onClose={() => setShowTradientInfo(false)} />
+
+      {/* Staff Intercom DM Toast */}
+      {intercomToast && (
+        <div className="fixed top-6 left-1/2 -translate-x-1/2 z-[1005] w-[94%] max-w-md bg-zinc-950 text-white border border-emerald-500 rounded-2xl p-4 shadow-[0_20px_50px_rgba(16,185,129,0.35)] animate-in slide-in-from-top-10 flex items-center gap-3.5">
+          <div className="w-11 h-11 rounded-2xl bg-emerald-600 flex items-center justify-center shrink-0 text-white shadow-lg">
+            <MessageCircle size={22} />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-[10px] font-black uppercase tracking-widest text-emerald-400">
+              Staff Intercom · {intercomToast.staffName}
+            </p>
+            <p className="text-xs font-semibold text-zinc-100 line-clamp-2 mt-0.5">{intercomToast.message}</p>
+          </div>
+          <div className="flex items-center gap-1.5 shrink-0">
+            <button
+              onClick={async () => {
+                if (currentUser) await markNotificationAsRead(intercomToast.id);
+                const rid = intercomToast.reportId;
+                setIntercomToast(null);
+                navigate(`/messages/intercom/${rid}`);
+              }}
+              className="px-3 py-2 bg-emerald-500 hover:bg-emerald-400 text-zinc-950 text-[11px] font-black rounded-xl transition-all shadow-lg cursor-pointer"
+            >
+              Open
+            </button>
+            <button
+              onClick={async () => {
+                if (currentUser) await markNotificationAsRead(intercomToast.id);
+                setIntercomToast(null);
+              }}
+              className="p-1.5 text-zinc-400 hover:text-white rounded-xl hover:bg-white/10 transition-colors"
+            >
+              <X size={16} />
+            </button>
+          </div>
+        </div>
+      )}
       
       {/* Mobile Bottom Nav */}
       {!isIntro && (
@@ -1028,9 +1191,33 @@ export function Layout({ children }: { children: React.ReactNode }) {
                   placeholder="What happened?"
                   className="w-full bg-zinc-100 dark:bg-zinc-800 border border-transparent rounded-xl p-4 min-h-[120px] focus:outline-none focus:border-pink-500 focus:bg-white dark:focus:bg-black transition-all resize-none"
                 />
+                <div>
+                  <label className="flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl border border-dashed border-zinc-300 dark:border-zinc-700 hover:border-pink-500 cursor-pointer text-xs font-bold text-zinc-600 dark:text-zinc-300 transition-colors">
+                    <Paperclip size={14} />
+                    <span>{supportUploading ? 'Uploading attachment...' : supportMediaUrl ? 'Replace Image / Video' : 'Attach Image or Video of Issue (Optional)'}</span>
+                    <input type="file" accept="image/*,video/*" onChange={handleSupportMediaUpload} className="hidden" disabled={supportUploading} />
+                  </label>
+                  {supportMediaError && <p className="text-xs text-red-500 mt-1">{supportMediaError}</p>}
+                  {supportMediaUrl && (
+                    <div className="mt-2 rounded-xl overflow-hidden border border-zinc-200 dark:border-zinc-800 bg-black">
+                      {supportMediaType === 'video' ? (
+                        <video src={supportMediaUrl} controls playsInline className="w-full max-h-40 object-contain" />
+                      ) : (
+                        <img src={supportMediaUrl} alt="Issue attachment" className="w-full max-h-40 object-contain" />
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => { setSupportMediaUrl(''); setSupportMediaType(undefined); }}
+                        className="w-full py-1 bg-red-600 text-white text-[10px] font-bold uppercase tracking-wider"
+                      >
+                        Remove Attachment
+                      </button>
+                    </div>
+                  )}
+                </div>
                 <button
                   onClick={handleSupportSubmit}
-                  disabled={!supportMessage.trim()}
+                  disabled={!supportMessage.trim() || supportUploading}
                   className="w-full bg-pink-600 hover:bg-pink-700 text-white font-bold py-3 rounded-xl disabled:opacity-50 transition-colors"
                 >
                   Send to Staff

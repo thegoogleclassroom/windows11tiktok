@@ -62,6 +62,13 @@ export type Report = {
   timestamp: number;
   category?: 'video' | 'support' | 'bug';
   resolvedBy?: string; // Admin ID
+  mediaUrl?: string;
+  mediaType?: 'image' | 'video';
+  intercomStatus?: 'open' | 'closed';
+  intercomMuted?: boolean;
+  intercomStaffId?: string;
+  intercomStaffName?: string;
+  intercomUpdatedAt?: number;
 };
 
 export type Appeal = {
@@ -272,11 +279,12 @@ export type UserStatus = {
 export type AppNotification = {
   id: string;
   userId: string; // The user receiving the notification
-  type: 'like' | 'mention' | 'message' | 'follow' | 'forum_announcement' | 'tradient_reward' | 'support_resolved' | 'call' | 'verification_update' | 'moderation' | 'centralpro_update';
+  type: 'like' | 'mention' | 'message' | 'follow' | 'forum_announcement' | 'tradient_reward' | 'support_resolved' | 'call' | 'verification_update' | 'moderation' | 'centralpro_update' | 'intercom';
   fromUserId: string;
   videoId?: string;
   forumPostId?: string;
   callId?: string;
+  reportId?: string;
   title?: string;
   message?: string;
   read: boolean;
@@ -320,6 +328,18 @@ export type Call = {
   receiverName?: string;
   callerAvatar?: string;
   receiverAvatar?: string;
+  renegotiateOffer?: {
+    sdp: any;
+    type?: string;
+    sender: 'caller' | 'receiver';
+    seq: number;
+  };
+  renegotiateAnswer?: {
+    sdp: any;
+    type?: string;
+    sender: 'caller' | 'receiver';
+    seq: number;
+  };
 };
 
 export type GameData = {

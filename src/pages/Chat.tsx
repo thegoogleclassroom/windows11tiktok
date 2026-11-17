@@ -8,13 +8,15 @@ import {
   joinWatchParty, removeGroupMember, toggleGroupAdmin, addGroupMember,
   toggleMessageReaction, subscribeToGroupChat, joinVoiceChannel, leaveVoiceChannel,
   toggleVoiceChannelMute, subscribeToGroupVoiceSignals, sendGroupVoiceOffer,
-  sendGroupVoiceAnswer, addGroupVoiceCandidate, cleanupGroupVoiceSignals
+  sendGroupVoiceAnswer, addGroupVoiceCandidate, cleanupGroupVoiceSignals,
+  getReportById, getReports, subscribeToReport, subscribeToChannelMessages,
+  updateReportIntercom
 } from '../lib/db';
-import { Message, User, GroupChat, UserStatus, WatchParty } from '../types';
+import { Message, User, GroupChat, UserStatus, WatchParty, Report } from '../types';
 import { 
   ArrowLeft, Send, Phone, PhoneOff, Paperclip, Camera, X, Loader2, 
   Mic, MicOff, Volume2, VolumeX, Square, Trash2, CheckCheck, Users, Info, Tv,
-  ShieldCheck, UserPlus, UserMinus, Shield, Reply, SmilePlus
+  ShieldCheck, UserPlus, UserMinus, Shield, Reply, SmilePlus, ShieldAlert, Lock, Unlock, Image as ImageIcon
 } from 'lucide-react';
 import { HolographicBadge } from '../components/UIPolish';
 import { CameraDeviceSelector } from '../components/CameraDeviceSelector';
@@ -55,12 +57,14 @@ function blobToDataUrl(blob: Blob): Promise<string> {
 }
 
 export function Chat() {
-  const { handle, groupId } = useParams<{ handle?: string, groupId?: string }>();
+  const { handle, groupId, reportId } = useParams<{ handle?: string, groupId?: string, reportId?: string }>();
   const { currentUser, setIsCalling, setCallData, selectedCameraId, setShowAuthModal } = useAppStore();
   const navigate = useNavigate();
   
   const [otherUser, setOtherUser] = useState<User | null>(null);
   const [group, setGroup] = useState<GroupChat | null>(null);
+  const [intercomReport, setIntercomReport] = useState<Report | null>(null);
+  const [showIntercomMedia, setShowIntercomMedia] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState('');
   const [isUploading, setIsUploading] = useState(false);
@@ -128,8 +132,18 @@ export function Chat() {
       
       const currentHandle = handle;
       const currentGroupId = groupId;
+      const currentReportId = reportId;
       
-      if (currentGroupId) {
+      if (currentReportId) {
+        const rep = (await getReportById(currentReportId)) || (await getReports()).find(r => r.id === currentReportId) || null;
+        if (!rep) {
+          navigate('/messages');
+          return;
+        }
+        setIntercomReport(rep);
+        setGroup(null);
+        setOtherUser(null);
+      } else if (currentGroupId) {
         const groups = await getGroupChats();
         const g = groups.find(x => x.id === currentGroupId);
         if (!g) {
@@ -138,6 +152,7 @@ export function Chat() {
         }
         setGroup(g);
         setOtherUser(null);
+        setIntercomReport(null);
       } else if (currentHandle) {
         const user = users.find(u => u.handle === currentHandle);
         if (!user) {
@@ -146,12 +161,15 @@ export function Chat() {
         }
         setOtherUser(user);
         setGroup(null);
+        setIntercomReport(null);
       }
       
       const allMsgs = await getMessages();
       let chatMsgs: Message[] = [];
       
-      if (groupId) {
+      if (reportId) {
+        chatMsgs = allMsgs.filter(m => m.groupId === `intercom_${reportId}`);
+      } else if (groupId) {
         chatMsgs = allMsgs.filter(m => m.groupId === groupId);
       } else {
         const user = users.find(u => u.handle === handle);
@@ -196,7 +214,9 @@ export function Chat() {
         const targetOtherId = otherUser?.id || users.find(u => u.handle === handle)?.id;
         const unreadIds: string[] = [];
         for (const m of allMsgs) {
-          const isCurrentChat = groupId
+          const isCurrentChat = reportId
+            ? m.groupId === `intercom_${reportId}`
+            : groupId
             ? m.groupId === groupId
             : (m.fromUserId === targetOtherId && m.toUserId === currentUser.id);
           if (
@@ -216,7 +236,7 @@ export function Chat() {
 
         // Typing Status Logic
         const statuses = await getUserStatuses();
-        const currentTypingIn = groupId || targetOtherId;
+        const currentTypingIn = reportId ? `intercom_${reportId}` : (groupId || targetOtherId);
         const activeTyping = statuses
           .filter(s => 
             s.userId !== currentUser.id && 
@@ -236,7 +256,28 @@ export function Chat() {
     loadChat();
     const interval = setInterval(loadChat, 12000);
     return () => clearInterval(interval);
-  }, [handle, groupId, currentUser?.id, navigate, otherUser?.id]);
+  }, [handle, groupId, reportId, currentUser?.id, navigate, otherUser?.id]);
+
+  // Real-time subscription for Intercom DM channel & report status (open/closed/muted)
+  useEffect(() => {
+    if (!reportId) return;
+    const unsubReport = subscribeToReport(reportId, (rep) => {
+      if (rep) setIntercomReport(rep);
+    });
+    const unsubMsgs = subscribeToChannelMessages(`intercom_${reportId}`, (chanMsgs) => {
+      setMessages(prev => {
+        const remoteIds = new Set(chanMsgs.map(m => m.id));
+        const recentLocal = prev.filter(m => m.groupId === `intercom_${reportId}` && !remoteIds.has(m.id) && Date.now() - m.timestamp < 30_000);
+        return recentLocal.length > 0
+          ? [...chanMsgs, ...recentLocal].sort((a, b) => a.timestamp - b.timestamp)
+          : chanMsgs;
+      });
+    });
+    return () => {
+      unsubReport();
+      unsubMsgs();
+    };
+  }, [reportId]);
 
   useEffect(() => {
     if (!groupId) {
@@ -500,15 +541,29 @@ export function Chat() {
     await sendMessage(content, undefined, undefined, undefined, true);
   };
 
+  const isStaffUser = currentUser?.role === 'staff' || currentUser?.role === 'owner';
+  const isIntercomClosed = Boolean(intercomReport && intercomReport.intercomStatus === 'closed');
+  const isIntercomMutedBlocked = Boolean(intercomReport && intercomReport.intercomMuted && !isStaffUser);
+
   const sendMessage = async (content: string, imageUrl?: string, videoUrl?: string, audioUrl?: string, isSystem = false) => {
     if ((!content.trim() && !imageUrl && !videoUrl && !audioUrl) || !currentUser) return;
-    if (!otherUser && !group) return;
+    if (!otherUser && !group && !intercomReport) return;
+    if (!isSystem && intercomReport) {
+      if (intercomReport.intercomStatus === 'closed') {
+        showNotice('This Intercom DM is closed.');
+        return;
+      }
+      if (intercomReport.intercomMuted && !isStaffUser) {
+        showNotice('You have been muted in this Intercom DM by staff.');
+        return;
+      }
+    }
     
     const msg: Message = {
-      id: Math.random().toString(36).substr(2, 9),
+      id: `msg_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
       fromUserId: isSystem ? 'system' : currentUser.id,
       toUserId: otherUser?.id,
-      groupId: group?.id,
+      groupId: intercomReport ? `intercom_${intercomReport.id}` : group?.id,
       content: content.trim(),
       imageUrl,
       videoUrl,
@@ -526,18 +581,35 @@ export function Chat() {
     await addMessage(msg);
     
     if (!isSystem) {
-      const targetUserIds = group ? (group.members || []).filter(id => id !== currentUser.id) : [otherUser!.id];
-      
-      const newNotifs = targetUserIds.map(id => ({
-        id: `notif_${Date.now()}_${id}`,
-        userId: id,
-        type: 'message' as const,
-        fromUserId: currentUser.id,
-        read: false,
-        timestamp: Date.now()
-      }));
-      
-      await addNotifications(newNotifs);
+      if (intercomReport) {
+        const targetId = isStaffUser ? intercomReport.reporterId : intercomReport.intercomStaffId;
+        if (targetId && targetId !== currentUser.id && targetId !== 'anonymous') {
+          await addNotifications([{
+            id: `notif_ic_${Date.now()}_${targetId}`,
+            userId: targetId,
+            type: 'intercom',
+            fromUserId: currentUser.id,
+            reportId: intercomReport.id,
+            title: 'Staff Intercom Message',
+            message: content.trim() || 'Sent a media attachment in Intercom.',
+            read: false,
+            timestamp: Date.now()
+          }]);
+        }
+      } else {
+        const targetUserIds = group ? (group.members || []).filter(id => id !== currentUser.id) : [otherUser!.id];
+        
+        const newNotifs = targetUserIds.map(id => ({
+          id: `notif_${Date.now()}_${id}`,
+          userId: id,
+          type: 'message' as const,
+          fromUserId: currentUser.id,
+          read: false,
+          timestamp: Date.now()
+        }));
+        
+        await addNotifications(newNotifs);
+      }
     }
   };
 
@@ -574,7 +646,7 @@ export function Chat() {
 
   const updateTyping = (isTyping: boolean) => {
     if (!currentUser) return;
-    const typingIn = groupId || otherUser?.id;
+    const typingIn = intercomReport ? `intercom_${intercomReport.id}` : (groupId || otherUser?.id);
     const now = Date.now();
     if (isTyping) {
       if (isTypingActiveRef.current && now - lastTypingSentAtRef.current < 3000) {
@@ -833,7 +905,7 @@ export function Chat() {
     }
   };
 
-  if (!otherUser && !group) {
+  if (!otherUser && !group && !intercomReport) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center p-8 text-center text-zinc-500">
         <Loader2 className="animate-spin text-pink-600 mb-2" size={32} />
@@ -842,15 +914,36 @@ export function Chat() {
     );
   }
 
+  const intercomReporter = intercomReport ? allUsers.find(u => u.id === intercomReport.reporterId) : null;
+
   return (
     <div className="w-full max-w-2xl mx-auto border-x border-zinc-200 dark:border-zinc-800 h-full min-h-0 flex-1 flex flex-col bg-white dark:bg-zinc-950 relative overflow-hidden pb-16 md:pb-0">
       {/* Header */}
-      <div className="p-4 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between bg-white/80 dark:bg-zinc-950/80 backdrop-blur-md shrink-0 z-10">
-        <div className="flex items-center gap-4">
-          <button onClick={() => navigate('/messages')} className="p-2 hover:bg-zinc-100 dark:hover:bg-zinc-900 rounded-full transition-colors">
+      <div className="p-4 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between gap-2 bg-white/80 dark:bg-zinc-950/80 backdrop-blur-md shrink-0 z-10">
+        <div className="flex items-center gap-3 min-w-0">
+          <button onClick={() => navigate(isStaffUser && intercomReport ? '/admin' : '/messages')} className="p-2 hover:bg-zinc-100 dark:hover:bg-zinc-900 rounded-full transition-colors shrink-0">
             <ArrowLeft size={24} />
           </button>
-          {group ? (
+          {intercomReport ? (
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="w-10 h-10 rounded-2xl bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow">
+                <ShieldAlert size={20} />
+              </div>
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h2 className="font-bold leading-tight truncate">Staff Intercom DM</h2>
+                  <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${
+                    isIntercomClosed ? 'bg-red-500/20 text-red-500' : intercomReport.intercomMuted ? 'bg-amber-500/20 text-amber-500' : 'bg-emerald-500/20 text-emerald-500'
+                  }`}>
+                    {isIntercomClosed ? 'Closed' : intercomReport.intercomMuted ? 'Muted' : 'Open'}
+                  </span>
+                </div>
+                <p className="text-xs text-zinc-500 truncate">
+                  {intercomReporter ? `@${intercomReporter.handle}` : 'Reporter'} • {intercomReport.reason}
+                </p>
+              </div>
+            </div>
+          ) : group ? (
             <div className="flex items-center gap-3 cursor-pointer" onClick={() => setShowGroupInfo(true)}>
               <div className="relative">
                 <img src={group.avatarUrl} alt="" className="w-10 h-10 rounded-full object-cover" />
@@ -876,6 +969,67 @@ export function Chat() {
             </Link>
           )}
         </div>
+        {intercomReport ? (
+          <div className="flex items-center gap-1.5 shrink-0">
+            {intercomReport.mediaUrl && (
+              <button
+                type="button"
+                onClick={() => setShowIntercomMedia(v => !v)}
+                className="px-2.5 py-1.5 rounded-xl bg-zinc-100 dark:bg-zinc-900 hover:bg-zinc-200 dark:hover:bg-zinc-800 text-xs font-bold flex items-center gap-1"
+                title="View Attached Proof"
+              >
+                <ImageIcon size={14} />
+                <span className="hidden sm:inline">Media</span>
+              </button>
+            )}
+            {isStaffUser && currentUser && (
+              <>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const nextStatus = isIntercomClosed ? 'open' : 'closed';
+                    const updated = await updateReportIntercom(
+                      intercomReport,
+                      currentUser,
+                      { intercomStatus: nextStatus },
+                      nextStatus === 'closed'
+                        ? `Intercom DM closed by staff (@${currentUser.handle}).`
+                        : `Intercom DM reopened by staff (@${currentUser.handle}).`
+                    );
+                    setIntercomReport(updated);
+                  }}
+                  className={`px-2.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1 ${
+                    isIntercomClosed ? 'bg-emerald-600 text-white' : 'bg-zinc-100 dark:bg-zinc-900 hover:bg-zinc-200 dark:hover:bg-zinc-800'
+                  }`}
+                >
+                  {isIntercomClosed ? <Unlock size={14} /> : <Lock size={14} />}
+                  <span className="hidden sm:inline">{isIntercomClosed ? 'Reopen' : 'Close'}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const nextMuted = !intercomReport.intercomMuted;
+                    const updated = await updateReportIntercom(
+                      intercomReport,
+                      currentUser,
+                      { intercomMuted: nextMuted },
+                      nextMuted
+                        ? `Reporter muted in Intercom DM by staff (@${currentUser.handle}).`
+                        : `Reporter unmuted in Intercom DM by staff (@${currentUser.handle}).`
+                    );
+                    setIntercomReport(updated);
+                  }}
+                  className={`px-2.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1 ${
+                    intercomReport.intercomMuted ? 'bg-amber-600 text-white' : 'bg-zinc-100 dark:bg-zinc-900 hover:bg-zinc-200 dark:hover:bg-zinc-800'
+                  }`}
+                >
+                  {intercomReport.intercomMuted ? <Volume2 size={14} /> : <VolumeX size={14} />}
+                  <span className="hidden sm:inline">{intercomReport.intercomMuted ? 'Unmute' : 'Mute'}</span>
+                </button>
+              </>
+            )}
+          </div>
+        ) : (
         <div className="flex items-center gap-1">
           {group && (
             <button onClick={() => setShowGroupInfo(true)} className="p-2 text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 rounded-full">
@@ -909,7 +1063,23 @@ export function Chat() {
             {inVoiceRoom ? <PhoneOff size={20} /> : <Phone size={22} />}
           </button>
         </div>
+        )}
       </div>
+
+      {/* Collapsible Attached Issue Media Banner inside Intercom */}
+      {intercomReport && showIntercomMedia && intercomReport.mediaUrl && (
+        <div className="shrink-0 bg-zinc-950 border-b border-zinc-800 p-3 flex flex-col items-center gap-2">
+          <div className="w-full flex items-center justify-between text-xs text-zinc-400">
+            <span className="font-bold uppercase tracking-wider">Attached Issue Media</span>
+            <button type="button" onClick={() => setShowIntercomMedia(false)} className="p-1 hover:text-white"><X size={16} /></button>
+          </div>
+          {intercomReport.mediaType === 'video' ? (
+            <video src={intercomReport.mediaUrl} controls playsInline className="max-h-56 rounded-xl bg-black" />
+          ) : (
+            <img src={intercomReport.mediaUrl} alt="Report proof" className="max-h-56 rounded-xl object-contain" />
+          )}
+        </div>
+      )}
 
       {/* Collapsible Group Voice Room Panel (#6) */}
       {group && inVoiceRoom && (
@@ -1075,7 +1245,11 @@ export function Chat() {
 
         {messages.length === 0 ? (
           <div className="text-center text-zinc-500 my-auto">
-            {group ? `Welcome to ${group.name}!` : `Say hi to ${otherUser!.username}!`}
+            {intercomReport
+              ? `Intercom DM open regarding: "${intercomReport.reason}". Staff and the reporter can communicate directly here.`
+              : group
+              ? `Welcome to ${group.name}!`
+              : `Say hi to ${otherUser!.username}!`}
           </div>
         ) : (
           messages.map((m, idx) => {
@@ -1307,6 +1481,27 @@ export function Chat() {
             </button>
           </div>
         )}
+        {intercomReport && isIntercomClosed ? (
+          <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-500 text-xs font-bold flex items-center justify-between gap-2">
+            <span>This Intercom DM has been closed by staff.</span>
+            {isStaffUser && currentUser && (
+              <button
+                type="button"
+                onClick={async () => {
+                  const updated = await updateReportIntercom(intercomReport, currentUser, { intercomStatus: 'open' }, `Intercom DM reopened by staff (@${currentUser.handle}).`);
+                  setIntercomReport(updated);
+                }}
+                className="px-3 py-1 bg-emerald-600 text-white rounded-lg font-black uppercase text-[10px]"
+              >
+                Reopen DM
+              </button>
+            )}
+          </div>
+        ) : intercomReport && isIntercomMutedBlocked ? (
+          <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-500 text-xs font-bold text-center">
+            You are currently muted in this Intercom DM by staff.
+          </div>
+        ) : (
         <form onSubmit={handleSend} className="flex items-center gap-2 relative">
           <input type="file" ref={fileInputRef} onChange={handleFileChange} accept="image/*,video/*" className="hidden" />
           {!isRecordingAudio && (
@@ -1383,6 +1578,7 @@ export function Chat() {
             {isUploading ? <Loader2 size={20} className="animate-spin" /> : <Send size={20} className="ml-0.5" />}
           </button>
         </form>
+        )}
       </div>
 
       {/* Group Info Drawer */}

@@ -3,7 +3,7 @@ import { useParams, Link, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import Cropper from 'react-easy-crop';
 import { 
-  getUsers, getVideos, saveUsers, deleteVideoFromDB, getAppeals, saveAppeals, 
+  getUsers, getUserFresh, getVideos, saveUsers, deleteVideoFromDB, getAppeals, saveAppeals, 
   updateUser, submitVerificationRequest, subscribeToUserDoc 
 } from '../lib/db';
 import { User, Video, Appeal } from '../types';
@@ -75,9 +75,20 @@ export function Profile() {
 
   const loadProfile = async () => {
     const users = await getUsers();
-    const user = users.find(u => u.handle === handle);
+    const cachedMatch = users.find(u => u.handle === handle);
+    const user = cachedMatch ? ((await getUserFresh(cachedMatch.id)) || cachedMatch) : undefined;
     if (user) {
-      setProfileUser(user);
+      setProfileUser(prev => {
+        if (
+          prev &&
+          prev.id === user.id &&
+          prev.listeningState &&
+          (!user.listeningState || (prev.listeningState.updatedAt || 0) > (user.listeningState.updatedAt || 0))
+        ) {
+          return { ...user, listeningState: prev.listeningState };
+        }
+        return user;
+      });
       setIsFollowing((currentUser?.following || []).includes(user.id) || false);
       
       const allVideos = await getVideos();
@@ -117,7 +128,7 @@ export function Profile() {
 
   useEffect(() => {
     loadProfile();
-  }, [handle, currentUser, showEdit]);
+  }, [handle, currentUser?.id, showEdit]);
 
   // Real-time subscription to profileUser for live listening indicator updates
   useEffect(() => {
@@ -162,7 +173,7 @@ export function Profile() {
         const raw = localStorage.getItem('aura_current_track');
         if (raw) {
           const parsed = JSON.parse(raw);
-          if (parsed && parsed.title && parsed.streamUrl) {
+          if (parsed && parsed.title) {
             ls = parsed;
           }
         }
@@ -171,7 +182,7 @@ export function Profile() {
     if (!ls || !ls.title || !profileUser) return null;
     if (profileUser.showActivityStatus === false || profileUser.isGhostMode || profileUser.isSystemWiped) return null;
     const age = Math.abs(Date.now() - (ls.updatedAt || Date.now()));
-    const isFresh = ls.isPlaying ? age < 15 * 60 * 1000 : age < 90_000;
+    const isFresh = ls.isPlaying ? age < 20 * 60 * 1000 : age < 120_000;
     return isFresh ? ls : null;
   }, [profileUser, isOwnProfile, nowTick]);
 

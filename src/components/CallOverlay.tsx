@@ -149,6 +149,131 @@ export function CallOverlay() {
   const iceRestartTimerRef = useRef<any>(null);
   const localAnalyzerCleanupRef = useRef<(() => void) | null>(null);
   const remoteAnalyzerCleanupRef = useRef<(() => void) | null>(null);
+  const renegotiateSeqRef = useRef<number>(0);
+  const appliedRemoteRenegSeqRef = useRef<number>(0);
+  const negotiatingRef = useRef<boolean>(false);
+  const remoteVideoDisplayStreamRef = useRef<MediaStream | null>(null);
+
+  // Callback refs ensure video elements always bind & play immediately upon mount or layout switch
+  const attachRemoteVideoEl = (el: HTMLVideoElement | null) => {
+    (remoteVideoRef as any).current = el;
+    if (!el || !remoteStream.current) return;
+    const videoTracks = remoteStream.current.getVideoTracks().filter(t => t.readyState === 'live');
+    if (videoTracks.length === 0) return;
+    const existing = remoteVideoDisplayStreamRef.current;
+    const existingId = existing?.getVideoTracks()[0]?.id;
+    if (!existing || existingId !== videoTracks[0].id) {
+      remoteVideoDisplayStreamRef.current = new MediaStream([videoTracks[0]]);
+    }
+    if (el.srcObject !== remoteVideoDisplayStreamRef.current) {
+      el.srcObject = remoteVideoDisplayStreamRef.current;
+    }
+    el.muted = true; // Audio plays reliably via remoteAudioRef; muting video prevents browser autoplay black-frame blocks
+    el.play().catch(() => {});
+  };
+
+  const attachLocalCameraEl = (el: HTMLVideoElement | null) => {
+    (localVideoRef as any).current = el;
+    if (el && localCameraStream.current) {
+      if (el.srcObject !== localCameraStream.current) {
+        el.srcObject = localCameraStream.current;
+      }
+      el.muted = true;
+      el.play().catch(() => {});
+    }
+  };
+
+  const attachLocalScreenEl = (el: HTMLVideoElement | null) => {
+    (localScreenRef as any).current = el;
+    if (el && localScreenStream.current) {
+      if (el.srcObject !== localScreenStream.current) {
+        el.srcObject = localScreenStream.current;
+      }
+      el.muted = true;
+      el.play().catch(() => {});
+    }
+  };
+
+  const renegotiateMedia = async () => {
+    const peerConn = pc.current;
+    const sessionCallId = callIdRef.current;
+    if (!peerConn || !sessionCallId || !peerConn.remoteDescription) return;
+    if (negotiatingRef.current || peerConn.signalingState !== 'stable') return;
+    negotiatingRef.current = true;
+    try {
+      const offer = await peerConn.createOffer();
+      if (peerConn.signalingState !== 'stable') return;
+      await peerConn.setLocalDescription(offer);
+      const nextSeq = renegotiateSeqRef.current + 1;
+      renegotiateSeqRef.current = nextSeq;
+      const myRole = isCallerRef.current ? 'caller' : 'receiver';
+      await updateCall(sessionCallId, {
+        renegotiateOffer: {
+          type: offer.type,
+          sdp: offer.sdp,
+          sender: myRole,
+          seq: nextSeq
+        }
+      });
+    } catch (e) {
+      console.warn('Media renegotiation warning:', e);
+    } finally {
+      negotiatingRef.current = false;
+    }
+  };
+
+  const handleRemoteRenegotiation = async (data: any, peerConn: RTCPeerConnection, myRole: 'caller' | 'receiver', sessionCallId: string) => {
+    const ro = data.renegotiateOffer;
+    if (
+      ro &&
+      ro.sdp &&
+      ro.sender !== myRole &&
+      typeof ro.seq === 'number' &&
+      ro.seq > appliedRemoteRenegSeqRef.current &&
+      peerConn.remoteDescription &&
+      peerConn.signalingState === 'stable' &&
+      !isSettingRemoteDesc.current
+    ) {
+      isSettingRemoteDesc.current = true;
+      appliedRemoteRenegSeqRef.current = ro.seq;
+      try {
+        await peerConn.setRemoteDescription(new RTCSessionDescription({ type: ro.type, sdp: ro.sdp }));
+        const answer = await peerConn.createAnswer();
+        await peerConn.setLocalDescription(answer);
+        await updateCall(sessionCallId, {
+          renegotiateAnswer: {
+            type: answer.type,
+            sdp: answer.sdp,
+            sender: myRole,
+            seq: ro.seq
+          }
+        });
+      } catch (e) {
+        console.warn('Remote renegotiation offer error:', e);
+      } finally {
+        isSettingRemoteDesc.current = false;
+      }
+    }
+
+    const ra = data.renegotiateAnswer;
+    if (
+      ra &&
+      ra.sdp &&
+      ra.sender !== myRole &&
+      ra.seq === renegotiateSeqRef.current &&
+      peerConn.signalingState === 'have-local-offer' &&
+      !isSettingRemoteDesc.current
+    ) {
+      isSettingRemoteDesc.current = true;
+      try {
+        await peerConn.setRemoteDescription(new RTCSessionDescription({ type: ra.type, sdp: ra.sdp }));
+      } catch (e) {
+        console.warn('Remote renegotiation answer error:', e);
+      } finally {
+        isSettingRemoteDesc.current = false;
+      }
+    }
+  };
 
   // Helper to attach and play remote audio without interrupting existing playback
   const attachRemoteAudio = () => {
@@ -311,6 +436,10 @@ export function CallOverlay() {
       processedCandidates.current.clear();
       candidatesQueue.current = [];
       isSettingRemoteDesc.current = false;
+      renegotiateSeqRef.current = 0;
+      appliedRemoteRenegSeqRef.current = 0;
+      negotiatingRef.current = false;
+      remoteVideoDisplayStreamRef.current = null;
       setCallNotice(null);
       setNeedsAudioUnlock(false);
 
@@ -372,24 +501,21 @@ export function CallOverlay() {
         if (event.track.kind === 'video') {
           remoteStream.current.getVideoTracks().forEach(t => remoteStream.current?.removeTrack(t));
           remoteStream.current.addTrack(event.track);
+          remoteVideoDisplayStreamRef.current = new MediaStream([event.track]);
 
-          if (remoteVideoRef.current) {
-            remoteVideoRef.current.srcObject = remoteStream.current;
-            remoteVideoRef.current.play().catch(() => {});
-          }
           setHasRemoteVideo(true);
+          attachRemoteVideoEl(remoteVideoRef.current);
 
-          event.track.onmute = () => {
-            if (!event.track.enabled) setHasRemoteVideo(false);
-          };
           event.track.onunmute = () => {
             setHasRemoteVideo(true);
-            if (remoteVideoRef.current) {
-              remoteVideoRef.current.srcObject = remoteStream.current;
-              remoteVideoRef.current.play().catch(() => {});
+            remoteVideoDisplayStreamRef.current = new MediaStream([event.track]);
+            attachRemoteVideoEl(remoteVideoRef.current);
+          };
+          event.track.onended = () => {
+            if (remoteStream.current?.getVideoTracks().every(t => t.readyState === 'ended')) {
+              setHasRemoteVideo(false);
             }
           };
-          event.track.onended = () => setHasRemoteVideo(false);
         } else if (event.track.kind === 'audio') {
           remoteStream.current.getAudioTracks().forEach(t => remoteStream.current?.removeTrack(t));
           remoteStream.current.addTrack(event.track);
@@ -517,6 +643,9 @@ export function CallOverlay() {
           }
         }
 
+        // Handle mid-call camera / screen share SDP renegotiation
+        await handleRemoteRenegotiation(data, newPc, 'caller', sessionCallId);
+
         // Process receiver ICE candidates with deduplication
         if (Array.isArray(data.receiverCandidates)) {
           for (const candidate of data.receiverCandidates) {
@@ -545,30 +674,21 @@ export function CallOverlay() {
   // Synchronize local preview video element
   useEffect(() => {
     if (isCameraOn && localCameraStream.current && localVideoRef.current) {
-      if (localVideoRef.current.srcObject !== localCameraStream.current) {
-        localVideoRef.current.srcObject = localCameraStream.current;
-        localVideoRef.current.play().catch(() => {});
-      }
+      attachLocalCameraEl(localVideoRef.current);
     }
   }, [isCameraOn, callStatus]);
 
   // Synchronize local screenshare preview video element
   useEffect(() => {
     if (isScreenSharing && localScreenStream.current && localScreenRef.current) {
-      if (localScreenRef.current.srcObject !== localScreenStream.current) {
-        localScreenRef.current.srcObject = localScreenStream.current;
-        localScreenRef.current.play().catch(() => {});
-      }
+      attachLocalScreenEl(localScreenRef.current);
     }
   }, [isScreenSharing, callStatus]);
 
   // Synchronize remote video element across view mode changes
   useEffect(() => {
-    if (remoteStream.current && remoteVideoRef.current) {
-      if (remoteVideoRef.current.srcObject !== remoteStream.current) {
-        remoteVideoRef.current.srcObject = remoteStream.current;
-        remoteVideoRef.current.play().catch(() => {});
-      }
+    if (remoteVideoRef.current) {
+      attachRemoteVideoEl(remoteVideoRef.current);
     }
   }, [hasRemoteVideo, remoteMedia, callStatus, isScreenSharing]);
 
@@ -601,6 +721,10 @@ export function CallOverlay() {
     processedCandidates.current.clear();
     candidatesQueue.current = [];
     isSettingRemoteDesc.current = false;
+    renegotiateSeqRef.current = 0;
+    appliedRemoteRenegSeqRef.current = 0;
+    negotiatingRef.current = false;
+    remoteVideoDisplayStreamRef.current = null;
 
     const newPc = new RTCPeerConnection(servers);
     pc.current = newPc;
@@ -651,24 +775,21 @@ export function CallOverlay() {
       if (event.track.kind === 'video') {
         remoteStream.current.getVideoTracks().forEach(t => remoteStream.current?.removeTrack(t));
         remoteStream.current.addTrack(event.track);
+        remoteVideoDisplayStreamRef.current = new MediaStream([event.track]);
 
-        if (remoteVideoRef.current) {
-          remoteVideoRef.current.srcObject = remoteStream.current;
-          remoteVideoRef.current.play().catch(() => {});
-        }
         setHasRemoteVideo(true);
+        attachRemoteVideoEl(remoteVideoRef.current);
 
-        event.track.onmute = () => {
-          if (!event.track.enabled) setHasRemoteVideo(false);
-        };
         event.track.onunmute = () => {
           setHasRemoteVideo(true);
-          if (remoteVideoRef.current) {
-            remoteVideoRef.current.srcObject = remoteStream.current;
-            remoteVideoRef.current.play().catch(() => {});
+          remoteVideoDisplayStreamRef.current = new MediaStream([event.track]);
+          attachRemoteVideoEl(remoteVideoRef.current);
+        };
+        event.track.onended = () => {
+          if (remoteStream.current?.getVideoTracks().every(t => t.readyState === 'ended')) {
+            setHasRemoteVideo(false);
           }
         };
-        event.track.onended = () => setHasRemoteVideo(false);
       } else if (event.track.kind === 'audio') {
         remoteStream.current.getAudioTracks().forEach(t => remoteStream.current?.removeTrack(t));
         remoteStream.current.addTrack(event.track);
@@ -747,6 +868,9 @@ export function CallOverlay() {
           isSettingRemoteDesc.current = false;
         }
       }
+
+      // Handle mid-call camera / screen share SDP renegotiation
+      await handleRemoteRenegotiation(data, newPc, 'receiver', sessionCallId);
 
       // Process caller ICE candidates with deduplication
       if (Array.isArray(data.callerCandidates)) {
@@ -888,13 +1012,15 @@ export function CallOverlay() {
 
         setIsCameraOn(true);
 
-        // Update Firestore so remote peer immediately knows camera is active
+        // Update Firestore + renegotiate SDP so remote peer reliably receives video frames
         if (callIdRef.current) {
           const side = isCallerRef.current ? 'caller' : 'receiver';
           await updateCall(callIdRef.current, { [`${side}Media`]: 'camera' });
+          await renegotiateMedia();
         }
       } catch (err) {
         console.error("Camera error:", err);
+        setCallNotice('Could not access camera.');
       }
     } else {
       if (localCameraStream.current) {
@@ -917,6 +1043,7 @@ export function CallOverlay() {
       if (callIdRef.current) {
         const side = isCallerRef.current ? 'caller' : 'receiver';
         await updateCall(callIdRef.current, { [`${side}Media`]: 'none' });
+        await renegotiateMedia();
       }
     }
   };
@@ -952,8 +1079,7 @@ export function CallOverlay() {
 
         // Attach local preview so YOU can see your own shared screen
         if (localScreenRef.current) {
-          localScreenRef.current.srcObject = stream;
-          localScreenRef.current.play().catch(() => {});
+          attachLocalScreenEl(localScreenRef.current);
         }
 
         // Transmit screen track to remote peer via video transceiver
@@ -970,10 +1096,11 @@ export function CallOverlay() {
 
         setIsScreenSharing(true);
 
-        // Update Firestore so remote peer immediately switches to Screen Share Stage Mode!
+        // Update Firestore + renegotiate SDP so remote peer receives live screen frames
         if (callIdRef.current) {
           const side = isCallerRef.current ? 'caller' : 'receiver';
           await updateCall(callIdRef.current, { [`${side}Media`]: 'screen' });
+          await renegotiateMedia();
         }
       } catch (err: any) {
         if (err.name !== 'NotAllowedError') {
@@ -1006,6 +1133,7 @@ export function CallOverlay() {
     if (callIdRef.current) {
       const side = isCallerRef.current ? 'caller' : 'receiver';
       await updateCall(callIdRef.current, { [`${side}Media`]: 'none' });
+      await renegotiateMedia();
     }
   };
 
@@ -1025,7 +1153,7 @@ export function CallOverlay() {
 
   // Determine active view mode:
   // Is anyone sharing their screen?
-  const isSomeoneScreenSharing = isScreenSharing || (hasRemoteVideo && remoteMedia === 'screen');
+  const isSomeoneScreenSharing = isScreenSharing || remoteMedia === 'screen';
 
   return (
     <AnimatePresence>
@@ -1170,7 +1298,7 @@ export function CallOverlay() {
                 }`}>
                   <div className="relative w-8 h-8 rounded-full overflow-hidden ring-2 ring-white/20 shrink-0">
                     {isCameraOn ? (
-                      <video ref={localVideoRef} autoPlay muted playsInline className="w-full h-full object-cover scale-x-[-1]" />
+                      <video ref={attachLocalCameraEl} autoPlay muted playsInline className="w-full h-full object-cover scale-x-[-1]" />
                     ) : (
                       <img 
                         src={getAvatarUrl(currentUser || undefined)} 
@@ -1194,8 +1322,8 @@ export function CallOverlay() {
                   remoteIsSpeaking ? 'border-[#23A559] shadow-[0_0_15px_rgba(35,165,89,0.35)]' : 'border-white/10'
                 }`}>
                   <div className="relative w-8 h-8 rounded-full overflow-hidden ring-2 ring-white/20 shrink-0">
-                    {hasRemoteVideo && remoteMedia === 'camera' ? (
-                      <video ref={remoteVideoRef} autoPlay playsInline className="w-full h-full object-cover" />
+                    {(hasRemoteVideo || remoteMedia === 'camera') && remoteMedia === 'camera' ? (
+                      <video ref={attachRemoteVideoEl} autoPlay muted playsInline className="w-full h-full object-cover" />
                     ) : (
                       <img 
                         src={getAvatarUrl(callData.user)} 
@@ -1221,7 +1349,7 @@ export function CallOverlay() {
                   /* YOU are sharing screen */
                   <>
                     <video 
-                      ref={localScreenRef} 
+                      ref={attachLocalScreenEl} 
                       autoPlay 
                       muted 
                       playsInline 
@@ -1242,8 +1370,9 @@ export function CallOverlay() {
                   /* REMOTE PEER is sharing screen */
                   <>
                     <video 
-                      ref={remoteVideoRef} 
+                      ref={attachRemoteVideoEl} 
                       autoPlay 
+                      muted
                       playsInline 
                       className="w-full h-full object-contain bg-black"
                     />
@@ -1267,7 +1396,7 @@ export function CallOverlay() {
                   /* Camera active */
                   <div className="w-full h-full relative rounded-2xl overflow-hidden bg-black flex items-center justify-center">
                     <video 
-                      ref={localVideoRef} 
+                      ref={attachLocalCameraEl} 
                       autoPlay 
                       muted 
                       playsInline 
@@ -1317,12 +1446,13 @@ export function CallOverlay() {
 
               {/* Tile 2: Remote User (Other Person) */}
               <div className="w-full h-full max-h-[440px] bg-[#2B2D31] rounded-3xl overflow-hidden border border-white/10 flex flex-col items-center justify-center p-6 relative shadow-xl group">
-                {hasRemoteVideo && remoteMedia === 'camera' ? (
+                {remoteMedia === 'camera' || (hasRemoteVideo && remoteMedia !== 'none') ? (
                   /* Remote Camera active */
                   <div className="w-full h-full relative rounded-2xl overflow-hidden bg-black flex items-center justify-center">
                     <video 
-                      ref={remoteVideoRef} 
+                      ref={attachRemoteVideoEl} 
                       autoPlay 
+                      muted
                       playsInline 
                       className="w-full h-full object-cover" 
                     />
