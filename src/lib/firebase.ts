@@ -1,6 +1,6 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider, signInWithPopup, signInAnonymously, browserPopupRedirectResolver } from 'firebase/auth';
-import { getFirestore } from 'firebase/firestore';
+import { getFirestore, initializeFirestore } from 'firebase/firestore';
 import { getAnalytics, isSupported } from 'firebase/analytics';
 
 // Safe base64-encoded key to prevent GitHub secret scanning and ensure Firebase never receives an empty string
@@ -42,16 +42,20 @@ let analytics: any = null;
 
 const getDbInstance = (appInstance: any) => {
   const envDbId = (import.meta as any)?.env?.VITE_FIREBASE_DATABASE_ID;
-  if (envDbId === '(default)' || envDbId === 'default') {
-    return getFirestore(appInstance);
-  }
-  if (envDbId) {
-    return getFirestore(appInstance, envDbId);
-  }
+  const dbId = (envDbId === '(default)' || envDbId === 'default')
+    ? undefined
+    : (envDbId || "ai-studio-centraltok-20b3b741-dd0c-4874-8036-490f35162ac6");
+
   try {
-    return getFirestore(appInstance, "ai-studio-centraltok-20b3b741-dd0c-4874-8036-490f35162ac6");
+    return dbId
+      ? initializeFirestore(appInstance, { experimentalAutoDetectLongPolling: true }, dbId)
+      : initializeFirestore(appInstance, { experimentalAutoDetectLongPolling: true });
   } catch {
-    return getFirestore(appInstance);
+    try {
+      return dbId ? getFirestore(appInstance, dbId) : getFirestore(appInstance);
+    } catch {
+      return getFirestore(appInstance);
+    }
   }
 };
 

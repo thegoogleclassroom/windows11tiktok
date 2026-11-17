@@ -6,6 +6,7 @@
 import React, { useEffect, useState } from 'react';
 import { ExternalLink, Copy, Check } from 'lucide-react';
 import { HashRouter, Routes, Route } from 'react-router-dom';
+import { MotionConfig } from 'motion/react';
 import { AppProvider, useAppStore } from './store';
 import { Layout } from './components/Layout';
 import { Home } from './pages/Home';
@@ -134,7 +135,7 @@ function IframeOnlyNoticeScreen() {
 }
 
 function AuthWrapper({ children }: { children: React.ReactNode }) {
-  const { currentUser } = useAppStore();
+  const { currentUser, qualityMode } = useAppStore();
   const isIframeBlocked = useIframeCheck();
 
   if (isIframeBlocked) {
@@ -149,12 +150,12 @@ function AuthWrapper({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <>
+    <MotionConfig reducedMotion={qualityMode === 'low' ? 'always' : 'never'}>
       {children}
       <InterestsModal />
       <GlobalStoryViewer />
       <CallOverlay />
-    </>
+    </MotionConfig>
   );
 }
 

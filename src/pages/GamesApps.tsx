@@ -23,6 +23,8 @@ export function GamesApps() {
     setMiniPlayerTitle
   } = useAppStore();
   const [isCrashed, setIsCrashed] = useState(false);
+  const [crashGraceSeconds, setCrashGraceSeconds] = useState<number | null>(null);
+  const [crashEnforced, setCrashEnforced] = useState(false);
   const [hoveredItem, setHoveredItem] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'games' | 'apps'>('games');
   const [selectedCategory, setSelectedCategory] = useState('All');
@@ -36,7 +38,7 @@ export function GamesApps() {
 
   useEffect(() => {
     const unsub = subscribeToAppSettings((settings) => {
-      setIsCrashed(settings.gamesAppsCrashed || settings.serverCrashed);
+      setIsCrashed(Boolean(settings.gamesAppsCrashed || settings.serverCrashed));
     });
 
     const fetchAllUsers = async () => {
@@ -163,7 +165,46 @@ export function GamesApps() {
     }
   };
 
-  if (isCrashed) {
+  // 10-second save progress grace window if Games/Apps crashes while a game/app is actively open
+  useEffect(() => {
+    if (!isCrashed) {
+      setCrashGraceSeconds(null);
+      setCrashEnforced(false);
+      return;
+    }
+
+    if (!isGameActive) {
+      setCrashGraceSeconds(null);
+      setCrashEnforced(true);
+      return;
+    }
+
+    if (crashEnforced) return;
+
+    setCrashGraceSeconds(10);
+    const interval = setInterval(() => {
+      setCrashGraceSeconds((prev) => {
+        if (prev === null) return null;
+        if (prev <= 1) {
+          clearInterval(interval);
+          setCrashEnforced(true);
+          localStorage.setItem('aura_in_music_app', 'false');
+          setIsGameActive(false);
+          setActiveGameUrl('');
+          setActiveGameTitle(null);
+          if (currentUser) {
+            updateUserGame(currentUser.id, null);
+          }
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [isCrashed, isGameActive, crashEnforced]);
+
+  if (isCrashed && (!isGameActive || crashEnforced)) {
     return (
       <div className="h-full w-full bg-zinc-950 flex flex-col items-center justify-center p-8 text-center">
         <div className="w-20 h-20 bg-red-500/20 rounded-full flex items-center justify-center mb-6 animate-pulse">
@@ -211,6 +252,33 @@ export function GamesApps() {
           allowFullScreen
           title="Game Player"
         />
+
+        {/* 10s Grace Period Translucent Black Screen (opacity 0.5) letting user keep saving/playing */}
+        {isCrashed && crashGraceSeconds !== null && !crashEnforced && (
+          <div
+            style={{ backgroundColor: 'rgba(0, 0, 0, 0.5)' }}
+            className="fixed inset-0 z-[1900] pointer-events-none flex flex-col items-center justify-start pt-16 sm:pt-20 px-4"
+          >
+            <div className="bg-black/85 border border-red-500/60 text-white rounded-2xl px-6 py-4 shadow-2xl max-w-lg w-full text-center">
+              <div className="flex items-center justify-center gap-2 text-amber-400 font-black text-xs uppercase tracking-widest mb-1.5">
+                <AlertTriangle size={16} />
+                <span>Service Interrupting in {crashGraceSeconds}s</span>
+              </div>
+              <h2 className="text-lg sm:text-xl font-black tracking-tight text-white">
+                Save your Game/App Progress, Something went wrong.
+              </h2>
+              <p className="text-xs text-zinc-300 mt-1">
+                You can continue using the {activeGameTitle || 'game/app'} right now to save your progress before closing.
+              </p>
+              <div className="mt-3 w-full h-1.5 bg-zinc-800 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-red-500 transition-all duration-1000 ease-linear"
+                  style={{ width: `${(crashGraceSeconds / 10) * 100}%` }}
+                />
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
@@ -338,7 +406,7 @@ export function GamesApps() {
                 onMouseEnter={() => setHoveredItem(item.id)}
                 onMouseLeave={() => setHoveredItem(null)}
                 onClick={() => handleItemClick(item)}
-                className="group cursor-pointer relative"
+                className="group cursor-pointer relative wiggy-card"
               >
                 <div className={`relative z-10 aspect-[4/5] rounded-[2rem] bg-white dark:bg-zinc-900 shadow-lg overflow-hidden flex flex-col transition-all duration-300 group-hover:shadow-2xl ${
                   item.frameColor === 'yellow' || item.isNew

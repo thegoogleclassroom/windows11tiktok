@@ -233,6 +233,22 @@ export const handleWriteQuotaError = (err: any) => {
   return false;
 };
 
+const withTimeout = <T,>(promise: Promise<T>, ms = 8000): Promise<T> => {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`Firestore request timed out after ${ms}ms`)), ms);
+    promise.then(
+      (val) => {
+        clearTimeout(timer);
+        resolve(val);
+      },
+      (err) => {
+        clearTimeout(timer);
+        reject(err);
+      }
+    );
+  });
+};
+
 const getCachedCollection = <T>(collName: string): T[] => {
   const mem = readCache.get(collName);
   if (mem?.data) return mem.data as T[];
@@ -247,12 +263,70 @@ const getCachedCollection = <T>(collName: string): T[] => {
   return [];
 };
 
-const setCachedCollection = <T>(collName: string, items: T[], updateTimestamp = true) => {
-  const prev = readCache.get(collName);
-  readCache.set(collName, { data: items, fetchedAt: updateTimestamp ? Date.now() : (prev?.fetchedAt || 0) });
+const UNSYNCED_MSGS_KEY = 'ct_unsynced_messages';
+
+const getUnsyncedMessages = (): Message[] => {
   try {
-    localStorage.setItem(`ct_cache_${collName}`, JSON.stringify(items));
-  } catch {}
+    const raw = localStorage.getItem(UNSYNCED_MSGS_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+};
+
+const saveUnsyncedMessages = (msgs: Message[]) => {
+  try {
+    // Keep at most the 30 most recent unsynced messages to fit comfortably within localStorage
+    const trimmed = msgs.slice(-30);
+    localStorage.setItem(UNSYNCED_MSGS_KEY, JSON.stringify(trimmed));
+  } catch {
+    // If localStorage is tight, keep fewer items
+    try {
+      localStorage.setItem(UNSYNCED_MSGS_KEY, JSON.stringify(msgs.slice(-8)));
+    } catch {}
+  }
+};
+
+const mergeWithUnsyncedMessages = <T,>(collName: string, items: T[]): T[] => {
+  if (collName !== 'messages') return items;
+  const unsynced = getUnsyncedMessages();
+  if (unsynced.length === 0) return items;
+  const remoteIds = new Set((items as any[]).map(i => i?.id).filter(Boolean));
+  // Drop unsynced entries once confirmed in remote snapshot (if remote actually returned items)
+  const stillMissing = items.length > 0
+    ? unsynced.filter(u => !remoteIds.has(u.id))
+    : unsynced;
+  if (items.length > 0 && stillMissing.length !== unsynced.length) {
+    saveUnsyncedMessages(stillMissing);
+  }
+  const map = new Map<string, any>();
+  for (const item of items as any[]) {
+    if (item?.id) map.set(item.id, item);
+  }
+  for (const u of stillMissing) {
+    if (u?.id && !map.has(u.id)) {
+      map.set(u.id, u);
+    }
+  }
+  return Array.from(map.values()) as T[];
+};
+
+const setCachedCollection = <T>(collName: string, items: T[], updateTimestamp = true) => {
+  const merged = mergeWithUnsyncedMessages(collName, items);
+  const prev = readCache.get(collName);
+  readCache.set(collName, { data: merged, fetchedAt: updateTimestamp ? Date.now() : (prev?.fetchedAt || 0) });
+  try {
+    localStorage.setItem(`ct_cache_${collName}`, JSON.stringify(merged));
+  } catch {
+    // Trim messages cache if oversized by base64 media
+    if (collName === 'messages' && merged.length > 40) {
+      try {
+        localStorage.setItem(`ct_cache_${collName}`, JSON.stringify(merged.slice(-40)));
+      } catch {}
+    }
+  }
 };
 
 const recordCollectionSnapshot = <T extends { id?: string }>(collName: string, items: T[]) => {
@@ -273,11 +347,11 @@ const recordCollectionSnapshot = <T extends { id?: string }>(collName: string, i
 const fetchCollection = async <T>(collName: string): Promise<T[]> => {
   const cachedMem = readCache.get(collName);
   if (cachedMem && Date.now() - cachedMem.fetchedAt < getCollectionTtl(collName)) {
-    return cachedMem.data as T[];
+    return mergeWithUnsyncedMessages(collName, cachedMem.data as T[]);
   }
 
   if (isQuotaBlocked()) {
-    return getCachedCollection<T>(collName);
+    return mergeWithUnsyncedMessages(collName, getCachedCollection<T>(collName));
   }
 
   const pending = inflightFetches.get(collName);
@@ -291,7 +365,7 @@ const fetchCollection = async <T>(collName: string): Promise<T[]> => {
       const items = snapshot.docs.map(doc => doc.data() as T);
       recordCollectionSnapshot(collName, items as any[]);
       setCachedCollection(collName, items, true);
-      return items;
+      return mergeWithUnsyncedMessages(collName, items);
     } catch (err: any) {
       const isQuota = handleWriteQuotaError(err);
       if (!isQuota) {
@@ -300,7 +374,7 @@ const fetchCollection = async <T>(collName: string): Promise<T[]> => {
           console.warn(`Note on fetching ${collName}:`, msg);
         }
       }
-      return getCachedCollection<T>(collName);
+      return mergeWithUnsyncedMessages(collName, getCachedCollection<T>(collName));
     } finally {
       inflightFetches.delete(collName);
     }
@@ -556,14 +630,23 @@ export const updateVideo = async (videoId: string, update: (video: Video) => Vid
 export const getMessages = () => fetchCollection<Message>('messages');
 export const saveMessages = (messages: Message[]) => saveCollection('messages', messages);
 
-export const addMessage = async (msg: Message) => {
+export const addMessage = async (msg: Message): Promise<{ synced: boolean; localOnly?: boolean }> => {
+  // Always persist optimistically in unsynced queue + local cache so sent photos/audio NEVER disappear
   try {
-    const cached = getCachedCollection<Message>('messages');
+    const unsynced = getUnsyncedMessages().filter(m => m.id !== msg.id);
+    saveUnsyncedMessages([...unsynced, msg]);
+    const cached = getCachedCollection<Message>('messages').filter(m => m.id !== msg.id);
     setCachedCollection('messages', [...cached, msg], false);
   } catch {}
-  if (isQuotaBlocked()) return;
+  if (isQuotaBlocked()) return { synced: false, localOnly: true };
   try {
     const cleaned = deepClean(msg);
+    const serialized = JSON.stringify(cleaned);
+    // Firestore single document hard limit is ~1MB (1,048,576 bytes)
+    if (serialized.length > 980_000) {
+      console.warn('Message payload near/exceeding 1MB Firestore limit, keeping in local cache:', msg.id);
+      return { synced: false, localOnly: true };
+    }
     const docRef = doc(db, 'messages', msg.id);
     await setDoc(docRef, cleaned, { merge: true });
     let knownMap = lastSyncedDocs.get('messages');
@@ -571,9 +654,12 @@ export const addMessage = async (msg: Message) => {
       knownMap = new Map<string, string>();
       lastSyncedDocs.set('messages', knownMap);
     }
-    knownMap.set(msg.id, JSON.stringify(cleaned));
+    knownMap.set(msg.id, serialized);
+    saveUnsyncedMessages(getUnsyncedMessages().filter(m => m.id !== msg.id));
+    return { synced: true };
   } catch (err) {
     handleWriteQuotaError(err);
+    return { synced: false, localOnly: true };
   }
 };
 
@@ -614,7 +700,7 @@ export const subscribeToMessages = (callback: (messages: Message[]) => void) => 
     const msgs = snapshot.docs.map(doc => doc.data() as Message);
     recordCollectionSnapshot('messages', msgs);
     setCachedCollection('messages', msgs, true);
-    callback(msgs);
+    callback(mergeWithUnsyncedMessages('messages', msgs));
   }, (err) => {
     if (!handleWriteQuotaError(err)) {
       console.warn("Messages subscription error:", err);
@@ -623,6 +709,7 @@ export const subscribeToMessages = (callback: (messages: Message[]) => void) => 
 };
 export const deleteMessage = async (messageId: string) => {
   try {
+    saveUnsyncedMessages(getUnsyncedMessages().filter(m => m.id !== messageId));
     const cached = getCachedCollection<Message>('messages');
     setCachedCollection('messages', cached.filter(m => m.id !== messageId), false);
     lastSyncedDocs.get('messages')?.delete(messageId);
@@ -989,46 +1076,97 @@ export const getReports = () => fetchCollection<Report>('reports');
 export const saveReports = (reports: Report[]) => saveCollection('reports', reports);
 
 export const addReport = async (report: Omit<Report, 'id'>) => {
+  const id = `report_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  const fullReport: Report = { ...report, id };
   try {
-    const id = `report_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const cached = getCachedCollection<Report>('reports');
+    setCachedCollection('reports', [...cached, fullReport], false);
+  } catch {}
+  if (isQuotaBlocked()) return id;
+  try {
     const docRef = doc(db, 'reports', id);
-    await setDoc(docRef, { ...report, id });
+    await withTimeout(setDoc(docRef, deepClean(fullReport)), 8000);
+    recordCollectionSnapshot('reports', [fullReport]);
     return id;
   } catch (err) {
-    console.error("Error adding report:", err);
-    throw err;
+    handleWriteQuotaError(err);
+    console.warn("Report saved locally; remote sync deferred:", err);
+    return id;
   }
 };
 
-export const resolveReport = async (reportId: string, adminId: string, adminUsername: string, notes?: string) => {
+export const resolveReport = async (
+  reportId: string,
+  adminId: string,
+  adminUsername: string,
+  notes?: string,
+  resolutionStatus: 'resolved' | 'accepted' | 'rejected' = 'resolved',
+  reportFallback?: Report
+) => {
+  let targetReport: Report | undefined = reportFallback;
+  try {
+    const cached = getCachedCollection<Report>('reports');
+    const found = cached.find(r => r.id === reportId);
+    if (found) targetReport = { ...found, ...targetReport };
+    if (targetReport) {
+      const updatedReport: Report = {
+        ...targetReport,
+        status: resolutionStatus,
+        resolvedBy: adminId,
+        adminNotes: notes || ''
+      };
+      const nextList = cached.some(r => r.id === reportId)
+        ? cached.map(r => (r.id === reportId ? updatedReport : r))
+        : [...cached, updatedReport];
+      setCachedCollection('reports', nextList, false);
+      recordCollectionSnapshot('reports', [updatedReport]);
+    }
+  } catch {}
+
+  if (isQuotaBlocked()) return;
+
   try {
     const docRef = doc(db, 'reports', reportId);
-    const snap = await getDoc(docRef);
-    if (!snap.exists()) return;
-    
-    const report = snap.data() as Report;
-    await updateDoc(docRef, {
-      status: 'resolved',
+    let existingReport = targetReport;
+    if (!existingReport) {
+      try {
+        const snap = await withTimeout(getDoc(docRef), 5000);
+        if (snap && snap.exists()) existingReport = snap.data() as Report;
+      } catch {}
+    }
+
+    const payload = deepClean({
+      ...(existingReport || { id: reportId }),
+      status: resolutionStatus,
       resolvedBy: adminId,
-      adminNotes: notes
+      adminNotes: notes || ''
     });
 
-    // Create notification for reporter
-    const notifId = `notif_resolved_${reportId}`;
-    const notifRef = doc(db, 'notifications', notifId);
-    const notification: AppNotification = {
-      id: notifId,
-      userId: report.reporterId,
-      type: 'support_resolved',
-      fromUserId: adminId,
-      title: 'Support Resolved',
-      message: `Your issue/support has been solved. Solved by: ${adminUsername}.${notes ? ` Moderator Note: ${notes}` : ''}`,
-      read: false,
-      timestamp: Date.now()
-    };
-    await setDoc(notifRef, notification);
+    await withTimeout(setDoc(docRef, payload, { merge: true }), 8000);
+    if (payload?.id) {
+      recordCollectionSnapshot('reports', [payload]);
+    }
+
+    const reporterId = existingReport?.reporterId;
+    if (reporterId && reporterId !== 'anonymous') {
+      const notifId = `notif_resolved_${reportId}`;
+      const notification: AppNotification = {
+        id: notifId,
+        userId: reporterId,
+        type: 'support_resolved',
+        fromUserId: adminId,
+        title: resolutionStatus === 'rejected' ? 'Report / Support Dismissed' : 'Support Resolved',
+        message: resolutionStatus === 'rejected'
+          ? `Your report was reviewed by ${adminUsername}.${notes ? ` Moderator Note: ${notes}` : ''}`
+          : `Your issue/support has been solved. Solved by: ${adminUsername}.${notes ? ` Moderator Note: ${notes}` : ''}`,
+        read: false,
+        timestamp: Date.now()
+      };
+      await withTimeout(addNotifications([notification]), 6000);
+    }
   } catch (err) {
-    console.error("Error resolving report:", err);
+    handleWriteQuotaError(err);
+    console.warn("Report resolved in local cache; remote Firestore sync deferred:", err);
   }
 };
 
@@ -1037,6 +1175,20 @@ export const saveAppeals = (appeals: Appeal[]) => saveCollection('appeals', appe
 
 export const getAuditLogs = () => fetchCollection<AuditLog>('audit_logs');
 export const saveAuditLogs = (logs: AuditLog[]) => saveCollection('audit_logs', logs);
+export const addAuditLog = async (log: AuditLog) => {
+  try {
+    const cached = getCachedCollection<AuditLog>('audit_logs').filter(l => l.id !== log.id);
+    setCachedCollection('audit_logs', [...cached, log], false);
+  } catch {}
+  if (isQuotaBlocked()) return;
+  try {
+    const cleaned = deepClean(log);
+    await withTimeout(setDoc(doc(db, 'audit_logs', log.id), cleaned, { merge: true }), 6000);
+    recordCollectionSnapshot('audit_logs', [log]);
+  } catch (err) {
+    handleWriteQuotaError(err);
+  }
+};
 
 export const deleteVideoFromDB = async (videoId: string) => {
   try {
@@ -1414,10 +1566,11 @@ export const subscribeToAppSettings = (callback: (settings: any) => void) => {
 export const clearDb = async () => {};
 
 // WebRTC Signaling Helpers
-export const createCall = async (callId: string, callerId: string, receiverId: string, offer: any, extraData: Record<string, any> = {}) => {
+export const createCall = async (callId: string, callerId: string, receiverId: string, offer: any, extraData: Record<string, any> = {}): Promise<boolean> => {
+  if (isQuotaBlocked()) return false;
   try {
     const docRef = doc(db, 'calls', callId);
-    await setDoc(docRef, {
+    await setDoc(docRef, deepClean({
       id: callId,
       callerId,
       receiverId,
@@ -1425,38 +1578,49 @@ export const createCall = async (callId: string, callerId: string, receiverId: s
       offer,
       timestamp: Date.now(),
       ...extraData
-    });
+    }), { merge: true });
+    return true;
   } catch (err) {
-    handleFirestoreError(err, OperationType.CREATE, `calls/${callId}`);
+    if (!handleWriteQuotaError(err)) {
+      console.warn('Error creating call:', err);
+    }
+    return false;
   }
 };
 
 export const updateCall = async (callId: string, data: any) => {
+  if (!callId || isQuotaBlocked()) return;
   try {
     const docRef = doc(db, 'calls', callId);
-    await updateDoc(docRef, data);
+    await setDoc(docRef, deepClean(data), { merge: true });
   } catch (err) {
-    handleFirestoreError(err, OperationType.UPDATE, `calls/${callId}`);
+    if (!handleWriteQuotaError(err)) {
+      console.warn('Error updating call:', err);
+    }
   }
 };
 
 export const addIceCandidate = async (callId: string, side: 'caller' | 'receiver', candidate: any) => {
+  if (!callId || !candidate || isQuotaBlocked()) return;
   try {
     const docRef = doc(db, 'calls', callId);
-    await updateDoc(docRef, {
-      [`${side}Candidates`]: arrayUnion(candidate)
-    });
+    await setDoc(docRef, {
+      [`${side}Candidates`]: arrayUnion(deepClean(candidate))
+    }, { merge: true });
   } catch (err) {
-    handleFirestoreError(err, OperationType.UPDATE, `calls/${callId}/ice`);
+    if (!handleWriteQuotaError(err)) {
+      console.warn('Error adding ICE candidate:', err);
+    }
   }
 };
 
 export const deleteCall = async (callId: string) => {
+  if (!callId || isQuotaBlocked()) return;
   try {
     const docRef = doc(db, 'calls', callId);
     await deleteDoc(docRef);
   } catch (err) {
-    handleFirestoreError(err, OperationType.DELETE, `calls/${callId}`);
+    handleWriteQuotaError(err);
   }
 };
 

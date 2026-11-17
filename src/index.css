@@ -80,4 +80,97 @@
   }
 }
 
+/* ======================================================
+   QUALITY MODES: LOW QUALITY vs HIGH QUALITY (WIGGY PHYSICS)
+   ====================================================== */
+
+@keyframes wiggy-wobble {
+  0%, 100% { transform: rotate(0deg) scale(1); }
+  25% { transform: rotate(-2.5deg) scale(1.03, 0.97); }
+  50% { transform: rotate(2.2deg) scale(0.97, 1.03); }
+  75% { transform: rotate(-1deg) scale(1.01, 0.99); }
+}
+
+@keyframes wiggy-bob {
+  0%, 100% { transform: translateY(0) scale(1); }
+  50% { transform: translateY(-4px) scale(1.02, 0.98); }
+}
+
+.wiggy-card {
+  transition: transform 0.25s ease, box-shadow 0.25s ease;
+}
+
+.wiggy-btn {
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+html.high-quality .wiggy-card {
+  transition: transform 0.42s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.35s ease;
+  will-change: transform;
+}
+
+html.high-quality .wiggy-card:hover {
+  transform: translateY(-4px) scale(1.02) rotate(-0.6deg);
+}
+
+html.high-quality .wiggy-card:active {
+  transform: scale(0.97, 1.03);
+}
+
+html.high-quality .wiggy-btn {
+  transition: transform 0.38s cubic-bezier(0.34, 1.56, 0.64, 1), filter 0.2s ease;
+}
+
+html.high-quality .wiggy-btn:hover {
+  transform: scale(1.06) rotate(-1deg);
+}
+
+html.high-quality .wiggy-btn:active {
+  transform: scale(0.92, 1.08);
+}
+
+html.high-quality .wiggy-float {
+  animation: wiggy-bob 3.2s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+}
+
+html.high-quality .wiggy-preview-item:hover {
+  animation: wiggy-wobble 0.55s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* LOW QUALITY MODE: Disable heavy glassmorphism blur, decorative particles, infinite loops, and wiggy physics */
+html.low-quality [class*="backdrop-blur"] {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+
+html.low-quality .blur-3xl,
+html.low-quality .blur-2xl,
+html.low-quality [class*="blur-["] {
+  filter: none !important;
+  opacity: 0.25 !important;
+}
+
+html.low-quality .animate-ping,
+html.low-quality .animate-bounce,
+html.low-quality .animate-pulse,
+html.low-quality .animate-spin-sideways,
+html.low-quality .animate-float-note-1,
+html.low-quality .animate-float-note-2,
+html.low-quality .animate-marquee,
+html.low-quality .wiggy-float {
+  animation: none !important;
+}
+
+html.low-quality .wiggy-card,
+html.low-quality .wiggy-card:hover,
+html.low-quality .wiggy-card:active,
+html.low-quality .wiggy-btn,
+html.low-quality .wiggy-btn:hover,
+html.low-quality .wiggy-btn:active {
+  transition: none !important;
+  transform: none !important;
+  will-change: auto !important;
+}
+
+
 

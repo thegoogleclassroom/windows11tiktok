@@ -18,6 +18,22 @@ const servers: RTCConfiguration = {
     { urls: 'stun:stun2.l.google.com:19302' },
     { urls: 'stun:global.stun.twilio.com:3478' },
     { urls: 'stun:stun.cloudflare.com:3478' },
+    { urls: 'stun:stun.relay.metered.ca:80' },
+    {
+      urls: 'turn:global.relay.metered.ca:80',
+      username: 'e8dd65c92f64151e7a04731c',
+      credential: 'L7/tY+K2mD4N8rQv'
+    },
+    {
+      urls: 'turn:global.relay.metered.ca:443',
+      username: 'e8dd65c92f64151e7a04731c',
+      credential: 'L7/tY+K2mD4N8rQv'
+    },
+    {
+      urls: 'turns:global.relay.metered.ca:443?transport=tcp',
+      username: 'e8dd65c92f64151e7a04731c',
+      credential: 'L7/tY+K2mD4N8rQv'
+    }
   ],
   iceCandidatePoolSize: 10,
 };
@@ -99,6 +115,9 @@ export function CallOverlay() {
   const [hasRemoteVideo, setHasRemoteVideo] = useState(false);
   const [showCameraSettings, setShowCameraSettings] = useState(false);
   const [isFullscreenStage, setIsFullscreenStage] = useState(false);
+  const [callNotice, setCallNotice] = useState<string | null>(null);
+  const [needsAudioUnlock, setNeedsAudioUnlock] = useState(false);
+  const [connectionStateLabel, setConnectionStateLabel] = useState<string>('Connecting peer-to-peer...');
   
   const pc = useRef<RTCPeerConnection | null>(null);
   const localAudioTrack = useRef<MediaStreamTrack | null>(null);
@@ -116,34 +135,83 @@ export function CallOverlay() {
   
   const callIdRef = useRef<string | null>(null);
   const isCallerRef = useRef<boolean>(false);
+  const startingSessionRef = useRef<boolean>(false);
+  const isCallingRef = useRef<boolean>(isCalling);
+  const callStatusRef = useRef<'idle' | 'calling' | 'ringing' | 'active'>(callStatus);
+  isCallingRef.current = isCalling;
+  callStatusRef.current = callStatus;
 
   const callUnsubRef = useRef<(() => void) | null>(null);
   const isSettingRemoteDesc = useRef<boolean>(false);
   const processedCandidates = useRef<Set<string>>(new Set());
   const candidatesQueue = useRef<RTCIceCandidateInit[]>([]);
   const cleanupTimerRef = useRef<any>(null);
+  const iceRestartTimerRef = useRef<any>(null);
   const localAnalyzerCleanupRef = useRef<(() => void) | null>(null);
   const remoteAnalyzerCleanupRef = useRef<(() => void) | null>(null);
 
   // Helper to attach and play remote audio without interrupting existing playback
   const attachRemoteAudio = () => {
-    if (remoteAudioRef.current && remoteStream.current) {
-      if (remoteAudioRef.current.srcObject !== remoteStream.current) {
-        remoteAudioRef.current.srcObject = remoteStream.current;
+    const audioEl = remoteAudioRef.current;
+    if (audioEl && remoteStream.current) {
+      if (audioEl.srcObject !== remoteStream.current) {
+        audioEl.srcObject = remoteStream.current;
       }
-      if (remoteAudioRef.current.paused) {
-        remoteAudioRef.current.play().catch(e => {
-          if (e.name !== 'AbortError') {
-            console.warn("Auto-play waiting for user interaction:", e);
+      audioEl.muted = isDeafened;
+      audioEl.volume = 1;
+      if (audioEl.paused) {
+        audioEl.play().then(() => {
+          setNeedsAudioUnlock(false);
+        }).catch(e => {
+          if (e.name === 'NotAllowedError') {
+            setNeedsAudioUnlock(true);
+          } else if (e.name !== 'AbortError') {
+            console.warn("Audio playback waiting:", e);
           }
         });
       }
     }
   };
 
-  // Listen for incoming calls
+  // Gentle synthesized ringtone when callStatus === 'ringing'
   useEffect(() => {
-    if (!currentUser) return;
+    if (callStatus !== 'ringing') return;
+    let ctx: AudioContext | null = null;
+    let timer: ReturnType<typeof setInterval> | null = null;
+
+    const ringOnce = () => {
+      try {
+        const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+        if (!AudioCtx) return;
+        if (!ctx) ctx = new AudioCtx();
+        if (ctx.state === 'suspended') ctx.resume().catch(() => {});
+        const now = ctx.currentTime;
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(523.25, now);
+        osc.frequency.setValueAtTime(659.25, now + 0.14);
+        gain.gain.setValueAtTime(0.001, now);
+        gain.gain.exponentialRampToValueAtTime(0.08, now + 0.04);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.45);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(now);
+        osc.stop(now + 0.46);
+      } catch {}
+    };
+
+    ringOnce();
+    timer = setInterval(ringOnce, 2200);
+    return () => {
+      if (timer) clearInterval(timer);
+      if (ctx) { try { ctx.close(); } catch {} }
+    };
+  }, [callStatus]);
+
+  // Listen for incoming calls — depend ONLY on currentUser?.id so active calls never churn the listener
+  useEffect(() => {
+    if (!currentUser?.id) return;
 
     const q = query(
       collection(db, 'calls'), 
@@ -155,19 +223,29 @@ export function CallOverlay() {
       snapshot.docChanges().forEach(async (change) => {
         if (change.type === 'added') {
           const data = change.doc.data();
-          // Filter out stale calls older than 60 seconds
-          if (data.timestamp && Date.now() - data.timestamp > 60000) return;
+          // Filter out stale calls older than 90 seconds
+          if (data.timestamp && Date.now() - data.timestamp > 90000) return;
 
-          if (!isCalling && callStatus === 'idle') {
+          if (!isCallingRef.current && callStatusRef.current === 'idle') {
             try {
               const users = await getUsers();
-              const caller = users.find(u => u.id === data.callerId);
+              const caller = users.find(u => u.id === data.callerId) || (data.callerName ? {
+                id: data.callerId,
+                username: data.callerName,
+                handle: (data.callerName || 'caller').toLowerCase().replace(/\s+/g, ''),
+                avatarUrl: data.callerAvatar || '',
+                email: '',
+                bio: '',
+                isPrivate: false,
+                followers: [],
+                following: []
+              } : null);
               if (caller) {
                 isCallerRef.current = false;
-                setCallData({ user: caller, type: data.type || 'voice' });
+                callIdRef.current = data.id;
+                setCallData({ user: caller as any, type: data.type || 'voice' });
                 setIsCalling(true);
                 setCallStatus('ringing');
-                callIdRef.current = data.id;
               }
             } catch (err) {
               console.error("Failed to load caller info:", err);
@@ -183,7 +261,7 @@ export function CallOverlay() {
     });
 
     return () => unsub();
-  }, [currentUser?.id, isCalling, callStatus, setCallData, setIsCalling]);
+  }, [currentUser?.id, setCallData, setIsCalling]);
 
   // If ringing, listen to see if the caller hangs up before we answer
   useEffect(() => {
@@ -201,13 +279,14 @@ export function CallOverlay() {
   useEffect(() => {
     if (!isCalling || !callData || !currentUser) return;
 
-    if (callStatus === 'idle') {
-      const isCaller = !callIdRef.current;
-      if (isCaller) {
-        isCallerRef.current = true;
-        setCallStatus('calling');
-        startCall();
-      }
+    if (callStatus === 'idle' && !callIdRef.current && !startingSessionRef.current) {
+      startingSessionRef.current = true;
+      isCallerRef.current = true;
+      setCallStatus('calling');
+      setConnectionStateLabel('Calling...');
+      startCall().finally(() => {
+        startingSessionRef.current = false;
+      });
     }
 
     async function startCall() {
@@ -215,6 +294,10 @@ export function CallOverlay() {
       if (cleanupTimerRef.current) {
         clearTimeout(cleanupTimerRef.current);
         cleanupTimerRef.current = null;
+      }
+      if (iceRestartTimerRef.current) {
+        clearTimeout(iceRestartTimerRef.current);
+        iceRestartTimerRef.current = null;
       }
       if (callUnsubRef.current) {
         callUnsubRef.current();
@@ -228,14 +311,19 @@ export function CallOverlay() {
       processedCandidates.current.clear();
       candidatesQueue.current = [];
       isSettingRemoteDesc.current = false;
-      
+      setCallNotice(null);
+      setNeedsAudioUnlock(false);
+
+      // Unlock audio element synchronously/early while near user click gesture
+      if (remoteAudioRef.current) {
+        remoteAudioRef.current.muted = false;
+      }
+
       const newPc = new RTCPeerConnection(servers);
       pc.current = newPc;
       remoteStream.current = new MediaStream();
 
-      // Pre-add transceivers for both audio and video
-      // This is the critical WebRTC requirement: ensures m=audio and m=video are in the initial SDP
-      // so replaceTrack() for camera and screenshare works in real-time without renegotiation!
+      // Pre-add transceivers for both audio and video so replaceTrack() works cleanly
       const audioTransceiver = newPc.addTransceiver('audio', { direction: 'sendrecv' });
       const videoTransceiver = newPc.addTransceiver('video', { direction: 'sendrecv' });
       audioTransceiverRef.current = audioTransceiver;
@@ -248,15 +336,16 @@ export function CallOverlay() {
           localAudioTrack.current = audioTrack;
           await audioTransceiver.sender.replaceTrack(audioTrack);
 
-          // Setup real voice activity analyzer
           localAnalyzerCleanupRef.current?.();
           localAnalyzerCleanupRef.current = setupAudioAnalyzer(new MediaStream([audioTrack]), setIsSpeaking);
         }
       } catch (err) {
-        console.error("Microphone error:", err);
+        console.warn("Microphone unavailable:", err);
+        setCallNotice('Microphone unavailable — listen only mode.');
       }
 
-      // If initial call type is video, attempt to turn on camera right away
+      // Track camera success in local variable (avoids stale React isCameraOn state!)
+      let initialCallerMedia: 'camera' | 'none' = 'none';
       if (callData!.type === 'video') {
         try {
           const videoConstraints = selectedCameraId ? { deviceId: { exact: selectedCameraId } } : true;
@@ -265,6 +354,7 @@ export function CallOverlay() {
           if (camTrack) {
             localCameraStream.current = camStream;
             await videoTransceiver.sender.replaceTrack(camTrack);
+            initialCallerMedia = 'camera';
             setIsCameraOn(true);
             if (localVideoRef.current) {
               localVideoRef.current.srcObject = camStream;
@@ -273,13 +363,13 @@ export function CallOverlay() {
           }
         } catch (camErr) {
           console.warn("Initial camera activation failed:", camErr);
+          setCallNotice('Camera unavailable — audio call active.');
         }
       }
 
       newPc.ontrack = (event) => {
+        if (!remoteStream.current) remoteStream.current = new MediaStream();
         if (event.track.kind === 'video') {
-          if (!remoteStream.current) remoteStream.current = new MediaStream();
-          // Remove old video tracks and attach latest
           remoteStream.current.getVideoTracks().forEach(t => remoteStream.current?.removeTrack(t));
           remoteStream.current.addTrack(event.track);
 
@@ -289,7 +379,9 @@ export function CallOverlay() {
           }
           setHasRemoteVideo(true);
 
-          event.track.onmute = () => setHasRemoteVideo(false);
+          event.track.onmute = () => {
+            if (!event.track.enabled) setHasRemoteVideo(false);
+          };
           event.track.onunmute = () => {
             setHasRemoteVideo(true);
             if (remoteVideoRef.current) {
@@ -299,7 +391,6 @@ export function CallOverlay() {
           };
           event.track.onended = () => setHasRemoteVideo(false);
         } else if (event.track.kind === 'audio') {
-          if (!remoteStream.current) remoteStream.current = new MediaStream();
           remoteStream.current.getAudioTracks().forEach(t => remoteStream.current?.removeTrack(t));
           remoteStream.current.addTrack(event.track);
 
@@ -310,38 +401,79 @@ export function CallOverlay() {
         }
       };
 
+      // Buffer local ICE candidates until createCall completes so the very first ICE candidates aren't lost!
+      let callDocCreated = false;
+      const bufferedLocalCandidates: any[] = [];
+
       newPc.onicecandidate = (event) => {
         if (event.candidate && callIdRef.current === sessionCallId) {
-          addIceCandidate(sessionCallId, 'caller', event.candidate.toJSON());
+          const candJson = event.candidate.toJSON();
+          if (!callDocCreated) {
+            bufferedLocalCandidates.push(candJson);
+          } else {
+            addIceCandidate(sessionCallId, 'caller', candJson);
+          }
         }
       };
 
       newPc.oniceconnectionstatechange = () => {
-        console.log("Caller ICE connection state:", newPc.iceConnectionState);
-        if (newPc.iceConnectionState === 'connected' || newPc.iceConnectionState === 'completed') {
+        const state = newPc.iceConnectionState;
+        if (state === 'connected' || state === 'completed') {
+          setConnectionStateLabel('Connected');
+          setCallNotice(null);
+          if (iceRestartTimerRef.current) {
+            clearTimeout(iceRestartTimerRef.current);
+            iceRestartTimerRef.current = null;
+          }
           attachRemoteAudio();
-        } else if (newPc.iceConnectionState === 'failed') {
+        } else if (state === 'checking') {
+          setConnectionStateLabel('Connecting peer-to-peer...');
+        } else if (state === 'disconnected') {
+          setConnectionStateLabel('Reconnecting...');
+          if (!iceRestartTimerRef.current) {
+            iceRestartTimerRef.current = setTimeout(() => {
+              if (pc.current === newPc && (newPc.iceConnectionState === 'disconnected' || newPc.iceConnectionState === 'failed')) {
+                newPc.restartIce?.();
+              }
+            }, 3500);
+          }
+        } else if (state === 'failed') {
+          setConnectionStateLabel('Retrying connection...');
           newPc.restartIce?.();
         }
       };
 
-      const offerDescription = await newPc.createOffer();
+      const offerDescription = await newPc.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: true });
       await newPc.setLocalDescription(offerDescription);
 
-      await createCall(
+      const created = await createCall(
         sessionCallId, 
         currentUser!.id, 
         callData!.user.id, 
         { type: offerDescription.type, sdp: offerDescription.sdp },
         {
-          callerMedia: isCameraOn ? 'camera' : 'none',
+          type: callData!.type || 'voice',
+          callerMedia: initialCallerMedia,
           receiverMedia: 'none',
+          callerCandidates: [...bufferedLocalCandidates],
           callerName: currentUser!.username,
           callerAvatar: currentUser!.avatarUrl || '',
           receiverName: callData!.user.username,
           receiverAvatar: callData!.user.avatarUrl || ''
         }
       );
+      callDocCreated = true;
+
+      if (!created) {
+        setCallNotice('Call signal could not reach server (offline or quota reached).');
+      }
+
+      // Flush any candidates that arrived right as createCall was in flight
+      if (bufferedLocalCandidates.length > 0 && created) {
+        for (const cand of bufferedLocalCandidates) {
+          addIceCandidate(sessionCallId, 'caller', cand);
+        }
+      }
 
       // Subscribe to signaling updates
       const unsub = subscribeToCall(sessionCallId, async (data) => {
@@ -352,7 +484,7 @@ export function CallOverlay() {
           return;
         }
 
-        if (data.status === 'active' && callStatus !== 'active') {
+        if (data.status === 'active' && callStatusRef.current !== 'active') {
           setCallStatus('active');
         }
 
@@ -368,7 +500,6 @@ export function CallOverlay() {
             setCallStatus('active');
             attachRemoteAudio();
 
-            // Drain queued ICE candidates
             while (candidatesQueue.current.length > 0) {
               const cand = candidatesQueue.current.shift();
               if (cand && newPc.remoteDescription) {
@@ -431,7 +562,7 @@ export function CallOverlay() {
     }
   }, [isScreenSharing, callStatus]);
 
-  // Synchronize remote video element
+  // Synchronize remote video element across view mode changes
   useEffect(() => {
     if (remoteStream.current && remoteVideoRef.current) {
       if (remoteVideoRef.current.srcObject !== remoteStream.current) {
@@ -439,7 +570,7 @@ export function CallOverlay() {
         remoteVideoRef.current.play().catch(() => {});
       }
     }
-  }, [hasRemoteVideo, remoteMedia, callStatus]);
+  }, [hasRemoteVideo, remoteMedia, callStatus, isScreenSharing]);
 
   const acceptCall = async () => {
     const sessionCallId = callIdRef.current;
@@ -449,12 +580,23 @@ export function CallOverlay() {
       clearTimeout(cleanupTimerRef.current);
       cleanupTimerRef.current = null;
     }
+    if (iceRestartTimerRef.current) {
+      clearTimeout(iceRestartTimerRef.current);
+      iceRestartTimerRef.current = null;
+    }
     if (callUnsubRef.current) {
       callUnsubRef.current();
       callUnsubRef.current = null;
     }
 
+    // Unlock audio element directly inside click handler gesture
+    if (remoteAudioRef.current) {
+      remoteAudioRef.current.muted = false;
+    }
+
     setCallStatus('active');
+    setConnectionStateLabel('Connecting...');
+    setCallNotice(null);
     isCallerRef.current = false;
     processedCandidates.current.clear();
     candidatesQueue.current = [];
@@ -481,12 +623,32 @@ export function CallOverlay() {
         localAnalyzerCleanupRef.current = setupAudioAnalyzer(new MediaStream([audioTrack]), setIsSpeaking);
       }
     } catch (err) {
-      console.error("Receiver Media error:", err);
+      console.warn("Receiver audio unavailable:", err);
+      setCallNotice('Microphone unavailable — listen only mode.');
+    }
+
+    let receiverHasCam = false;
+    if (callData?.type === 'video') {
+      try {
+        const videoConstraints = selectedCameraId ? { deviceId: { exact: selectedCameraId } } : true;
+        const camStream = await navigator.mediaDevices.getUserMedia({ video: videoConstraints });
+        const camTrack = camStream.getVideoTracks()[0];
+        if (camTrack) {
+          localCameraStream.current = camStream;
+          await videoTransceiver.sender.replaceTrack(camTrack);
+          receiverHasCam = true;
+          setIsCameraOn(true);
+          if (localVideoRef.current) {
+            localVideoRef.current.srcObject = camStream;
+            localVideoRef.current.play().catch(() => {});
+          }
+        }
+      } catch {}
     }
 
     newPc.ontrack = (event) => {
+      if (!remoteStream.current) remoteStream.current = new MediaStream();
       if (event.track.kind === 'video') {
-        if (!remoteStream.current) remoteStream.current = new MediaStream();
         remoteStream.current.getVideoTracks().forEach(t => remoteStream.current?.removeTrack(t));
         remoteStream.current.addTrack(event.track);
 
@@ -496,7 +658,9 @@ export function CallOverlay() {
         }
         setHasRemoteVideo(true);
 
-        event.track.onmute = () => setHasRemoteVideo(false);
+        event.track.onmute = () => {
+          if (!event.track.enabled) setHasRemoteVideo(false);
+        };
         event.track.onunmute = () => {
           setHasRemoteVideo(true);
           if (remoteVideoRef.current) {
@@ -506,7 +670,6 @@ export function CallOverlay() {
         };
         event.track.onended = () => setHasRemoteVideo(false);
       } else if (event.track.kind === 'audio') {
-        if (!remoteStream.current) remoteStream.current = new MediaStream();
         remoteStream.current.getAudioTracks().forEach(t => remoteStream.current?.removeTrack(t));
         remoteStream.current.addTrack(event.track);
 
@@ -524,10 +687,17 @@ export function CallOverlay() {
     };
 
     newPc.oniceconnectionstatechange = () => {
-      console.log("Receiver ICE connection state:", newPc.iceConnectionState);
-      if (newPc.iceConnectionState === 'connected' || newPc.iceConnectionState === 'completed') {
+      const state = newPc.iceConnectionState;
+      if (state === 'connected' || state === 'completed') {
+        setConnectionStateLabel('Connected');
+        setCallNotice(null);
         attachRemoteAudio();
-      } else if (newPc.iceConnectionState === 'failed') {
+      } else if (state === 'checking') {
+        setConnectionStateLabel('Connecting peer-to-peer...');
+      } else if (state === 'disconnected') {
+        setConnectionStateLabel('Reconnecting...');
+      } else if (state === 'failed') {
+        setConnectionStateLabel('Retrying connection...');
         newPc.restartIce?.();
       }
     };
@@ -555,7 +725,7 @@ export function CallOverlay() {
           await updateCall(sessionCallId, {
             answer: { type: answer.type, sdp: answer.sdp },
             status: 'active',
-            receiverMedia: isCameraOn ? 'camera' : 'none'
+            receiverMedia: receiverHasCam ? 'camera' : 'none'
           });
 
           attachRemoteAudio();
@@ -605,6 +775,13 @@ export function CallOverlay() {
   const handleEndCall = async (shouldUpdateDb = true) => {
     const currentId = callIdRef.current;
     
+    // Stop pending timers & remote listeners
+    if (iceRestartTimerRef.current) {
+      clearTimeout(iceRestartTimerRef.current);
+      iceRestartTimerRef.current = null;
+    }
+    startingSessionRef.current = false;
+
     // Stop listening to signaling updates
     if (callUnsubRef.current) {
       callUnsubRef.current();
@@ -871,13 +1048,21 @@ export function CallOverlay() {
               </span>
               <p className="text-[11px] text-zinc-400 font-medium truncate">
                 {callStatus === 'active' 
-                  ? (isSomeoneScreenSharing ? '🖥️ Live Screen Share Active' : (isCameraOn || hasRemoteVideo ? '📹 Video Call Active' : '🎙️ Voice Connected (Encrypted)'))
-                  : 'Connecting peer-to-peer...'}
+                  ? (isSomeoneScreenSharing ? '🖥️ Live Screen Share Active' : (isCameraOn || hasRemoteVideo ? '📹 Video Call Active' : `🎙️ ${connectionStateLabel}`))
+                  : connectionStateLabel}
               </p>
             </div>
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
+            {needsAudioUnlock && (
+              <button
+                onClick={attachRemoteAudio}
+                className="px-3 py-1.5 rounded-xl bg-amber-500 text-black text-xs font-black animate-pulse cursor-pointer"
+              >
+                Enable Audio
+              </button>
+            )}
             {isSomeoneScreenSharing && (
               <button 
                 onClick={() => setIsFullscreenStage(!isFullscreenStage)}
@@ -898,6 +1083,11 @@ export function CallOverlay() {
             </button>
           </div>
         </div>
+        {callNotice && (
+          <div className="px-4 py-1.5 bg-amber-500/15 border-b border-amber-500/30 text-amber-300 text-xs font-bold text-center">
+            {callNotice}
+          </div>
+        )}
 
         {/* Camera Device Settings Popover */}
         {showCameraSettings && (

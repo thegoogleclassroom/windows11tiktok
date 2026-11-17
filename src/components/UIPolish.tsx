@@ -1,13 +1,18 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { ShieldCheck, Crown, Heart } from 'lucide-react';
+import { useAppStore } from '../store';
 
 // 1. Holographic Badge Component
 export const HolographicBadge: React.FC<{ type?: 'verified' | 'staff' | 'owner' }> = ({ type = 'verified' }) => {
+  const { qualityMode } = useAppStore();
+  const isLow = qualityMode === 'low';
+
   return (
     <motion.span
       className="relative group cursor-help inline-flex items-center"
-      whileHover={{ scale: 1.1 }}
+      whileHover={isLow ? undefined : { scale: 1.15, rotate: [-4, 4, 0] }}
+      transition={{ type: 'spring', stiffness: 450, damping: 14 }}
     >
       <span className={`
         relative z-10 p-0.5 rounded-full flex items-center justify-center
@@ -19,17 +24,19 @@ export const HolographicBadge: React.FC<{ type?: 'verified' | 'staff' | 'owner' 
       </span>
       
       {/* Holographic Shimmer Effect */}
-      <motion.span
-        animate={{
-          backgroundPosition: ['0% 0%', '100% 100%'],
-        }}
-        transition={{
-          duration: 3,
-          repeat: Infinity,
-          repeatType: "reverse",
-        }}
-        className="absolute inset-0 rounded-full opacity-50 blur-[2px] bg-[linear-gradient(45deg,transparent_25%,rgba(255,255,255,0.8)_50%,transparent_75%)] bg-[length:250%_250%]"
-      />
+      {!isLow && (
+        <motion.span
+          animate={{
+            backgroundPosition: ['0% 0%', '100% 100%'],
+          }}
+          transition={{
+            duration: 3,
+            repeat: Infinity,
+            repeatType: "reverse",
+          }}
+          className="absolute inset-0 rounded-full opacity-50 blur-[2px] bg-[linear-gradient(45deg,transparent_25%,rgba(255,255,255,0.8)_50%,transparent_75%)] bg-[length:250%_250%]"
+        />
+      )}
       
       {/* Tooltip */}
       <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-black/80 backdrop-blur-md border border-white/20 rounded text-[10px] text-white font-bold opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-50">
@@ -41,26 +48,32 @@ export const HolographicBadge: React.FC<{ type?: 'verified' | 'staff' | 'owner' 
 
 // CentralPro Cosmic Badge
 export const CentralProBadge: React.FC = () => {
+  const { qualityMode } = useAppStore();
+  const isLow = qualityMode === 'low';
+
   return (
     <motion.span
       className="relative group cursor-help inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-gradient-to-r from-cyan-500 via-blue-600 to-indigo-600 shadow-[0_0_12px_rgba(59,130,246,0.6)] border border-cyan-300/40"
-      whileHover={{ scale: 1.08 }}
+      whileHover={isLow ? undefined : { scale: 1.1, rotate: -2 }}
+      transition={{ type: 'spring', stiffness: 450, damping: 14 }}
     >
       <span className="text-[10px]">🚀</span>
       <span className="text-[9px] font-black uppercase tracking-wider text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]">PRO</span>
       
       {/* Cosmic Animated Shimmer */}
-      <motion.span
-        animate={{
-          backgroundPosition: ['0% 50%', '100% 50%', '0% 50%'],
-        }}
-        transition={{
-          duration: 2.5,
-          repeat: Infinity,
-          ease: "linear"
-        }}
-        className="absolute inset-0 rounded-full opacity-60 blur-[1px] bg-[linear-gradient(90deg,transparent,rgba(255,255,255,0.9),transparent)] bg-[length:200%_100%] pointer-events-none"
-      />
+      {!isLow && (
+        <motion.span
+          animate={{
+            backgroundPosition: ['0% 50%', '100% 50%', '0% 50%'],
+          }}
+          transition={{
+            duration: 2.5,
+            repeat: Infinity,
+            ease: "linear"
+          }}
+          className="absolute inset-0 rounded-full opacity-60 blur-[1px] bg-[linear-gradient(90deg,transparent,rgba(255,255,255,0.9),transparent)] bg-[length:200%_100%] pointer-events-none"
+        />
+      )}
       
       {/* Tooltip */}
       <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-black/90 backdrop-blur-md border border-cyan-400/40 rounded text-[10px] text-cyan-300 font-bold opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-50 shadow-xl">
@@ -73,7 +86,7 @@ export const CentralProBadge: React.FC = () => {
 // 2. Profile Hover Card
 export const ProfileHoverCard: React.FC<{ user: any }> = ({ user }) => {
   return (
-    <div className="absolute bottom-full left-0 mb-4 w-64 bg-black/80 backdrop-blur-xl border border-white/20 rounded-2xl p-4 shadow-2xl opacity-0 group-hover/user:opacity-100 transition-opacity pointer-events-none z-50">
+    <div className="absolute bottom-full left-0 mb-4 w-64 bg-black/85 backdrop-blur-xl border border-white/20 rounded-2xl p-4 shadow-2xl opacity-0 group-hover/user:opacity-100 transition-opacity pointer-events-none z-50">
       <div className="flex items-center gap-3 mb-3">
         <img src={user?.avatarUrl} className="w-12 h-12 rounded-full border border-white/20 object-cover" alt="" />
         <div>
@@ -95,12 +108,16 @@ export const ProfileHoverCard: React.FC<{ user: any }> = ({ user }) => {
 
 // 3. Particle Like Effect
 export const LikeParticles: React.FC<{ x: number, y: number, onComplete: () => void }> = ({ x, y, onComplete }) => {
-  const particles = Array.from({ length: 12 });
+  const { qualityMode } = useAppStore();
+  const isLow = qualityMode === 'low';
+  const particles = Array.from({ length: isLow ? 0 : 12 });
   
   useEffect(() => {
-    const timer = setTimeout(onComplete, 1000);
+    const timer = setTimeout(onComplete, isLow ? 50 : 1000);
     return () => clearTimeout(timer);
-  }, [onComplete]);
+  }, [onComplete, isLow]);
+
+  if (isLow) return null;
 
   return (
     <div className="fixed inset-0 pointer-events-none z-[100]" style={{ left: x, top: y }}>
@@ -132,10 +149,13 @@ export const LikeParticles: React.FC<{ x: number, y: number, onComplete: () => v
 
 // 3. Ambient Glow Container
 export const AmbientGlow: React.FC<{ children: React.ReactNode, src?: string, type?: 'video' | 'image' }> = ({ children, src, type }) => {
+  const { qualityMode } = useAppStore();
+  const isLow = qualityMode === 'low';
+
   return (
     <div className="relative w-full h-full overflow-hidden group">
-      {/* Dynamic Glow Layer */}
-      {src && (
+      {/* Dynamic Glow Layer (disabled in Low Quality to eliminate GPU blur overhead) */}
+      {src && !isLow && (
         <div className="absolute inset-0 z-0 opacity-40 blur-[80px] scale-110 pointer-events-none transition-opacity duration-700">
           {type === 'video' ? (
             <video src={src} muted loop className="w-full h-full object-cover" />

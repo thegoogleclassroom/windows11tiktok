@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { Home, Compass, PlusSquare, MessageSquare, User, Moon, Sun, LogIn, ShieldAlert, X, HelpCircle, Bell, BellOff, Gamepad2, ShieldCheck, Info, Rocket, Sparkles, Check, Copy, Flame, AlertTriangle, Search, Users, UserCheck, Tv, Disc } from 'lucide-react';
-import { motion, AnimatePresence } from 'motion/react';
+import { Home, Compass, PlusSquare, MessageSquare, User, Moon, Sun, LogIn, ShieldAlert, X, HelpCircle, Bell, BellOff, Gamepad2, ShieldCheck, Info, Rocket, Sparkles, Check, Copy, Flame, AlertTriangle, Search, Users, UserCheck, Tv, Disc, Zap, RefreshCw, Sliders } from 'lucide-react';
+import { motion, AnimatePresence, MotionConfig } from 'motion/react';
 import { useAppStore } from '../store';
 import { AuthModal } from './AuthModal';
 import { MiniPlayer } from './MiniPlayer';
@@ -45,7 +45,11 @@ export function Layout({ children }: { children: React.ReactNode }) {
     setMiniPlayerActive,
     setMiniPlayerTitle,
     listenAlongHostId,
-    setListenAlongHostId
+    setListenAlongHostId,
+    qualityMode,
+    setQualityMode,
+    showQualityModal,
+    setShowQualityModal
   } = useAppStore();
   const [showSupportModal, setShowSupportModal] = useState(false);
   const [showForumChooser, setShowForumChooser] = useState(false);
@@ -437,10 +441,8 @@ export function Layout({ children }: { children: React.ReactNode }) {
 
   const handleSupportSubmit = async () => {
     if (!supportMessage.trim()) return;
-    const { getReports, saveReports } = await import('../lib/db');
-    const reports = await getReports();
-    reports.push({
-      id: `support_${Date.now()}`,
+    const { addReport } = await import('../lib/db');
+    await addReport({
       videoId: 'general_support',
       reporterId: currentUser?.id || 'anonymous',
       reason: `${supportType === 'bug' ? 'Bug/Issue' : 'Support'}: ${supportMessage}`,
@@ -448,7 +450,6 @@ export function Layout({ children }: { children: React.ReactNode }) {
       status: 'pending',
       category: supportType || 'support'
     });
-    await saveReports(reports);
     setSupportSent(true);
     setTimeout(() => {
       setShowSupportModal(false);
@@ -489,6 +490,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="flex flex-col h-screen bg-white dark:bg-zinc-950 text-zinc-900 dark:text-zinc-50 overflow-hidden transition-colors">
+      <GitHubUpdateBanner />
       <BookmarkBanner />
       <AnnouncementBanner />
 
@@ -577,9 +579,22 @@ export function Layout({ children }: { children: React.ReactNode }) {
               )}
             </button>
 
+            <button
+              onClick={() => setShowQualityModal(true)}
+              className={`wiggy-btn flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold border transition-colors ${
+                qualityMode === 'low'
+                  ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/20'
+                  : 'bg-pink-500/10 text-pink-600 dark:text-pink-400 border-pink-500/30 hover:bg-pink-500/20'
+              }`}
+              title="Compare & switch Low Quality vs High Quality (Wiggy Physics)"
+            >
+              {qualityMode === 'low' ? <Zap size={14} /> : <Sparkles size={14} />}
+              <span>{qualityMode === 'low' ? 'Low Quality' : 'High Quality'}</span>
+            </button>
+
             <button 
               onClick={toggleTheme}
-              className="p-2 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-full transition-colors"
+              className="wiggy-btn p-2 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-full transition-colors"
               title="Appearance"
             >
               {theme === 'dark' ? <Sun size={20} className="text-amber-400" /> : <Moon size={20} className="text-indigo-600" />}
@@ -633,7 +648,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
                     key={item.label} 
                     to={item.path}
                     onClick={(e) => handleNavClick(e, item.path)}
-                    className={`flex items-center gap-3.5 px-3 py-2.5 rounded-xl transition-all relative group ${
+                    className={`wiggy-btn flex items-center gap-3.5 px-3 py-2.5 rounded-xl transition-all relative group ${
                       isActive 
                         ? 'text-[#FE2C55] font-black bg-[#FE2C55]/10' 
                         : 'hover:bg-zinc-100 dark:hover:bg-zinc-900 font-bold text-zinc-700 dark:text-zinc-300'
@@ -752,7 +767,24 @@ export function Layout({ children }: { children: React.ReactNode }) {
             </div>
 
             {/* TikTok Desktop Footer Links */}
-            <div className="mt-auto pt-4 text-[11px] text-zinc-400 leading-relaxed border-t border-zinc-200/80 dark:border-zinc-800/80 space-y-2">
+            <div className="mt-auto pt-4 text-[11px] text-zinc-400 leading-relaxed border-t border-zinc-200/80 dark:border-zinc-800/80 space-y-2.5">
+              <button
+                type="button"
+                onClick={() => setShowQualityModal(true)}
+                className="wiggy-btn w-full flex items-center justify-between px-3 py-2 rounded-xl bg-zinc-100 dark:bg-zinc-900 hover:bg-zinc-200 dark:hover:bg-zinc-800 border border-zinc-200 dark:border-zinc-800 text-zinc-700 dark:text-zinc-200 font-bold text-xs transition-colors"
+              >
+                <span className="flex items-center gap-2">
+                  <Sliders size={14} className={qualityMode === 'low' ? 'text-emerald-500' : 'text-pink-500'} />
+                  <span>Quality Mode</span>
+                </span>
+                <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-full ${
+                  qualityMode === 'low'
+                    ? 'bg-emerald-500/15 text-emerald-500'
+                    : 'bg-pink-500/15 text-pink-500'
+                }`}>
+                  {qualityMode === 'low' ? 'Low' : 'High'}
+                </span>
+              </button>
               <div className="flex flex-wrap gap-x-2 gap-y-1">
                 <span className="hover:underline cursor-pointer">About</span>
                 <span className="hover:underline cursor-pointer">Newsroom</span>
@@ -1052,6 +1084,13 @@ export function Layout({ children }: { children: React.ReactNode }) {
       <GlobalMusicBubble />
       <IframeDomainNotice />
       <CentralProModal isOpen={showCentralProModal} onClose={() => setShowCentralProModal(false)} />
+      {showQualityModal && (
+        <QualityComparisonModal
+          currentMode={qualityMode}
+          onSelect={(mode) => setQualityMode(mode)}
+          onClose={() => setShowQualityModal(false)}
+        />
+      )}
     </div>
   );
 }
@@ -1831,6 +1870,338 @@ function CentralProModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => 
 
         </div>
       </motion.div>
+    </div>
+  );
+}
+
+function GitHubUpdateBanner() {
+  const [updateReady, setUpdateReady] = useState(false);
+  const [countdown, setCountdown] = useState(8);
+  const checkingRef = useRef(false);
+  const detectedRef = useRef(false);
+
+  useEffect(() => {
+    const getEntryBundleFilename = (docText?: string): { jsPath: string | null; cssPath: string | null; jsName: string | null } => {
+      if (!docText) {
+        const scripts = Array.from(document.querySelectorAll('script[type="module"][src]')) as HTMLScriptElement[];
+        for (const s of scripts) {
+          const src = s.getAttribute('src') || '';
+          const m = src.match(/(index-[A-Za-z0-9_-]+\.js)/);
+          if (m) {
+            return { jsPath: src, cssPath: null, jsName: m[1] };
+          }
+        }
+        return { jsPath: null, cssPath: null, jsName: null };
+      }
+
+      const jsMatch = docText.match(/<script[^>]+type=["']module["'][^>]+src=["']([^"']*?(index-[A-Za-z0-9_-]+\.js)[^"']*)["']/i)
+        || docText.match(/src=["']([^"']*?(index-[A-Za-z0-9_-]+\.js)[^"']*)["']/i);
+      const cssMatch = docText.match(/<link[^>]+rel=["']stylesheet["'][^>]+href=["']([^"']*?index-[A-Za-z0-9_-]+\.css[^"']*)["']/i)
+        || docText.match(/href=["']([^"']*?index-[A-Za-z0-9_-]+\.css[^"']*)["']/i);
+
+      return {
+        jsPath: jsMatch ? jsMatch[1] : null,
+        cssPath: cssMatch ? cssMatch[1] : null,
+        jsName: jsMatch ? jsMatch[2] : null,
+      };
+    };
+
+    const current = getEntryBundleFilename();
+    // Only poll when running a built production / GitHub Pages bundle (not Vite dev main.tsx)
+    if (!current.jsName) return;
+
+    const verifyAssetLive = async (assetPath: string): Promise<boolean> => {
+      try {
+        const resolved = new URL(assetPath, window.location.href);
+        resolved.searchParams.set('__upd_verify', String(Date.now()));
+        const res = await fetch(resolved.href, { cache: 'no-store' });
+        if (!res.ok) return false;
+        const ct = (res.headers.get('content-type') || '').toLowerCase();
+        // GitHub Pages serves text/html for 404 fallback pages if bundle is still uploading
+        if (ct.includes('text/html')) return false;
+        const text = await res.text();
+        if (!text || text.trim().startsWith('<!doctype') || text.trim().startsWith('<html')) {
+          return false;
+        }
+        return true;
+      } catch {
+        return false;
+      }
+    };
+
+    const checkForRelease = async () => {
+      if (checkingRef.current || detectedRef.current) return;
+      checkingRef.current = true;
+      try {
+        const basePath = window.location.pathname.endsWith('.html') || window.location.pathname.endsWith('/')
+          ? window.location.pathname
+          : `${window.location.pathname}/`;
+        const checkUrl = new URL(basePath || './', window.location.origin);
+        checkUrl.searchParams.set('__gh_check', String(Date.now()));
+
+        const res = await fetch(checkUrl.href, { cache: 'no-store' });
+        if (!res.ok) return;
+        const html = await res.text();
+        if (!html || !html.includes('<div id="root">')) return;
+
+        const remote = getEntryBundleFilename(html);
+        if (!remote.jsName || !remote.jsPath || remote.jsName === current.jsName) {
+          return;
+        }
+
+        // Verify that the newly built JS (and CSS if present) actually finished deploying to GitHub Pages
+        const jsReady = await verifyAssetLive(remote.jsPath);
+        if (!jsReady) return;
+
+        if (remote.cssPath) {
+          const cssReady = await verifyAssetLive(remote.cssPath);
+          if (!cssReady) return;
+        }
+
+        detectedRef.current = true;
+        setUpdateReady(true);
+      } catch {
+        // Ignore transient network errors
+      } finally {
+        checkingRef.current = false;
+      }
+    };
+
+    const initialTimer = setTimeout(checkForRelease, 8000);
+    const interval = setInterval(checkForRelease, 25000);
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        checkForRelease();
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+
+    return () => {
+      clearTimeout(initialTimer);
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!updateReady) return;
+    if (countdown <= 0) {
+      window.location.reload();
+      return;
+    }
+    const timer = setTimeout(() => setCountdown((c) => c - 1), 1000);
+    return () => clearTimeout(timer);
+  }, [updateReady, countdown]);
+
+  if (!updateReady) return null;
+
+  return (
+    <div className="fixed top-0 left-0 right-0 z-[99999] bg-black text-white border-b border-zinc-800 shadow-2xl px-4 py-2.5 flex flex-wrap items-center justify-center gap-3 text-center">
+      <div className="flex items-center gap-2 text-xs sm:text-sm font-bold">
+        <RefreshCw size={15} className="text-emerald-400 animate-spin shrink-0" />
+        <span>
+          New site update has arrived! Refreshing the page for everyone in{' '}
+          <span className="text-emerald-400 font-black tabular-nums">{countdown}s</span>...
+        </span>
+      </div>
+      <button
+        type="button"
+        onClick={() => window.location.reload()}
+        className="px-3 py-1 rounded-lg bg-white hover:bg-zinc-200 text-black text-xs font-black uppercase tracking-wider transition-colors cursor-pointer"
+      >
+        Refresh Now
+      </button>
+    </div>
+  );
+}
+
+function QualityComparisonModal({
+  currentMode,
+  onSelect,
+  onClose,
+}: {
+  currentMode: 'low' | 'high' | null;
+  onSelect: (mode: 'low' | 'high') => void;
+  onClose: () => void;
+}) {
+  const [previewWiggleCount, setPreviewWiggleCount] = useState(0);
+
+  return (
+    <div className="fixed inset-0 z-[99990] bg-black/85 flex items-center justify-center p-3 sm:p-6 overflow-y-auto">
+      <div className="relative w-full max-w-4xl bg-zinc-950 border border-zinc-800 rounded-3xl p-5 sm:p-8 text-white shadow-2xl my-auto">
+        {currentMode !== null && (
+          <button
+            type="button"
+            onClick={onClose}
+            className="absolute top-4 right-4 p-2 rounded-full bg-zinc-900 hover:bg-zinc-800 text-zinc-400 hover:text-white transition-colors"
+            title="Close"
+          >
+            <X size={20} />
+          </button>
+        )}
+
+        <div className="text-center max-w-2xl mx-auto mb-6">
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-zinc-900 border border-zinc-800 text-xs font-bold text-zinc-300 mb-3">
+            <Sliders size={14} className="text-pink-500" />
+            <span>Choose Your Experience</span>
+          </div>
+          <h2 className="text-2xl sm:text-3xl font-black tracking-tight text-white">
+            Low Quality vs High Quality
+          </h2>
+          <p className="text-xs sm:text-sm text-zinc-400 mt-1.5">
+            Compare performance and visual physics below. You can change this anytime from the top bar or sidebar.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-5">
+          {/* LOW QUALITY CARD */}
+          <div
+            className={`relative rounded-2xl border p-5 flex flex-col justify-between bg-zinc-900/95 transition-colors ${
+              currentMode === 'low' ? 'border-emerald-500 ring-2 ring-emerald-500/30' : 'border-zinc-800 hover:border-zinc-700'
+            }`}
+          >
+            <div>
+              <div className="flex items-center justify-between gap-2 mb-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-10 h-10 rounded-xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
+                    <Zap size={20} />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-black text-white">Low Quality</h3>
+                    <p className="text-[11px] font-semibold text-emerald-400">Speed & Zero-Lag Mode</p>
+                  </div>
+                </div>
+                {currentMode === 'low' && (
+                  <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[10px] font-black uppercase">
+                    Active
+                  </span>
+                )}
+              </div>
+
+              {/* Static Preview Box */}
+              <div className="rounded-xl bg-zinc-950 border border-zinc-800 p-3.5 mb-4">
+                <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-zinc-500 mb-2">
+                  <span>Live Preview</span>
+                  <span>No Wiggy Physics</span>
+                </div>
+                <div className="flex items-center gap-3 p-2.5 rounded-lg bg-zinc-900 border border-zinc-800">
+                  <div className="w-9 h-9 rounded-lg bg-emerald-600 flex items-center justify-center text-white font-black text-sm shrink-0">
+                    CT
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs font-bold text-white truncate">Flat, Instant Response</p>
+                    <p className="text-[10px] text-zinc-400 truncate">No wobble • No blur • Lightweight</p>
+                  </div>
+                </div>
+              </div>
+
+              <ul className="space-y-2 text-xs text-zinc-300 mb-5">
+                <li className="flex items-start gap-2">
+                  <Check size={14} className="text-emerald-400 shrink-0 mt-0.5" />
+                  <span><strong>Wiggy physics OFF</strong> — cards & buttons stay crisp with zero bounce or wobble.</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <Check size={14} className="text-emerald-400 shrink-0 mt-0.5" />
+                  <span><strong>No heavy blur</strong> — removes backdrop-blur & ambient glow shaders.</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <Check size={14} className="text-emerald-400 shrink-0 mt-0.5" />
+                  <span><strong>Maximum FPS</strong> — best for Chromebooks, older devices & smooth calls/chat.</span>
+                </li>
+              </ul>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => onSelect('low')}
+              className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs uppercase tracking-wider transition-colors cursor-pointer"
+            >
+              Choose Low Quality
+            </button>
+          </div>
+
+          {/* HIGH QUALITY CARD */}
+          <div
+            className={`relative rounded-2xl border p-5 flex flex-col justify-between bg-gradient-to-b from-zinc-900 via-zinc-900 to-[#190914] overflow-hidden transition-all ${
+              currentMode === 'high' ? 'border-pink-500 ring-2 ring-pink-500/30' : 'border-pink-500/40 hover:border-pink-500'
+            }`}
+          >
+            <div>
+              <div className="flex items-center justify-between gap-2 mb-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-[#FE2C55] to-cyan-400 flex items-center justify-center text-white shadow-lg shadow-pink-500/30">
+                    <Sparkles size={20} />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-black text-white">High Quality</h3>
+                    <p className="text-[11px] font-semibold text-pink-400">Wiggy Physics & Full FX</p>
+                  </div>
+                </div>
+                {currentMode === 'high' && (
+                  <span className="px-2 py-0.5 rounded-full bg-pink-500/20 text-pink-300 text-[10px] font-black uppercase">
+                    Active
+                  </span>
+                )}
+              </div>
+
+              {/* Interactive Wiggy Physics Preview Box */}
+              <MotionConfig reducedMotion="never">
+                <div className="rounded-xl bg-black/70 border border-pink-500/30 p-3.5 mb-4">
+                  <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-pink-400 mb-2">
+                    <span>Live Preview (Hover / Tap)</span>
+                    <span>Wiggy Physics ON</span>
+                  </div>
+                  <motion.div
+                    key={previewWiggleCount}
+                    initial={{ scale: 0.94, rotate: -2 }}
+                    animate={{ scale: 1, rotate: 0 }}
+                    whileHover={{ scale: 1.04, rotate: -1.5, y: -3 }}
+                    whileTap={{ scale: 0.93, rotate: 2 }}
+                    transition={{ type: 'spring', stiffness: 420, damping: 14 }}
+                    onClick={() => setPreviewWiggleCount((c) => c + 1)}
+                    className="flex items-center gap-3 p-2.5 rounded-lg bg-gradient-to-r from-pink-600/25 via-purple-600/20 to-cyan-500/25 border border-pink-400/40 cursor-pointer select-none shadow-lg shadow-pink-500/15"
+                  >
+                    <motion.div
+                      animate={{ y: [-2, 2, -2], rotate: [-2, 2, -2] }}
+                      transition={{ duration: 2.2, repeat: Infinity, ease: 'easeInOut' }}
+                      className="w-9 h-9 rounded-lg bg-gradient-to-tr from-[#FE2C55] to-cyan-400 flex items-center justify-center text-white font-black text-sm shrink-0 shadow-md"
+                    >
+                      CT
+                    </motion.div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs font-bold text-white truncate">Springy & Wiggy Motion!</p>
+                      <p className="text-[10px] text-pink-200/80 truncate">Click or hover me to test wiggle physics</p>
+                    </div>
+                  </motion.div>
+                </div>
+              </MotionConfig>
+
+              <ul className="space-y-2 text-xs text-zinc-300 mb-5">
+                <li className="flex items-start gap-2">
+                  <Sparkles size={14} className="text-pink-400 shrink-0 mt-0.5" />
+                  <span><strong>Wiggy physics ON</strong> — elastic spring bounce, card tilt & tactile squash-and-stretch.</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <Sparkles size={14} className="text-pink-400 shrink-0 mt-0.5" />
+                  <span><strong>Glassmorphism & Glow</strong> — frosted blur panels, ambient gradients & holographic shimmer.</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <Sparkles size={14} className="text-pink-400 shrink-0 mt-0.5" />
+                  <span><strong>Full FX & Particles</strong> — floating notes, spinning discs & smooth spring transitions.</span>
+                </li>
+              </ul>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => onSelect('high')}
+              className="w-full py-3 rounded-xl bg-gradient-to-r from-[#FE2C55] via-pink-600 to-purple-600 hover:opacity-95 text-white font-black text-xs uppercase tracking-wider shadow-lg shadow-pink-500/30 transition-transform hover:scale-[1.02] active:scale-[0.97] cursor-pointer"
+            >
+              Choose High Quality
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

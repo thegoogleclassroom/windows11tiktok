@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { HolographicBadge } from '../components/UIPolish';
 import { CameraDeviceSelector } from '../components/CameraDeviceSelector';
+import { compressImage } from '../lib/imageUtils';
 
 const QUICK_REACTIONS = ['❤️', '😂', '👍', '🔥', '😮', '😢'];
 const VOICE_ICE_SERVERS = {
@@ -26,6 +27,32 @@ const VOICE_ICE_SERVERS = {
     { urls: 'stun:stun1.l.google.com:19302' }
   ]
 };
+
+function getSupportedAudioMimeType(): string {
+  if (typeof MediaRecorder === 'undefined') return '';
+  const candidates = [
+    'audio/webm;codecs=opus',
+    'audio/webm',
+    'audio/mp4',
+    'audio/ogg;codecs=opus',
+    'audio/ogg'
+  ];
+  for (const type of candidates) {
+    try {
+      if (MediaRecorder.isTypeSupported(type)) return type;
+    } catch {}
+  }
+  return '';
+}
+
+function blobToDataUrl(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ''));
+    reader.onerror = () => reject(new Error('Failed to read media'));
+    reader.readAsDataURL(blob);
+  });
+}
 
 export function Chat() {
   const { handle, groupId } = useParams<{ handle?: string, groupId?: string }>();
@@ -40,7 +67,9 @@ export function Chat() {
   const [showCamera, setShowCamera] = useState(false);
   const [cameraFilter, setCameraFilter] = useState('');
   const [isRecordingAudio, setIsRecordingAudio] = useState(false);
+  const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [audioStream, setAudioStream] = useState<MediaStream | null>(null);
+  const [chatErrorToast, setChatErrorToast] = useState<string | null>(null);
   
   const [allUsers, setAllUsers] = useState<User[]>([]);
   const [typingUsers, setTypingUsers] = useState<string[]>([]);
@@ -67,6 +96,8 @@ export function Chat() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
+  const recordingCancelledRef = useRef(false);
+  const recordingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const markedSeenIdsRef = useRef<Set<string>>(new Set());
   const isLoadingChatRef = useRef(false);
@@ -78,6 +109,11 @@ export function Chat() {
   const appliedCandidatesRef = useRef<Set<string>>(new Set());
   const inVoiceRoomRef = useRef(false);
 
+  const showNotice = (msg: string) => {
+    setChatErrorToast(msg);
+    setTimeout(() => setChatErrorToast(prev => prev === msg ? null : prev), 4000);
+  };
+
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages.length]);
@@ -88,7 +124,7 @@ export function Chat() {
       isLoadingChatRef.current = true;
       try {
         const users = await getUsers();
-        setAllUsers(users);
+        setAllUsers(prev => (prev.length === users.length ? prev : users));
       
       const currentHandle = handle;
       const currentGroupId = groupId;
@@ -134,7 +170,26 @@ export function Chat() {
       }
       
       chatMsgs.sort((a, b) => a.timestamp - b.timestamp);
-      setMessages(chatMsgs);
+      setMessages(prev => {
+        // Merge any freshly created local messages from current session just in case
+        const remoteIds = new Set(chatMsgs.map(m => m.id));
+        const recentLocal = prev.filter(m => !remoteIds.has(m.id) && Date.now() - m.timestamp < 120_000);
+        const combined = recentLocal.length > 0
+          ? [...chatMsgs, ...recentLocal].sort((a, b) => a.timestamp - b.timestamp)
+          : chatMsgs;
+
+        if (
+          prev.length === combined.length &&
+          prev.every((m, idx) =>
+            m.id === combined[idx].id &&
+            (m.seenBy?.length || 0) === (combined[idx].seenBy?.length || 0) &&
+            JSON.stringify(m.reactions || {}) === JSON.stringify(combined[idx].reactions || {})
+          )
+        ) {
+          return prev;
+        }
+        return combined;
+      });
 
       // Read Receipts Logic (only mark each unread message once per session)
       if (currentUser) {
@@ -171,7 +226,7 @@ export function Chat() {
           )
           .map(s => users.find(u => u.id === s.userId)?.username || 'Someone');
         
-        setTypingUsers(activeTyping);
+        setTypingUsers(prev => (prev.join('|') === activeTyping.join('|') ? prev : activeTyping));
       }
       } finally {
         isLoadingChatRef.current = false;
@@ -463,6 +518,11 @@ export function Chat() {
       ...(replyingTo && !isSystem ? { replyTo: replyingTo } : {})
     };
     
+    setMessages(prev => prev.some(m => m.id === msg.id) ? prev : [...prev, msg]);
+    setNewMessage('');
+    setReplyingTo(null);
+    updateTyping(false);
+
     await addMessage(msg);
     
     if (!isSystem) {
@@ -479,11 +539,6 @@ export function Chat() {
       
       await addNotifications(newNotifs);
     }
-    
-    setMessages(prev => [...prev, msg]);
-    setNewMessage('');
-    setReplyingTo(null);
-    updateTyping(false);
   };
 
   const handleToggleReaction = async (messageId: string, emoji: string) => {
@@ -561,32 +616,35 @@ export function Chat() {
     await sendMessage(newMessage);
   };
 
-  // Cloudinary / Camera / Audio logic with resilient fallback if Cloudinary is terminated or down
-  const uploadToCloudinary = async (file: Blob | File): Promise<{url: string, type: string}> => {
-    try {
-      const formData = new FormData();
-      formData.append('file', file);
-      formData.append('upload_preset', 'centraltok');
-      const res = await fetch('https://api.cloudinary.com/v1_1/dzpocbcl/auto/upload', { method: 'POST', body: formData });
-      if (res.ok) {
-        const data = await res.json();
-        return { url: data.secure_url, type: data.resource_type };
+  // Compress images reliably under Firestore's 1MB limit & avoid broken uploads/disappearing photos
+  const prepareMediaPayload = async (file: Blob | File, forcedKind?: 'image' | 'video' | 'audio'): Promise<{ url: string; type: 'image' | 'video' | 'audio' }> => {
+    const mime = file.type || '';
+    const kind: 'image' | 'video' | 'audio' = forcedKind || (mime.startsWith('video') ? 'video' : mime.startsWith('audio') ? 'audio' : 'image');
+
+    let rawDataUrl = await blobToDataUrl(file);
+    if (kind === 'image') {
+      rawDataUrl = await compressImage(rawDataUrl, 900, 900, 0.65);
+      if (rawDataUrl.length > 650_000) {
+        rawDataUrl = await compressImage(rawDataUrl, 640, 640, 0.45);
       }
-    } catch {
-      // Graceful fallback to data URL
+      return { url: rawDataUrl, type: 'image' };
     }
 
-    return new Promise((resolve) => {
-      const reader = new FileReader();
-      reader.onload = () => {
-        const fileType = file.type || '';
-        resolve({
-          url: reader.result as string,
-          type: fileType.startsWith('video') ? 'video' : fileType.startsWith('audio') ? 'audio' : 'image'
-        });
-      };
-      reader.readAsDataURL(file);
-    });
+    // Try Cloudinary only for video clips that are too big for direct Firestore doc storage
+    if (kind === 'video' && rawDataUrl.length > 700_000) {
+      try {
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('upload_preset', 'centraltok');
+        const res = await fetch('https://api.cloudinary.com/v1_1/dzpocbcl/auto/upload', { method: 'POST', body: formData });
+        if (res.ok) {
+          const data = await res.json();
+          if (data?.secure_url) return { url: data.secure_url, type: 'video' };
+        }
+      } catch {}
+    }
+
+    return { url: rawDataUrl, type: kind };
   };
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -594,36 +652,114 @@ export function Chat() {
     if (!file) return;
     setIsUploading(true);
     try {
-      const { url, type } = await uploadToCloudinary(file);
+      const { url, type } = await prepareMediaPayload(file);
+      if (!url) {
+        showNotice('Could not read selected file.');
+        return;
+      }
+      if (type === 'video' && url.startsWith('data:') && url.length > 900_000) {
+        showNotice('Video clip is too large for chat. Please choose a shorter video.');
+        return;
+      }
       await sendMessage('', type === 'image' ? url : undefined, type === 'video' ? url : undefined);
-    } catch(err) { alert("Failed to upload file."); } finally { setIsUploading(false); if (fileInputRef.current) fileInputRef.current.value = ''; }
+    } catch {
+      showNotice('Failed to send attachment. Try a smaller file.');
+    } finally {
+      setIsUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
   };
 
   const startAudioRecording = async () => {
+    if (isRecordingAudio) return;
     try {
+      if (typeof MediaRecorder === 'undefined') {
+        showNotice('Voice recording is not supported in this browser.');
+        return;
+      }
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      setAudioStream(stream);
-      const mediaRecorder = new MediaRecorder(stream);
+      const chosenMime = getSupportedAudioMimeType();
+      const options: MediaRecorderOptions = { audioBitsPerSecond: 32000 };
+      if (chosenMime) options.mimeType = chosenMime;
+
+      const mediaRecorder = new MediaRecorder(stream, options);
       mediaRecorderRef.current = mediaRecorder;
       audioChunksRef.current = [];
-      mediaRecorder.ondataavailable = (event) => { if (event.data.size > 0) audioChunksRef.current.push(event.data); };
-      mediaRecorder.onstop = async () => {
-        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-        setIsUploading(true);
-        try { const { url } = await uploadToCloudinary(audioBlob); await sendMessage('', undefined, undefined, url); }
-        catch(err) { alert("Failed to send audio message."); } finally { setIsUploading(false); }
-        stream.getTracks().forEach(track => track.stop());
+      recordingCancelledRef.current = false;
+
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data && event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
+        }
       };
-      mediaRecorder.start();
+
+      mediaRecorder.onstop = async () => {
+        if (recordingTimerRef.current) {
+          clearInterval(recordingTimerRef.current);
+          recordingTimerRef.current = null;
+        }
+        stream.getTracks().forEach(track => track.stop());
+        setAudioStream(null);
+        setIsRecordingAudio(false);
+        setRecordingSeconds(0);
+
+        if (recordingCancelledRef.current) {
+          audioChunksRef.current = [];
+          return;
+        }
+
+        const actualType = mediaRecorder.mimeType || chosenMime || 'audio/webm';
+        const audioBlob = new Blob(audioChunksRef.current, { type: actualType });
+        audioChunksRef.current = [];
+
+        if (audioBlob.size < 100) {
+          showNotice('Voice message was too short. Hold/speak a bit longer and try again.');
+          return;
+        }
+
+        setIsUploading(true);
+        try {
+          const { url } = await prepareMediaPayload(audioBlob, 'audio');
+          if (!url || !url.startsWith('data:audio')) {
+            const fixedUrl = url.replace(/^data:[^;]*/, `data:${actualType.split(';')[0]}`);
+            await sendMessage('', undefined, undefined, fixedUrl);
+          } else {
+            await sendMessage('', undefined, undefined, url);
+          }
+        } catch {
+          showNotice('Failed to send voice message.');
+        } finally {
+          setIsUploading(false);
+        }
+      };
+
+      setAudioStream(stream);
+      setRecordingSeconds(0);
       setIsRecordingAudio(true);
-    } catch (err) { alert("Microphone access denied."); }
+      mediaRecorder.start(250);
+      recordingTimerRef.current = setInterval(() => {
+        setRecordingSeconds(prev => prev + 1);
+      }, 1000);
+    } catch {
+      showNotice('Microphone access denied. Enable mic permission in browser settings.');
+    }
   };
 
-  const stopAudioRecording = () => {
+  const stopAudioRecording = (cancel = false) => {
+    recordingCancelledRef.current = cancel;
+    if (recordingTimerRef.current) {
+      clearInterval(recordingTimerRef.current);
+      recordingTimerRef.current = null;
+    }
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      try {
+        mediaRecorderRef.current.requestData?.();
+      } catch {}
       mediaRecorderRef.current.stop();
+    } else {
       setIsRecordingAudio(false);
       setAudioStream(null);
+      setRecordingSeconds(0);
     }
   };
 
@@ -639,7 +775,7 @@ export function Chat() {
         })
         .catch(err => {
           console.error("Camera error:", err);
-          alert("Could not access camera.");
+          showNotice("Could not access camera.");
           setShowCamera(false);
         });
     }
@@ -666,22 +802,34 @@ export function Chat() {
 
   const takePhoto = async () => {
     if (!videoRef.current || !canvasRef.current) return;
+    const videoEl = videoRef.current;
     const canvas = canvasRef.current;
-    canvas.width = videoRef.current.videoWidth;
-    canvas.height = videoRef.current.videoHeight;
+    const rawW = videoEl.videoWidth || 640;
+    const rawH = videoEl.videoHeight || 480;
+    const scale = Math.min(1, 900 / Math.max(rawW, rawH));
+    canvas.width = Math.max(1, Math.round(rawW * scale));
+    canvas.height = Math.max(1, Math.round(rawH * scale));
+
     const ctx = canvas.getContext('2d');
-    if (ctx) {
-      ctx.filter = getComputedStyle(videoRef.current).filter;
-      ctx.drawImage(videoRef.current, 0, 0);
-      canvas.toBlob(async (blob) => {
-        if (!blob) return;
-        setIsUploading(true);
-        const stream = videoRef.current?.srcObject as MediaStream;
-        stream?.getTracks().forEach(t => t.stop());
-        setShowCamera(false);
-        try { const { url } = await uploadToCloudinary(blob); await sendMessage('', url); }
-        catch(err) { alert("Failed to send photo."); } finally { setIsUploading(false); }
-      }, 'image/jpeg', 0.9);
+    if (!ctx) return;
+
+    ctx.filter = getComputedStyle(videoEl).filter;
+    ctx.drawImage(videoEl, 0, 0, canvas.width, canvas.height);
+
+    const stream = videoEl.srcObject as MediaStream | null;
+    const snapshotUrl = canvas.toDataURL('image/jpeg', 0.68);
+    stream?.getTracks().forEach(t => t.stop());
+    videoEl.srcObject = null;
+    setShowCamera(false);
+
+    setIsUploading(true);
+    try {
+      const compressed = await compressImage(snapshotUrl, 850, 850, 0.62);
+      await sendMessage('', compressed);
+    } catch {
+      showNotice("Failed to send photo.");
+    } finally {
+      setIsUploading(false);
     }
   };
 
@@ -987,18 +1135,20 @@ export function Chat() {
                       )}
 
                       {m.imageUrl && (
-                        <img src={m.imageUrl} alt="attachment" className="w-full rounded-lg mb-2 object-cover max-h-64" />
+                        <img src={m.imageUrl} loading="lazy" alt="attachment" className="w-full rounded-lg mb-2 object-cover max-h-64 bg-black/10" />
                       )}
                       {m.videoUrl && (
-                        <video src={m.videoUrl} controls className="w-full rounded-lg mb-2 max-h-64 object-cover" />
+                        <video src={m.videoUrl} controls playsInline preload="metadata" className="w-full rounded-lg mb-2 max-h-64 object-cover" />
                       )}
                       {m.audioUrl && (
-                        <div className="space-y-1.5 min-w-[200px]">
+                        <div className="space-y-1.5 min-w-[220px]">
                           <div className={`flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider ${isMe ? 'text-pink-100' : 'text-zinc-500'}`}>
                             <Mic size={10} />
                             <span>Voice Message</span>
                           </div>
-                          <audio src={m.audioUrl} controls className={`w-full h-8 rounded-lg ${isMe ? 'brightness-200 contrast-75' : ''}`} />
+                          <div className="bg-white/95 dark:bg-zinc-900 rounded-xl p-1 shadow-sm">
+                            <audio src={m.audioUrl} controls preload="metadata" playsInline className="w-full h-9" />
+                          </div>
                         </div>
                       )}
                       {m.content && <p className="mt-0.5 leading-relaxed">{m.content}</p>}
@@ -1118,6 +1268,12 @@ export function Chat() {
       
       {/* Input */}
       <div className="shrink-0 p-3 sm:p-4 border-t border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 z-20 w-full shadow-lg">
+        {chatErrorToast && (
+          <div className="mb-2 px-3 py-2 rounded-xl bg-red-500/15 border border-red-500/30 text-red-500 text-xs font-bold flex items-center justify-between gap-2">
+            <span>{chatErrorToast}</span>
+            <button type="button" onClick={() => setChatErrorToast(null)} className="text-red-400 hover:text-red-300"><X size={14} /></button>
+          </div>
+        )}
         {/* Reply Preview Banner (#1) */}
         {replyingTo && (
           <div className="mb-2 px-3 py-2 rounded-xl bg-zinc-100 dark:bg-zinc-900 border-l-4 border-pink-600 flex items-center justify-between gap-2">
@@ -1153,27 +1309,37 @@ export function Chat() {
         )}
         <form onSubmit={handleSend} className="flex items-center gap-2 relative">
           <input type="file" ref={fileInputRef} onChange={handleFileChange} accept="image/*,video/*" className="hidden" />
-          <button 
-            type="button" 
-            onClick={() => currentUser ? fileInputRef.current?.click() : setShowAuthModal(true)} 
-            className="p-2.5 text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 transition-colors"
-            title="Attach file"
-          >
-            <Paperclip size={20} />
-          </button>
-          <button 
-            type="button" 
-            onClick={() => currentUser ? setShowCamera(true) : setShowAuthModal(true)} 
-            className="p-2.5 text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 transition-colors mr-1"
-            title="Take photo"
-          >
-            <Camera size={20} />
-          </button>
+          {!isRecordingAudio && (
+            <>
+              <button 
+                type="button" 
+                onClick={() => currentUser ? fileInputRef.current?.click() : setShowAuthModal(true)} 
+                className="p-2.5 text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 transition-colors"
+                title="Attach file"
+              >
+                <Paperclip size={20} />
+              </button>
+              <button 
+                type="button" 
+                onClick={() => currentUser ? setShowCamera(true) : setShowAuthModal(true)} 
+                className="p-2.5 text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 transition-colors mr-1"
+                title="Take photo"
+              >
+                <Camera size={20} />
+              </button>
+            </>
+          )}
           
           {isRecordingAudio ? (
-            <button type="button" onClick={stopAudioRecording} className="p-2.5 text-red-500 hover:text-red-600 transition-colors mr-1 animate-pulse" title="Stop recording">
-              <Square size={20} className="fill-current" />
-            </button>
+            <>
+              <button type="button" onClick={() => stopAudioRecording(true)} className="p-2.5 text-zinc-400 hover:text-red-500 transition-colors" title="Cancel recording">
+                <Trash2 size={20} />
+              </button>
+              <button type="button" onClick={() => stopAudioRecording(false)} className="px-3 py-2 rounded-full bg-red-600 hover:bg-red-700 text-white font-bold text-xs flex items-center gap-1.5 transition-colors shrink-0 shadow-md" title="Send voice message">
+                <Square size={12} className="fill-current" />
+                <span>Send {Math.floor(recordingSeconds / 60)}:{String(recordingSeconds % 60).padStart(2, '0')}</span>
+              </button>
+            </>
           ) : (
             <button 
               type="button" 
@@ -1188,7 +1354,7 @@ export function Chat() {
           {isRecordingAudio && audioStream ? (
             <div className="flex-1 bg-zinc-100 dark:bg-zinc-900 rounded-full px-4 py-2 flex items-center gap-3 overflow-hidden border border-pink-500/20">
               <div className="flex items-center gap-1.5 text-pink-500 animate-pulse shrink-0">
-                <Mic size={16} /><span className="text-[10px] font-bold uppercase tracking-tighter">Live</span>
+                <Mic size={16} /><span className="text-[10px] font-bold uppercase tracking-tighter">Rec</span>
               </div>
               <VoiceVisualizer stream={audioStream} />
             </div>

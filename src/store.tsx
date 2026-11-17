@@ -5,11 +5,17 @@ import { doc, onSnapshot } from 'firebase/firestore';
 import { db } from './lib/firebase';
 import { handleWriteQuotaError } from './lib/db';
 
+export type QualityMode = 'low' | 'high';
+
 type AppState = {
   currentUser: User | null;
   setCurrentUser: (user: User | null) => void;
   theme: 'light' | 'dark';
   toggleTheme: () => void;
+  qualityMode: QualityMode | null;
+  setQualityMode: (mode: QualityMode) => void;
+  showQualityModal: boolean;
+  setShowQualityModal: (val: boolean) => void;
   isLoading: boolean;
   introPhase: 'loading' | 'merging' | 'expanding' | 'done';
   setIntroPhase: (phase: 'loading' | 'merging' | 'expanding' | 'done') => void;
@@ -65,7 +71,23 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
     return (localStorage.getItem('theme') as 'light' | 'dark') || 'light';
   });
+  const [qualityMode, setQualityModeState] = useState<QualityMode | null>(() => {
+    const saved = localStorage.getItem('ct_quality_mode');
+    return saved === 'low' || saved === 'high' ? saved : null;
+  });
+  const [showQualityModal, setShowQualityModal] = useState<boolean>(() => {
+    const saved = localStorage.getItem('ct_quality_mode');
+    return saved !== 'low' && saved !== 'high';
+  });
   const [isLoading, setIsLoading] = useState(true);
+
+  const setQualityMode = (mode: QualityMode) => {
+    setQualityModeState(mode);
+    setShowQualityModal(false);
+    try {
+      localStorage.setItem('ct_quality_mode', mode);
+    } catch {}
+  };
 
   useEffect(() => {
     if (theme === 'dark') {
@@ -75,6 +97,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
     localStorage.setItem('theme', theme);
   }, [theme]);
+
+  useEffect(() => {
+    document.documentElement.classList.toggle('low-quality', qualityMode === 'low');
+    document.documentElement.classList.toggle('high-quality', qualityMode !== 'low');
+  }, [qualityMode]);
 
   useEffect(() => {
     let unsubscribe: (() => void) | undefined;
@@ -134,6 +161,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       setCurrentUser: handleSetUser, 
       theme, 
       toggleTheme, 
+      qualityMode,
+      setQualityMode,
+      showQualityModal,
+      setShowQualityModal,
       isLoading, 
       introPhase, 
       setIntroPhase, 

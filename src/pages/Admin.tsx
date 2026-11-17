@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useAppStore } from '../store';
-import { getUsers, getReports, saveReports, getAppeals, saveAppeals, getAuditLogs, saveAuditLogs, saveUsers, getVideos, saveVideos, getAppSettings, saveAppSettings, saveNotifications, getNotifications, getAnnouncements, saveAnnouncement, deleteAnnouncement, subscribeToAnnouncements, subscribeToVerificationRequests, voteOnVerificationRequest, updateVerificationRequestStatus, updateUserVerificationStatus, subscribeToSuggestions, getVerificationRequests, updateDoc, doc, db, wipeUserFromSystem, getCentralProRequests, approveCentralProPayment, declineCentralProPayment } from '../lib/db';
+import { getUsers, getReports, saveReports, resolveReport, getAppeals, saveAppeals, getAuditLogs, saveAuditLogs, addAuditLog, saveUsers, updateUser, getVideos, saveVideos, getAppSettings, saveAppSettings, saveNotifications, addNotifications, getNotifications, getAnnouncements, saveAnnouncement, deleteAnnouncement, subscribeToAnnouncements, subscribeToVerificationRequests, voteOnVerificationRequest, updateVerificationRequestStatus, updateUserVerificationStatus, subscribeToSuggestions, getVerificationRequests, updateDoc, doc, db, wipeUserFromSystem, getCentralProRequests, approveCentralProPayment, declineCentralProPayment } from '../lib/db';
+import { setDoc } from 'firebase/firestore';
 import { User, Report, Appeal, AuditLog, Video, AppNotification, Announcement, VerificationRequest, AppSuggestion, CentralProRequest } from '../types';
 import { ShieldAlert, AlertTriangle, Users, FileText, CheckCircle, XCircle, Trash2, Ban, Search, Filter, RotateCcw, Loader2, Power, Gamepad2, Settings, Megaphone, Plus, Calendar, Palette, Maximize, Target, Layout as LayoutIcon, Ghost, X, Lightbulb, UserCheck, HelpCircle, Rocket } from 'lucide-react';
 import { getDeviceId } from '../lib/utils';
@@ -181,6 +182,7 @@ export function Admin() {
     reasonLabel?: string;
     reasonPlaceholder?: string;
     loading?: boolean;
+    error?: string | null;
     isBanAction?: boolean;
     targetUserId?: string;
   }>({ isOpen: false, title: '', action: async () => {}, requireReason: false });
@@ -341,17 +343,20 @@ export function Admin() {
   }
 
   const logAction = async (action: string, targetId: string, details: string) => {
-    const allLogs = await getAuditLogs();
-    allLogs.push({
-      id: `log_${Date.now()}`,
+    const newLog: AuditLog = {
+      id: `log_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
       action,
       adminId: currentUser!.id,
       targetId,
       details,
       timestamp: Date.now()
-    });
-    await saveAuditLogs(allLogs);
-    setLogs(allLogs);
+    };
+    try {
+      await addAuditLog(newLog);
+    } catch (err) {
+      console.warn("Audit log saved locally; remote sync deferred:", err);
+    }
+    setLogs(prev => [...prev, newLog]);
   };
 
   const redoAuditAction = async (log: AuditLog) => {
@@ -429,78 +434,93 @@ export function Admin() {
 
   const handleConfirmAction = async () => {
     if (confirmModal.requireReason && !actionReason.trim()) return;
-    setConfirmModal(prev => ({ ...prev, loading: true }));
+    setConfirmModal(prev => ({ ...prev, loading: true, error: null }));
     try {
       await confirmModal.action(actionReason.trim(), wipeSystemCheck);
-      setConfirmModal({ isOpen: false, title: '', action: async () => {}, requireReason: false, loading: false });
+      setConfirmModal({ isOpen: false, title: '', action: async () => {}, requireReason: false, loading: false, error: null });
       setActionReason('');
       setWipeSystemCheck(false);
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      setConfirmModal(prev => ({ ...prev, loading: false }));
+      setConfirmModal(prev => ({
+        ...prev,
+        loading: false,
+        error: err?.message || 'Action failed. Please check your connection and try again.'
+      }));
     }
   };
 
   // Report actions
   const handleResolveReport = (report: Report, status: 'accepted' | 'rejected') => {
     executeWithConfirm(`Resolve Report as ${status.toUpperCase()}`, async (reason) => {
-      // Use the centralized resolveReport helper
-      const { resolveReport: dbResolveReport } = await import('../lib/db');
-      
       if (status === 'accepted') {
-        const allReports = await getReports();
-        const idx = allReports.findIndex(r => r.id === report.id);
-        if (idx !== -1) {
-          // If accepted, we still need to handle video removal and tradient rewards logic here
-          // as it's specific to the admin UI flow
+        if (report.videoId && report.videoId !== 'general_support') {
           const vids = await getVideos();
-          const vIdx = vids.findIndex(v => v.id === report.videoId);
-          if (vIdx !== -1) {
-             vids[vIdx].isRemoved = true;
-             vids[vIdx].removalReason = reason;
-             await saveVideos(vids);
-             setVideos(vids);
+          const targetVid = vids.find(v => v.id === report.videoId);
+          if (targetVid) {
+            const updatedVid = { ...targetVid, isRemoved: true, removalReason: reason };
+            setVideos(prev => prev.map(v => v.id === report.videoId ? updatedVid : v));
+            try {
+              await setDoc(doc(db, 'videos', report.videoId), { isRemoved: true, removalReason: reason }, { merge: true });
+            } catch (e) {
+              console.warn('Video removal remote sync deferred:', e);
+            }
+          }
+        }
+
+        const allUsers = await getUsers();
+        const reporter = allUsers.find(u => u.id === report.reporterId);
+        if (reporter) {
+          const nextCount = (reporter.acceptedReportsCount || 0) + 1;
+          const nextBadges = [...(reporter.badges || [])];
+          const earnedTradient = nextCount === 3 && !nextBadges.includes('Tradient');
+          if (earnedTradient) {
+            nextBadges.push('Tradient');
           }
 
-          const allUsers = await getUsers();
-          const reporterIdx = allUsers.findIndex(u => u.id === report.reporterId);
-          if (reporterIdx !== -1) {
-            const reporter = allUsers[reporterIdx];
-            reporter.acceptedReportsCount = (reporter.acceptedReportsCount || 0) + 1;
-            if (reporter.acceptedReportsCount === 3 && !(reporter.badges || []).includes('Tradient')) {
-              reporter.badges = [...(reporter.badges || []), 'Tradient'];
-              // Send important notification for Tradient reward
-              const tradientNotif: AppNotification = {
-                id: `notif_tradient_${Date.now()}`,
-                userId: reporter.id,
-                type: 'tradient_reward',
-                fromUserId: currentUser!.id,
-                title: '🏆 Tradient Badge Earned!',
-                message: "Congratulations! Your reports have been consistently accurate. You've been rewarded with the exclusive Tradient Badge. Check it out!",
-                read: false,
-                timestamp: Date.now(),
-                isImportant: true,
-                actionButton: {
-                  text: 'Check it out',
-                  action: 'show_tradient_info'
-                }
-              };
-              const allNotifs = await getNotifications();
-              await saveNotifications([...allNotifs, tradientNotif]);
-            }
-            await saveUsers(allUsers);
-            setUsers(allUsers);
+          setUsers(prev => prev.map(u => u.id === reporter.id ? { ...u, acceptedReportsCount: nextCount, badges: nextBadges } : u));
+
+          try {
+            await updateUser(reporter.id, {
+              acceptedReportsCount: nextCount,
+              badges: nextBadges
+            });
+          } catch (e) {
+            console.warn('Reporter stats update deferred:', e);
+          }
+
+          if (earnedTradient) {
+            const tradientNotif: AppNotification = {
+              id: `notif_tradient_${Date.now()}`,
+              userId: reporter.id,
+              type: 'tradient_reward',
+              fromUserId: currentUser!.id,
+              title: '🏆 Tradient Badge Earned!',
+              message: "Congratulations! Your reports have been consistently accurate. You've been rewarded with the exclusive Tradient Badge. Check it out!",
+              read: false,
+              timestamp: Date.now(),
+              isImportant: true,
+              actionButton: {
+                text: 'Check it out',
+                action: 'show_tradient_info'
+              }
+            };
+            await addNotifications([tradientNotif]);
           }
         }
       }
 
-      // This helper updates the status and sends the notification to the reporter
-      await dbResolveReport(report.id, currentUser!.id, currentUser!.username, reason);
-      
-      // Update local state
-      const updatedReports = await getReports();
-      setReports(updatedReports);
-      
+      const nextStatus: 'resolved' | 'rejected' = status === 'accepted' ? 'resolved' : 'rejected';
+
+      // Resolve in Firestore & immediately update cache + local state
+      await resolveReport(report.id, currentUser!.id, currentUser!.username, reason, nextStatus, report);
+
+      setReports(prev => prev.map(r =>
+        r.id === report.id
+          ? { ...r, status: nextStatus, resolvedBy: currentUser!.id, adminNotes: reason }
+          : r
+      ));
+
       await logAction(`report_${status}`, report.id, `Report resolved. Notes: ${reason}`);
     }, true, 'Moderator Note / Reason', 'State why this report is resolved...');
   };
@@ -2078,7 +2098,13 @@ export function Admin() {
             <h3 className="text-2xl font-black mb-2 uppercase tracking-tighter">{pinModal.title}</h3>
             <p className="text-zinc-500 text-sm mb-6">Enter Owner PIN to proceed</p>
             
-            <div className="space-y-4">
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                verifyPin();
+              }}
+              className="space-y-4"
+            >
               <input 
                 type="password"
                 maxLength={4}
@@ -2091,19 +2117,20 @@ export function Admin() {
               
               <div className="flex gap-3">
                 <button 
+                  type="button"
                   onClick={() => setPinModal(prev => ({ ...prev, isOpen: false }))}
                   className="flex-1 py-4 font-black bg-zinc-200 dark:bg-zinc-800 rounded-2xl uppercase text-xs"
                 >
                   Cancel
                 </button>
                 <button 
-                  onClick={verifyPin}
+                  type="submit"
                   className="flex-1 py-4 font-black bg-pink-600 text-white rounded-2xl uppercase text-xs shadow-lg shadow-pink-600/30"
                 >
                   Verify
                 </button>
               </div>
-            </div>
+            </form>
           </motion.div>
         </div>
       )}
@@ -2206,6 +2233,11 @@ export function Admin() {
               </div>
             ) : (
               <p className="text-zinc-500 mb-6">Are you sure you want to perform this action?</p>
+            )}
+            {confirmModal.error && (
+              <div className="mb-4 p-3 rounded-xl bg-red-500/15 border border-red-500/30 text-red-500 text-xs font-semibold">
+                {confirmModal.error}
+              </div>
             )}
             <div className="flex gap-3">
               <button 
