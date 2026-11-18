@@ -178,7 +178,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
         }
       });
       incoming.forEach(message => knownMessageIds.current.add(message.id));
-    });
+    }, currentUser.id);
 
     return () => unsubscribe();
   }, [currentUser?.id]);
@@ -405,7 +405,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
           ? (prev.isPlaying ? prev.currentTime + (now - prev.syncedAt) / 1000 : prev.currentTime)
           : 0;
         const scrubbed = prev ? Math.abs((parsed.currentTime || 0) - expectedTime) > 3.5 : false;
-        const heartbeatDue = !prev || (Boolean(parsed.isPlaying) && now - prev.syncedAt > 20000);
+        const heartbeatDue = !prev || (Boolean(parsed.isPlaying) && now - prev.syncedAt > 60000);
 
         if (trackChanged || playToggled || scrubbed || heartbeatDue) {
           const nextSeq = trackChanged ? ((prev?.trackSeq || 0) + 1) : (prev?.trackSeq || 1);
@@ -433,25 +433,36 @@ export function Layout({ children }: { children: React.ReactNode }) {
       } catch {}
     };
 
+    let lastMusicMsgJson = '';
+    let musicSyncTimer: ReturnType<typeof setTimeout> | null = null;
     const handleMusicMessage = (event: MessageEvent) => {
       if (event.data && event.data.type === 'CENTRALMUSIC_TRACK_STATE' && event.data.payload) {
-        try {
-          localStorage.setItem('aura_current_track', JSON.stringify(event.data.payload));
-        } catch {}
-        syncLocalTrackToFirestore();
+        const payload = event.data.payload;
+        if (musicSyncTimer) clearTimeout(musicSyncTimer);
+        musicSyncTimer = setTimeout(() => {
+          try {
+            const nextJson = JSON.stringify(payload);
+            if (nextJson !== lastMusicMsgJson) {
+              lastMusicMsgJson = nextJson;
+              localStorage.setItem('aura_current_track', nextJson);
+            }
+          } catch {}
+          void syncLocalTrackToFirestore();
+        }, 0);
       }
     };
     const handleStorage = (e: StorageEvent) => {
       if (e.key === 'aura_current_track') {
-        syncLocalTrackToFirestore();
+        setTimeout(() => { void syncLocalTrackToFirestore(); }, 0);
       }
     };
 
     window.addEventListener('message', handleMusicMessage);
     window.addEventListener('storage', handleStorage);
-    syncLocalTrackToFirestore();
-    const interval = setInterval(syncLocalTrackToFirestore, 1500);
+    void syncLocalTrackToFirestore();
+    const interval = setInterval(() => { void syncLocalTrackToFirestore(); }, 5000);
     return () => {
+      if (musicSyncTimer) clearTimeout(musicSyncTimer);
       window.removeEventListener('message', handleMusicMessage);
       window.removeEventListener('storage', handleStorage);
       clearInterval(interval);
@@ -2098,10 +2109,13 @@ function GitHubUpdateBanner() {
     if (!current.jsName) return;
 
     const verifyAssetLive = async (assetPath: string): Promise<boolean> => {
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) return false;
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 8000);
       try {
         const resolved = new URL(assetPath, window.location.href);
         resolved.searchParams.set('__upd_verify', String(Date.now()));
-        const res = await fetch(resolved.href, { cache: 'no-store' });
+        const res = await fetch(resolved.href, { cache: 'no-store', signal: controller.signal });
         if (!res.ok) return false;
         const ct = (res.headers.get('content-type') || '').toLowerCase();
         // GitHub Pages serves text/html for 404 fallback pages if bundle is still uploading
@@ -2113,12 +2127,18 @@ function GitHubUpdateBanner() {
         return true;
       } catch {
         return false;
+      } finally {
+        clearTimeout(timeout);
       }
     };
 
     const checkForRelease = async () => {
       if (checkingRef.current || detectedRef.current) return;
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
       checkingRef.current = true;
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 8000);
       try {
         const basePath = window.location.pathname.endsWith('.html') || window.location.pathname.endsWith('/')
           ? window.location.pathname
@@ -2126,7 +2146,7 @@ function GitHubUpdateBanner() {
         const checkUrl = new URL(basePath || './', window.location.origin);
         checkUrl.searchParams.set('__gh_check', String(Date.now()));
 
-        const res = await fetch(checkUrl.href, { cache: 'no-store' });
+        const res = await fetch(checkUrl.href, { cache: 'no-store', signal: controller.signal });
         if (!res.ok) return;
         const html = await res.text();
         if (!html || !html.includes('<div id="root">')) return;
@@ -2150,23 +2170,38 @@ function GitHubUpdateBanner() {
       } catch {
         // Ignore transient network errors
       } finally {
+        clearTimeout(timeout);
         checkingRef.current = false;
       }
     };
 
+    let settleTimer: ReturnType<typeof setTimeout> | null = null;
+    const scheduleReleaseCheck = (delayMs = 2500) => {
+      if (settleTimer) clearTimeout(settleTimer);
+      settleTimer = setTimeout(() => {
+        void checkForRelease();
+      }, delayMs);
+    };
+
     const initialTimer = setTimeout(checkForRelease, 8000);
-    const interval = setInterval(checkForRelease, 25000);
+    const interval = setInterval(checkForRelease, 45000);
     const onVisibility = () => {
       if (document.visibilityState === 'visible') {
-        checkForRelease();
+        scheduleReleaseCheck(2500);
       }
     };
+    const onOnline = () => {
+      scheduleReleaseCheck(2500);
+    };
     document.addEventListener('visibilitychange', onVisibility);
+    window.addEventListener('online', onOnline);
 
     return () => {
+      if (settleTimer) clearTimeout(settleTimer);
       clearTimeout(initialTimer);
       clearInterval(interval);
       document.removeEventListener('visibilitychange', onVisibility);
+      window.removeEventListener('online', onOnline);
     };
   }, []);
 

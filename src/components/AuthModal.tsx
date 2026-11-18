@@ -146,7 +146,9 @@ export function AuthModal({ onClose }: { onClose: () => void }) {
             <div>
               <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1">Email</label>
               <input 
-                type="email" 
+                type="email"
+                name="email"
+                autoComplete="email"
                 value={email}
                 onChange={e => setEmail(e.target.value)}
                 className="w-full px-4 py-2 bg-zinc-100 dark:bg-zinc-800 border-transparent focus:bg-white dark:focus:bg-zinc-900 focus:border-pink-500 focus:ring-2 focus:ring-pink-500 rounded-lg outline-none text-zinc-900 dark:text-white transition-all"
@@ -157,6 +159,8 @@ export function AuthModal({ onClose }: { onClose: () => void }) {
               <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1">Password</label>
               <input 
                 type="password"
+                name="password"
+                autoComplete={isSignUp ? 'new-password' : 'current-password'}
                 value={password}
                 onChange={e => setPassword(e.target.value)}
                 className="w-full px-4 py-2 bg-zinc-100 dark:bg-zinc-800 border-transparent focus:bg-white dark:focus:bg-zinc-900 focus:border-pink-500 focus:ring-2 focus:ring-pink-500 rounded-lg outline-none text-zinc-900 dark:text-white transition-all"

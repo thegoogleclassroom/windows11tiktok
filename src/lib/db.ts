@@ -1,4 +1,4 @@
-import { collection, doc, getDocs, setDoc, updateDoc, writeBatch, arrayUnion, arrayRemove, getDoc, onSnapshot, deleteDoc, increment } from 'firebase/firestore';
+import { collection, doc, getDocs, setDoc, updateDoc, writeBatch, arrayUnion, arrayRemove, getDoc, onSnapshot, deleteDoc, increment, query, where } from 'firebase/firestore';
 import { db, auth } from './firebase';
 export { db, doc, updateDoc, getDoc };
 import { User, Video, Message, AppNotification, Report, Appeal, AuditLog, Comment, Story, FAQCategory, FAQPost, ForumEditRequest, GroupChat, UserStatus, GameData, WatchParty, Announcement, Call, VerificationRequest, AppSuggestion, SneakPeek, CentralProRequest, LiveStream, LiveRtcSignal } from '../types';
@@ -196,18 +196,18 @@ const inflightFetches = new Map<string, Promise<any[]>>();
 let quotaBlockedUntil = 0;
 
 const COLLECTION_TTL_MS: Record<string, number> = {
-  users: 60_000,
-  videos: 45_000,
-  stories: 45_000,
-  announcements: 45_000,
-  faq_categories: 60_000,
-  faq_posts: 45_000,
-  sneak_peeks: 45_000,
-  app_suggestions: 45_000,
-  messages: 15_000,
-  notifications: 20_000,
-  group_chats: 25_000,
-  user_statuses: 10_000,
+  users: 120_000,
+  videos: 90_000,
+  stories: 60_000,
+  announcements: 120_000,
+  faq_categories: 120_000,
+  faq_posts: 90_000,
+  sneak_peeks: 90_000,
+  app_suggestions: 90_000,
+  messages: 20_000,
+  notifications: 30_000,
+  group_chats: 30_000,
+  user_statuses: 15_000,
 };
 
 const getCollectionTtl = (collName: string) => COLLECTION_TTL_MS[collName] ?? 30_000;
@@ -327,6 +327,19 @@ const setCachedCollection = <T>(collName: string, items: T[], updateTimestamp = 
       } catch {}
     }
   }
+};
+
+const upsertCachedCollection = <T extends { id?: string }>(collName: string, incoming: T[], matchReplace?: (item: T) => boolean) => {
+  const existing = getCachedCollection<T>(collName);
+  const incomingIds = new Set(incoming.map(i => i?.id).filter(Boolean));
+  const kept = existing.filter(item => {
+    if (item?.id && incomingIds.has(item.id)) return false;
+    if (matchReplace && matchReplace(item)) return false;
+    return true;
+  });
+  const combined = [...kept, ...incoming];
+  setCachedCollection(collName, combined, false);
+  return combined;
 };
 
 const recordCollectionSnapshot = <T extends { id?: string }>(collName: string, items: T[]) => {
@@ -505,7 +518,14 @@ export const updateUserListeningState = async (userId: string, listeningState: U
   try {
     const cached = getCachedCollection<User>('users');
     if (cached.length > 0) {
-      setCachedCollection('users', cached.map(u => u.id === userId ? { ...u, listeningState: cleaned || undefined } : u), false);
+      const nextUsers = cached.map(u => u.id === userId ? { ...u, listeningState: cleaned || undefined } : u);
+      const prevMem = readCache.get('users');
+      readCache.set('users', { data: nextUsers, fetchedAt: prevMem?.fetchedAt || 0 });
+      setTimeout(() => {
+        try {
+          localStorage.setItem('ct_cache_users', JSON.stringify(nextUsers));
+        } catch {}
+      }, 0);
     }
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('ct-user-listening-updated', { detail: { userId, listeningState: cleaned } }));
@@ -719,12 +739,25 @@ export const markMessagesSeen = async (messageIds: string[], userId: string) => 
   }
 };
 
-export const subscribeToMessages = (callback: (messages: Message[]) => void) => {
-  return onSnapshot(collection(db, 'messages'), (snapshot) => {
-    const msgs = snapshot.docs.map(doc => doc.data() as Message);
+export const subscribeToMessages = (callback: (messages: Message[]) => void, targetUserId?: string) => {
+  if (isQuotaBlocked()) {
+    const cached = getCachedCollection<Message>('messages');
+    callback(targetUserId ? cached.filter(m => m.toUserId === targetUserId) : cached);
+    return () => {};
+  }
+  const q = targetUserId
+    ? query(collection(db, 'messages'), where('toUserId', '==', targetUserId))
+    : collection(db, 'messages');
+  return onSnapshot(q, (snapshot) => {
+    const msgs = snapshot.docs.map(d => d.data() as Message);
     recordCollectionSnapshot('messages', msgs);
-    setCachedCollection('messages', msgs, true);
-    callback(mergeWithUnsyncedMessages('messages', msgs));
+    if (targetUserId) {
+      upsertCachedCollection('messages', msgs, (m) => m.toUserId === targetUserId);
+      callback(mergeWithUnsyncedMessages('messages', msgs).filter(m => m.toUserId === targetUserId));
+    } else {
+      setCachedCollection('messages', msgs, true);
+      callback(mergeWithUnsyncedMessages('messages', msgs));
+    }
   }, (err) => {
     if (!handleWriteQuotaError(err)) {
       console.warn("Messages subscription error:", err);
@@ -734,11 +767,18 @@ export const subscribeToMessages = (callback: (messages: Message[]) => void) => 
 
 export const subscribeToChannelMessages = (channelId: string, callback: (messages: Message[]) => void) => {
   if (!channelId) return () => {};
-  return onSnapshot(collection(db, 'messages'), (snapshot) => {
-    const allMsgs = mergeWithUnsyncedMessages('messages', snapshot.docs.map(d => d.data() as Message));
-    const filtered = allMsgs
-      .filter(m => m.groupId === channelId)
-      .sort((a, b) => a.timestamp - b.timestamp);
+  if (isQuotaBlocked()) {
+    const cached = mergeWithUnsyncedMessages('messages', getCachedCollection<Message>('messages'));
+    callback(cached.filter(m => m.groupId === channelId).sort((a, b) => a.timestamp - b.timestamp));
+    return () => {};
+  }
+  const q = query(collection(db, 'messages'), where('groupId', '==', channelId));
+  return onSnapshot(q, (snapshot) => {
+    const chanMsgs = snapshot.docs.map(d => d.data() as Message);
+    recordCollectionSnapshot('messages', chanMsgs);
+    upsertCachedCollection('messages', chanMsgs, (m) => m.groupId === channelId);
+    const unsynced = getUnsyncedMessages().filter(m => m.groupId === channelId && !chanMsgs.some(r => r.id === m.id));
+    const filtered = [...chanMsgs, ...unsynced].sort((a, b) => a.timestamp - b.timestamp);
     callback(filtered);
   }, (err) => {
     handleWriteQuotaError(err);
@@ -927,13 +967,16 @@ const getGroupVoiceDocId = (groupId: string, idA: string, idB: string) => {
 };
 
 export const subscribeToGroupVoiceSignals = (groupId: string, userId: string, callback: (signals: any[]) => void) => {
-  if (!groupId || !userId) return () => {};
-  return onSnapshot(collection(db, 'calls'), (snap) => {
+  if (!groupId || !userId || isQuotaBlocked()) return () => {};
+  const q = query(collection(db, 'calls'), where('groupId', '==', groupId));
+  return onSnapshot(q, (snap) => {
     const signals = snap.docs
       .map(d => d.data())
       .filter((d: any) => d.status === 'group_voice' && d.groupId === groupId && (d.offererId === userId || d.answererId === userId));
     callback(signals);
-  }, () => {});
+  }, (err) => {
+    handleWriteQuotaError(err);
+  });
 };
 
 export const sendGroupVoiceOffer = async (groupId: string, offererId: string, answererId: string, offer: any) => {
@@ -985,7 +1028,7 @@ export const addGroupVoiceCandidate = async (groupId: string, idA: string, idB: 
 export const cleanupGroupVoiceSignals = async (groupId: string, userId: string) => {
   if (isQuotaBlocked()) return;
   try {
-    const snap = await getDocs(collection(db, 'calls'));
+    const snap = await getDocs(query(collection(db, 'calls'), where('groupId', '==', groupId)));
     const toDelete = snap.docs.filter(d => {
       const data: any = d.data();
       return data.status === 'group_voice' && data.groupId === groupId && (data.offererId === userId || data.answererId === userId);
@@ -1077,10 +1120,16 @@ export const markNotificationAsRead = async (notificationId: string) => {
 };
 
 export const subscribeToNotifications = (userId: string, callback: (notifications: AppNotification[]) => void) => {
-  return onSnapshot(collection(db, 'notifications'), (snapshot) => {
-    const allNotifs = snapshot.docs.map(doc => doc.data() as AppNotification);
-    setCachedCollection('notifications', allNotifs, true);
-    callback(allNotifs.filter(n => n.userId === userId));
+  if (!userId) return () => {};
+  if (isQuotaBlocked()) {
+    callback(getCachedCollection<AppNotification>('notifications').filter(n => n.userId === userId));
+    return () => {};
+  }
+  const q = query(collection(db, 'notifications'), where('userId', '==', userId));
+  return onSnapshot(q, (snapshot) => {
+    const userNotifs = snapshot.docs.map(d => d.data() as AppNotification);
+    upsertCachedCollection('notifications', userNotifs, (n) => n.userId === userId);
+    callback(userNotifs);
   }, (err) => {
     if (!handleWriteQuotaError(err)) {
       console.warn("Notification subscription error:", err);
@@ -1839,15 +1888,13 @@ export const subscribeToWatchParty = (partyId: string, callback: (party: WatchPa
 };
 
 export const subscribeToWatchPartiesByGroup = (groupId: string, callback: (parties: WatchParty[]) => void) => {
-  const partiesRef = collection(db, 'watch_parties');
-  // We'll use a snapshot and filter client-side for simplicity in the absence of complex indexes
-  return onSnapshot(partiesRef, (snap) => {
-    const parties = snap.docs
-      .map(doc => doc.data() as WatchParty)
-      .filter(p => p.groupId === groupId);
+  if (!groupId || isQuotaBlocked()) return () => {};
+  const q = query(collection(db, 'watch_parties'), where('groupId', '==', groupId));
+  return onSnapshot(q, (snap) => {
+    const parties = snap.docs.map(d => d.data() as WatchParty);
     callback(parties);
   }, (err) => {
-    // Suppress connection warning
+    handleWriteQuotaError(err);
   });
 };
 
@@ -1925,14 +1972,15 @@ export const updateCallStatus = async (callId: string, status: Call['status'], e
 };
 
 export const subscribeToIncomingCalls = (userId: string, callback: (calls: Call[]) => void) => {
-  const callsRef = collection(db, 'calls');
-  return onSnapshot(callsRef, (snap) => {
+  if (!userId || isQuotaBlocked()) return () => {};
+  const q = query(collection(db, 'calls'), where('receiverId', '==', userId));
+  return onSnapshot(q, (snap) => {
     const calls = snap.docs
-      .map(doc => doc.data() as Call)
-      .filter(c => c.receiverId === userId && c.status === 'offering');
+      .map(d => d.data() as Call)
+      .filter(c => c.status === 'offering');
     callback(calls);
   }, (err) => {
-    // Suppress connection warning
+    handleWriteQuotaError(err);
   });
 };
 
@@ -1961,7 +2009,17 @@ export const getLiveRtcDocId = (streamId: string, viewerId: string) => {
 };
 
 export const subscribeToLiveStreams = (callback: (streams: LiveStream[]) => void) => {
-  return onSnapshot(collection(db, 'watch_parties'), (snap) => {
+  if (isQuotaBlocked()) {
+    try {
+      const cached = JSON.parse(localStorage.getItem('ct_cache_live_streams') || '[]') as LiveStream[];
+      callback(cached.filter(s => s.status === 'live'));
+    } catch {
+      callback([]);
+    }
+    return () => {};
+  }
+  const q = query(collection(db, 'watch_parties'), where('status', '==', 'live'));
+  return onSnapshot(q, (snap) => {
     const now = Date.now();
     const streams = snap.docs
       .map(d => d.data() as any)
@@ -1971,7 +2029,8 @@ export const subscribeToLiveStreams = (callback: (streams: LiveStream[]) => void
       localStorage.setItem('ct_cache_live_streams', JSON.stringify(streams));
     } catch {}
     callback(streams);
-  }, () => {
+  }, (err) => {
+    handleWriteQuotaError(err);
     try {
       const cached = JSON.parse(localStorage.getItem('ct_cache_live_streams') || '[]') as LiveStream[];
       callback(cached.filter(s => s.status === 'live'));
@@ -2090,7 +2149,7 @@ export const endLiveStream = async (streamId: string) => {
     handleWriteQuotaError(err);
   }
   try {
-    const snap = await getDocs(collection(db, 'calls'));
+    const snap = await getDocs(query(collection(db, 'calls'), where('streamId', '==', streamId)));
     const toDelete = snap.docs.filter(d => {
       const data = d.data() as any;
       return data?.status === 'live_rtc' && data?.streamId === streamId;
@@ -2103,13 +2162,16 @@ export const endLiveStream = async (streamId: string) => {
 
 export const subscribeToLiveChat = (streamId: string, callback: (messages: Message[]) => void) => {
   const channelId = `live_chat_${streamId}`;
-  return onSnapshot(collection(db, 'messages'), (snapshot) => {
+  if (!streamId || isQuotaBlocked()) return () => {};
+  const q = query(collection(db, 'messages'), where('groupId', '==', channelId));
+  return onSnapshot(q, (snapshot) => {
     const msgs = snapshot.docs
       .map(d => d.data() as Message)
-      .filter(m => m.groupId === channelId)
       .sort((a, b) => a.timestamp - b.timestamp);
     callback(msgs);
-  }, () => {});
+  }, (err) => {
+    handleWriteQuotaError(err);
+  });
 };
 
 export const sendLiveChatMessage = async (streamId: string, msg: Message) => {
@@ -2120,13 +2182,16 @@ export const sendLiveChatMessage = async (streamId: string, msg: Message) => {
 };
 
 export const subscribeToLiveRtcHost = (streamId: string, callback: (signals: LiveRtcSignal[]) => void) => {
-  if (!streamId) return () => {};
-  return onSnapshot(collection(db, 'calls'), (snap) => {
+  if (!streamId || isQuotaBlocked()) return () => {};
+  const q = query(collection(db, 'calls'), where('streamId', '==', streamId));
+  return onSnapshot(q, (snap) => {
     const signals = snap.docs
       .map(d => d.data() as any)
       .filter((d): d is LiveRtcSignal => d?.status === 'live_rtc' && d.streamId === streamId);
     callback(signals);
-  }, () => {});
+  }, (err) => {
+    handleWriteQuotaError(err);
+  });
 };
 
 export const subscribeToLiveRtcViewer = (streamId: string, viewerId: string, callback: (signal: LiveRtcSignal | null) => void) => {

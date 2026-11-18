@@ -2260,6 +2260,7 @@ export function Admin() {
             >
               <input 
                 type="password"
+                autoComplete="one-time-code"
                 maxLength={4}
                 value={pinInput}
                 onChange={e => setPinInput(e.target.value)}
