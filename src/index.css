@@ -172,5 +172,96 @@ html.low-quality .wiggy-btn:active {
   will-change: auto !important;
 }
 
+/* ======================================================
+   SITE SHUTDOWN SCREEN: RED-TO-PURPLE PIN & ROBLOX CHASE
+   ====================================================== */
 
+@keyframes red-to-purple-fade {
+  0% {
+    color: #ef4444;
+    text-shadow: 0 0 10px rgba(239, 68, 68, 0.75);
+  }
+  50% {
+    color: #ec4899;
+    text-shadow: 0 0 12px rgba(236, 72, 153, 0.75);
+  }
+  100% {
+    color: #a855f7;
+    text-shadow: 0 0 14px rgba(168, 85, 247, 0.85);
+  }
+}
 
+.animate-red-to-purple {
+  display: inline-block;
+  animation: red-to-purple-fade 1.8s ease-in-out infinite alternate;
+}
+
+@keyframes roblox-chase-run {
+  0% {
+    transform: translate3d(110vw, 0, 0);
+  }
+  100% {
+    transform: translate3d(-460px, 0, 0);
+  }
+}
+
+@keyframes roblox-body-bob {
+  0%, 100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-6px);
+  }
+}
+
+@keyframes roblox-limb-a {
+  0%, 100% {
+    transform: rotate(-34deg);
+  }
+  50% {
+    transform: rotate(34deg);
+  }
+}
+
+@keyframes roblox-limb-b {
+  0%, 100% {
+    transform: rotate(34deg);
+  }
+  50% {
+    transform: rotate(-34deg);
+  }
+}
+
+@keyframes roblox-hammer-swing {
+  0%, 100% {
+    transform: rotate(-28deg);
+  }
+  50% {
+    transform: rotate(18deg);
+  }
+}
+
+.animate-roblox-chase {
+  animation: roblox-chase-run 5.8s linear infinite;
+  will-change: transform;
+}
+
+.animate-roblox-bob {
+  animation: roblox-body-bob 0.28s ease-in-out infinite;
+}
+
+.animate-roblox-bob-fast {
+  animation: roblox-body-bob 0.24s ease-in-out infinite;
+}
+
+.animate-roblox-limb-a {
+  animation: roblox-limb-a 0.28s ease-in-out infinite;
+}
+
+.animate-roblox-limb-b {
+  animation: roblox-limb-b 0.28s ease-in-out infinite;
+}
+
+.animate-roblox-hammer {
+  animation: roblox-hammer-swing 0.36s ease-in-out infinite;
+}

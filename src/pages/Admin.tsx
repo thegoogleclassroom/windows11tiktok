@@ -1,10 +1,10 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAppStore } from '../store';
-import { getUsers, getReports, saveReports, resolveReport, getAppeals, saveAppeals, getAuditLogs, saveAuditLogs, addAuditLog, saveUsers, updateUser, getVideos, saveVideos, getAppSettings, saveAppSettings, saveNotifications, addNotifications, getNotifications, getAnnouncements, saveAnnouncement, deleteAnnouncement, subscribeToAnnouncements, subscribeToVerificationRequests, voteOnVerificationRequest, updateVerificationRequestStatus, updateUserVerificationStatus, subscribeToSuggestions, getVerificationRequests, updateDoc, doc, db, wipeUserFromSystem, getCentralProRequests, approveCentralProPayment, declineCentralProPayment, updateReportIntercom } from '../lib/db';
+import { getUsers, getReports, saveReports, resolveReport, getAppeals, saveAppeals, getAuditLogs, saveAuditLogs, addAuditLog, saveUsers, updateUser, getVideos, saveVideos, getAppSettings, saveAppSettings, GlobalAppSettings, saveNotifications, addNotifications, getNotifications, getAnnouncements, saveAnnouncement, deleteAnnouncement, subscribeToAnnouncements, subscribeToVerificationRequests, voteOnVerificationRequest, updateVerificationRequestStatus, updateUserVerificationStatus, subscribeToSuggestions, getVerificationRequests, updateDoc, doc, db, wipeUserFromSystem, getCentralProRequests, approveCentralProPayment, declineCentralProPayment, updateReportIntercom } from '../lib/db';
 import { setDoc } from 'firebase/firestore';
 import { User, Report, Appeal, AuditLog, Video, AppNotification, Announcement, VerificationRequest, AppSuggestion, CentralProRequest } from '../types';
-import { ShieldAlert, AlertTriangle, Users, FileText, CheckCircle, XCircle, Trash2, Ban, Search, Filter, RotateCcw, Loader2, Power, Gamepad2, Settings, Megaphone, Plus, Calendar, Palette, Maximize, Target, Layout as LayoutIcon, Ghost, X, Lightbulb, UserCheck, HelpCircle, Rocket, MessageCircle, Lock, Unlock, Volume2, VolumeX } from 'lucide-react';
+import { ShieldAlert, AlertTriangle, Users, FileText, CheckCircle, XCircle, Trash2, Ban, Search, Filter, RotateCcw, Loader2, Power, Gamepad2, Settings, Megaphone, Plus, Calendar, Palette, Maximize, Target, Layout as LayoutIcon, Ghost, X, Lightbulb, UserCheck, HelpCircle, Rocket, MessageCircle, Lock, Unlock, Volume2, VolumeX, Copy, Check, Eye, EyeOff } from 'lucide-react';
 import { getDeviceId } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
 import { GAMES, APPS } from '../data/games';
@@ -157,17 +157,20 @@ export function Admin() {
 
   const [previewVideo, setPreviewVideo] = useState<Video | null>(null);
   const [zoomedImage, setZoomedImage] = useState<string | null>(null);
-  const [appSettings, setAppSettings] = useState<{ 
-    useCache: boolean; 
-    youtubeApiKeyIndex: number; 
-    serverCrashed: boolean; 
-    gamesAppsCrashed: boolean; 
-  }>({ 
+  const [appSettings, setAppSettings] = useState<GlobalAppSettings>({ 
     useCache: true, 
     youtubeApiKeyIndex: 0, 
     serverCrashed: false, 
-    gamesAppsCrashed: false 
+    gamesAppsCrashed: false,
+    siteShutdownMode: 'off',
+    siteShutdownPin: '',
+    siteShutdownAt: 0
   });
+  const [selectedShutdownMode, setSelectedShutdownMode] = useState<'invited' | 'full'>('invited');
+  const [invitePinDraft, setInvitePinDraft] = useState('');
+  const [showInvitePin, setShowInvitePin] = useState(false);
+  const [copiedInvitePin, setCopiedInvitePin] = useState(false);
+  const [siteShutdownError, setSiteShutdownError] = useState('');
   
   const [logSearch, setLogSearch] = useState('');
 
@@ -249,6 +252,12 @@ export function Admin() {
     if (isOwner) {
       const settings = await getAppSettings();
       setAppSettings(settings);
+      if (settings.siteShutdownMode === 'invited' || settings.siteShutdownMode === 'full') {
+        setSelectedShutdownMode(settings.siteShutdownMode);
+      }
+      if (settings.siteShutdownPin) {
+        setInvitePinDraft(settings.siteShutdownPin);
+      }
     }
   };
 
@@ -755,6 +764,60 @@ export function Admin() {
            // Start countdown
            setCountdown(10);
         }
+      }
+    });
+  };
+
+  const handleSiteShutdownApply = (mode: 'invited' | 'full') => {
+    if (!isOwner) return;
+    if (mode === 'invited' && !invitePinDraft.trim()) {
+      setSiteShutdownError('Please enter or generate an Invite PIN / Password for invited users.');
+      return;
+    }
+    setSiteShutdownError('');
+    setPinInput('');
+    setPinError(false);
+    setPinModal({
+      isOpen: true,
+      title: mode === 'invited' ? 'Shutdown Site (Invited Only)' : 'Full Site Shutdown',
+      action: async () => {
+        const nextSettings: GlobalAppSettings = {
+          ...appSettings,
+          siteShutdownMode: mode,
+          siteShutdownPin: mode === 'invited' ? invitePinDraft.trim() : '',
+          siteShutdownAt: Date.now()
+        };
+        setAppSettings(nextSettings);
+        await saveAppSettings(nextSettings);
+        await logAction(
+          'site_shutdown',
+          'system',
+          mode === 'invited'
+            ? 'Enabled Invited-Only Site Shutdown'
+            : 'Enabled Full Site Shutdown'
+        );
+      }
+    });
+  };
+
+  const handleSiteRestore = () => {
+    if (!isOwner) return;
+    setSiteShutdownError('');
+    setPinInput('');
+    setPinError(false);
+    setPinModal({
+      isOpen: true,
+      title: 'Restore Entire Site Online',
+      action: async () => {
+        const nextSettings: GlobalAppSettings = {
+          ...appSettings,
+          siteShutdownMode: 'off',
+          siteShutdownPin: '',
+          siteShutdownAt: 0
+        };
+        setAppSettings(nextSettings);
+        await saveAppSettings(nextSettings);
+        await logAction('site_restore', 'system', 'Restored entire site online');
       }
     });
   };
@@ -2045,6 +2108,173 @@ export function Admin() {
                        </button>
                     </div>
                     <p className="text-xs text-zinc-500">Disables access to the Games & Apps section.</p>
+                  </div>
+                </div>
+
+                {/* Entire Site Shutdown Control */}
+                <div className="mt-6 bg-zinc-50 dark:bg-zinc-950 p-6 rounded-2xl border border-zinc-200 dark:border-zinc-800">
+                  <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+                    <div className="flex items-center gap-2.5">
+                      <Lock className={appSettings.siteShutdownMode && appSettings.siteShutdownMode !== 'off' ? 'text-red-500' : 'text-green-500'} />
+                      <div>
+                        <h3 className="font-bold text-lg">Entire Site Shutdown</h3>
+                        <p className="text-xs text-zinc-500">
+                          Replaces the entire site UI with an opaque black shutdown screen while keeping the top Blue banner visible.
+                        </p>
+                      </div>
+                    </div>
+                    <span className={`px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest ${
+                      appSettings.siteShutdownMode === 'full'
+                        ? 'bg-red-500/15 text-red-500 border border-red-500/30'
+                        : appSettings.siteShutdownMode === 'invited'
+                        ? 'bg-purple-500/15 text-purple-400 border border-purple-500/30'
+                        : 'bg-emerald-500/15 text-emerald-500 border border-emerald-500/30'
+                    }`}>
+                      {appSettings.siteShutdownMode === 'full'
+                        ? 'Full Shutdown Active'
+                        : appSettings.siteShutdownMode === 'invited'
+                        ? 'Invited Only Active'
+                        : 'Site Online'}
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedShutdownMode('invited');
+                        setSiteShutdownError('');
+                      }}
+                      className={`p-4 rounded-xl border text-left transition-all cursor-pointer ${
+                        selectedShutdownMode === 'invited'
+                          ? 'border-purple-500 bg-purple-500/10 ring-2 ring-purple-500/20'
+                          : 'border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 hover:border-zinc-400 dark:hover:border-zinc-700'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="font-bold text-sm">Shut Down (Invited People Can Enter)</span>
+                        <Unlock size={16} className="text-purple-400 shrink-0" />
+                      </div>
+                      <p className="text-xs text-zinc-500">
+                        Shows a PIN/Password box on the shutdown screen. Share your chosen PIN with invited people to let them enter.
+                      </p>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedShutdownMode('full');
+                        setSiteShutdownError('');
+                      }}
+                      className={`p-4 rounded-xl border text-left transition-all cursor-pointer ${
+                        selectedShutdownMode === 'full'
+                          ? 'border-red-500 bg-red-500/10 ring-2 ring-red-500/20'
+                          : 'border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 hover:border-zinc-400 dark:hover:border-zinc-700'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="font-bold text-sm">Full Shutdown</span>
+                        <Lock size={16} className="text-red-500 shrink-0" />
+                      </div>
+                      <p className="text-xs text-zinc-500">
+                        Locks the entire site completely. No PIN/Password textbox will appear for visitors.
+                      </p>
+                    </button>
+                  </div>
+
+                  {selectedShutdownMode === 'invited' && (
+                    <div className="mb-4 p-4 rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 space-y-2.5">
+                      <label className="block text-xs font-bold uppercase tracking-wider text-zinc-500">
+                        Invite PIN / Password (Share this with invited people)
+                      </label>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <div className="relative flex-1 min-w-[200px]">
+                          <input
+                            type={showInvitePin ? 'text' : 'password'}
+                            autoComplete="off"
+                            value={invitePinDraft}
+                            onChange={(e) => {
+                              setInvitePinDraft(e.target.value);
+                              if (siteShutdownError) setSiteShutdownError('');
+                            }}
+                            placeholder="Enter custom PIN or password..."
+                            className="w-full bg-zinc-100 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl px-3.5 py-2.5 pr-10 text-sm font-mono outline-none focus:border-purple-500"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setShowInvitePin((v) => !v)}
+                            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-700 dark:hover:text-white p-1"
+                            title={showInvitePin ? 'Hide PIN' : 'Show PIN'}
+                          >
+                            {showInvitePin ? <EyeOff size={16} /> : <Eye size={16} />}
+                          </button>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const generated = String(Math.floor(100000 + Math.random() * 900000));
+                            setInvitePinDraft(generated);
+                            setShowInvitePin(true);
+                            setSiteShutdownError('');
+                          }}
+                          className="px-3.5 py-2.5 rounded-xl bg-zinc-200 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-700 text-xs font-bold transition-colors cursor-pointer"
+                        >
+                          Generate PIN
+                        </button>
+
+                        {invitePinDraft.trim() && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              try {
+                                navigator.clipboard.writeText(invitePinDraft.trim());
+                                setCopiedInvitePin(true);
+                                setTimeout(() => setCopiedInvitePin(false), 1800);
+                              } catch {}
+                            }}
+                            className="px-3.5 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                          >
+                            {copiedInvitePin ? <Check size={14} /> : <Copy size={14} />}
+                            <span>{copiedInvitePin ? 'Copied!' : 'Copy PIN'}</span>
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {siteShutdownError && (
+                    <p className="text-xs font-bold text-red-500 mb-3">{siteShutdownError}</p>
+                  )}
+
+                  <div className="flex flex-wrap items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={() => handleSiteShutdownApply(selectedShutdownMode)}
+                      className={`px-5 py-2.5 rounded-xl font-bold text-xs uppercase tracking-wider text-white transition-all cursor-pointer ${
+                        selectedShutdownMode === 'invited'
+                          ? 'bg-purple-600 hover:bg-purple-700'
+                          : 'bg-red-600 hover:bg-red-700'
+                      }`}
+                    >
+                      {appSettings.siteShutdownMode && appSettings.siteShutdownMode !== 'off'
+                        ? (selectedShutdownMode === 'invited' ? 'Apply / Update Invited Shutdown' : 'Switch to Full Shutdown')
+                        : (selectedShutdownMode === 'invited' ? 'Shut Down Site (Invited Only)' : 'Activate Full Site Shutdown')}
+                    </button>
+
+                    {appSettings.siteShutdownMode && appSettings.siteShutdownMode !== 'off' && (
+                      <button
+                        type="button"
+                        onClick={handleSiteRestore}
+                        className="px-5 py-2.5 rounded-xl font-bold text-xs uppercase tracking-wider bg-emerald-600 hover:bg-emerald-700 text-white transition-all cursor-pointer"
+                      >
+                        Restore Site Online
+                      </button>
+                    )}
+
+                    <span className="text-[11px] text-zinc-500">
+                      Owner access to Moderation (/admin) stays open so you can always restore the site or update the PIN.
+                    </span>
                   </div>
                 </div>
               </div>

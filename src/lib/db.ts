@@ -1688,24 +1688,54 @@ export const subscribeToSneakPeeks = (callback: (peeks: SneakPeek[]) => void) =>
   });
 };
 
-export const getAppSettings = async () => {
-  const fallback = {
-    useCache: true,
-    youtubeApiKeyIndex: 0,
-    serverCrashed: false,
-    gamesAppsCrashed: false
-  };
+const APP_SETTINGS_CACHE_KEY = 'ct_cache_app_settings';
+
+export interface GlobalAppSettings {
+  useCache: boolean;
+  youtubeApiKeyIndex: number;
+  serverCrashed: boolean;
+  gamesAppsCrashed: boolean;
+  siteShutdownMode?: 'off' | 'invited' | 'full';
+  siteShutdownPin?: string;
+  siteShutdownAt?: number;
+}
+
+const getDefaultAppSettings = (): GlobalAppSettings => ({
+  useCache: true,
+  youtubeApiKeyIndex: 0,
+  serverCrashed: false,
+  gamesAppsCrashed: false,
+  siteShutdownMode: 'off',
+  siteShutdownPin: '',
+  siteShutdownAt: 0
+});
+
+const getCachedAppSettings = (): GlobalAppSettings => {
+  try {
+    const raw = localStorage.getItem(APP_SETTINGS_CACHE_KEY);
+    if (raw) {
+      return { ...getDefaultAppSettings(), ...JSON.parse(raw) };
+    }
+  } catch {}
+  return getDefaultAppSettings();
+};
+
+const setCachedAppSettings = (settings: GlobalAppSettings) => {
+  try {
+    localStorage.setItem(APP_SETTINGS_CACHE_KEY, JSON.stringify(settings));
+  } catch {}
+};
+
+export const getAppSettings = async (): Promise<GlobalAppSettings> => {
+  const fallback = getCachedAppSettings();
   if (isQuotaBlocked()) return fallback;
   try {
     const docRef = doc(db, 'app_settings', 'global');
     const snap = await getDoc(docRef);
     if (snap.exists()) {
-      return snap.data() as {
-        useCache: boolean;
-        youtubeApiKeyIndex: number;
-        serverCrashed: boolean;
-        gamesAppsCrashed: boolean;
-      };
+      const merged = { ...getDefaultAppSettings(), ...snap.data() } as GlobalAppSettings;
+      setCachedAppSettings(merged);
+      return merged;
     }
     return fallback;
   } catch (err) {
@@ -1716,35 +1746,75 @@ export const getAppSettings = async () => {
   }
 };
 
-export const saveAppSettings = async (settings: { 
-  useCache: boolean; 
-  youtubeApiKeyIndex?: number; 
-  serverCrashed?: boolean; 
-  gamesAppsCrashed?: boolean; 
-}) => {
+export const saveAppSettings = async (settings: Partial<GlobalAppSettings> & { useCache: boolean }) => {
+  const merged: GlobalAppSettings = {
+    ...getCachedAppSettings(),
+    ...settings
+  };
+  setCachedAppSettings(merged);
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('ct-app-settings-updated', { detail: merged }));
+  }
+  if (isQuotaBlocked()) return;
   try {
     const docRef = doc(db, 'app_settings', 'global');
-    await setDoc(docRef, settings, { merge: true });
+    await setDoc(docRef, deepClean(merged), { merge: true });
   } catch (err) {
-    console.error("Error saving app settings:", err);
+    if (!handleWriteQuotaError(err)) {
+      console.error("Error saving app settings:", err);
+    }
   }
 };
 
-export const subscribeToAppSettings = (callback: (settings: any) => void) => {
-  return onSnapshot(doc(db, 'app_settings', 'global'), (docSnap) => {
-    if (docSnap.exists()) {
-      callback(docSnap.data());
+export const subscribeToAppSettings = (callback: (settings: GlobalAppSettings) => void) => {
+  const onLocalUpdate = (e: Event) => {
+    const detail = (e as CustomEvent)?.detail;
+    if (detail) {
+      callback({ ...getDefaultAppSettings(), ...detail });
     } else {
-      callback({ 
-        useCache: true, 
-        youtubeApiKeyIndex: 0, 
-        serverCrashed: false, 
-        gamesAppsCrashed: false 
-      });
+      callback(getCachedAppSettings());
+    }
+  };
+  const onStorage = (e: StorageEvent) => {
+    if (e.key === APP_SETTINGS_CACHE_KEY) {
+      callback(getCachedAppSettings());
+    }
+  };
+  if (typeof window !== 'undefined') {
+    window.addEventListener('ct-app-settings-updated', onLocalUpdate);
+    window.addEventListener('storage', onStorage);
+  }
+
+  if (isQuotaBlocked()) {
+    callback(getCachedAppSettings());
+    return () => {
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('ct-app-settings-updated', onLocalUpdate);
+        window.removeEventListener('storage', onStorage);
+      }
+    };
+  }
+
+  const unsubFirestore = onSnapshot(doc(db, 'app_settings', 'global'), (docSnap) => {
+    if (docSnap.exists()) {
+      const merged = { ...getDefaultAppSettings(), ...docSnap.data() } as GlobalAppSettings;
+      setCachedAppSettings(merged);
+      callback(merged);
+    } else {
+      callback(getCachedAppSettings());
     }
   }, (err) => {
-    // Suppress connection warning
+    handleWriteQuotaError(err);
+    callback(getCachedAppSettings());
   });
+
+  return () => {
+    unsubFirestore();
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('ct-app-settings-updated', onLocalUpdate);
+      window.removeEventListener('storage', onStorage);
+    }
+  };
 };
 
 export const clearDb = async () => {};

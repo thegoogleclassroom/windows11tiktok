@@ -1,11 +1,11 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { Home, Compass, PlusSquare, MessageSquare, User, Moon, Sun, LogIn, ShieldAlert, X, HelpCircle, Bell, BellOff, Gamepad2, ShieldCheck, Info, Rocket, Sparkles, Check, Copy, Flame, AlertTriangle, Search, Users, UserCheck, Tv, Disc, Zap, RefreshCw, Sliders, Paperclip, MessageCircle } from 'lucide-react';
+import { Home, Compass, PlusSquare, MessageSquare, User, Moon, Sun, LogIn, ShieldAlert, X, HelpCircle, Bell, BellOff, Gamepad2, ShieldCheck, Info, Rocket, Sparkles, Check, Copy, Flame, AlertTriangle, Search, Users, UserCheck, Tv, Disc, Zap, RefreshCw, Sliders, Paperclip, MessageCircle, Lock, Eye, EyeOff } from 'lucide-react';
 import { motion, AnimatePresence, MotionConfig } from 'motion/react';
 import { useAppStore } from '../store';
 import { AuthModal } from './AuthModal';
 import { MiniPlayer } from './MiniPlayer';
-import { saveReports, getMessages, getUsers, getNotifications, markNotificationAsRead, getFAQPosts, subscribeToNotifications, saveGameData, getGameData, subscribeToIncomingCalls, subscribeToMessages, updateUser, requestCentralProVerification, updateUserListeningState, subscribeToUserDoc, isQuotaBlocked, subscribeToLiveStreams } from '../lib/db';
+import { saveReports, getMessages, getUsers, getNotifications, markNotificationAsRead, getFAQPosts, subscribeToNotifications, saveGameData, getGameData, subscribeToIncomingCalls, subscribeToMessages, updateUser, requestCentralProVerification, updateUserListeningState, subscribeToUserDoc, isQuotaBlocked, subscribeToLiveStreams, subscribeToAppSettings, GlobalAppSettings } from '../lib/db';
 import { playNotificationSound } from '../lib/utils';
 import { TradientInfoModal } from './TradientInfoModal';
 import { HolographicBadge, CentralProBadge } from './UIPolish';
@@ -97,8 +97,23 @@ export function Layout({ children }: { children: React.ReactNode }) {
   const [suggestedUsers, setSuggestedUsers] = useState<Types.User[]>([]);
   const [dndEnabled, setDndEnabled] = useState<boolean>(() => localStorage.getItem('ct_dnd_enabled') === 'true');
   const [listenAlongHost, setListenAlongHost] = useState<Types.User | null>(null);
+  const [globalAppSettings, setGlobalAppSettings] = useState<GlobalAppSettings | null>(null);
+  const [shutdownUnlockKey, setShutdownUnlockKey] = useState<string>(() => {
+    try {
+      return sessionStorage.getItem('ct_shutdown_unlock_key') || '';
+    } catch {
+      return '';
+    }
+  });
   const dndRef = useRef(dndEnabled);
   const soundRef = useRef<string>(currentUser?.notificationSound || localStorage.getItem('ct_notif_sound') || 'chime');
+
+  useEffect(() => {
+    const unsub = subscribeToAppSettings((settings) => {
+      setGlobalAppSettings(settings);
+    });
+    return () => unsub();
+  }, []);
 
   useEffect(() => {
     const activeDnd = currentUser?.dndEnabled !== undefined ? currentUser.dndEnabled : (localStorage.getItem('ct_dnd_enabled') === 'true');
@@ -624,6 +639,40 @@ export function Layout({ children }: { children: React.ReactNode }) {
       return;
     }
   };
+
+  const shutdownMode = globalAppSettings?.siteShutdownMode || 'off';
+  const shutdownPin = globalAppSettings?.siteShutdownPin || '';
+  const shutdownStamp = globalAppSettings?.siteShutdownAt || 0;
+  const expectedUnlockToken = `${shutdownPin}::${shutdownStamp}`;
+  const isInvitedUnlocked =
+    shutdownMode === 'invited' &&
+    Boolean(shutdownPin) &&
+    shutdownUnlockKey === expectedUnlockToken;
+  const isOwnerAdminBypass =
+    currentUser?.role === 'owner' && location.pathname.startsWith('/admin');
+  const showSiteShutdown =
+    (shutdownMode === 'invited' || shutdownMode === 'full') &&
+    !isInvitedUnlocked &&
+    !isOwnerAdminBypass;
+
+  if (showSiteShutdown) {
+    return (
+      <div className="fixed inset-0 z-[3400] flex flex-col bg-black text-white overflow-hidden select-none">
+        <GitHubUpdateBanner />
+        <BookmarkBanner forceVisible />
+        <SiteShutdownOverlay
+          mode={shutdownMode as 'invited' | 'full'}
+          expectedPin={shutdownPin}
+          onUnlock={() => {
+            setShutdownUnlockKey(expectedUnlockToken);
+            try {
+              sessionStorage.setItem('ct_shutdown_unlock_key', expectedUnlockToken);
+            } catch {}
+          }}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col h-screen bg-white dark:bg-zinc-950 text-zinc-900 dark:text-zinc-50 overflow-hidden transition-colors">
@@ -2428,3 +2477,199 @@ function QualityComparisonModal({
   );
 }
 
+function SiteShutdownOverlay({
+  mode,
+  expectedPin,
+  onUnlock,
+}: {
+  mode: 'invited' | 'full';
+  expectedPin: string;
+  onUnlock: () => void;
+}) {
+  const [pinAttempt, setPinAttempt] = useState('');
+  const [showPinText, setShowPinText] = useState(false);
+  const [pinError, setPinError] = useState(false);
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!expectedPin || pinAttempt.trim() !== expectedPin) {
+      setPinError(true);
+      setTimeout(() => setPinError(false), 1800);
+      return;
+    }
+    onUnlock();
+  };
+
+  return (
+    <div className="flex-1 relative bg-black flex items-center justify-center p-4 overflow-hidden">
+      {/* Background: Looping Right-to-Left Roblox 2-Player Ban Hammer Chase */}
+      <div className="absolute inset-0 pointer-events-none z-0 overflow-hidden flex items-center">
+        {/* Subtle dark Roblox baseplate track across center */}
+        <div className="relative w-full h-56 flex items-end">
+          <div className="absolute bottom-6 left-0 right-0 h-[2px] bg-zinc-800/80" />
+          <div
+            className="absolute bottom-2 left-0 right-0 h-4 opacity-30"
+            style={{
+              backgroundImage: 'radial-gradient(circle, #52525b 1.5px, transparent 1.5px)',
+              backgroundSize: '20px 10px'
+            }}
+          />
+
+          {/* Two Roblox Blocky Players Running Right -> Left in Loop */}
+          <div className="animate-roblox-chase flex items-end gap-16 sm:gap-24 pb-6">
+            {/* PLAYER 1 (Ahead / Left): Classic Roblox Noob running away */}
+            <div className="relative flex flex-col items-center animate-roblox-bob-fast">
+              {/* Speed lines behind noob */}
+              <div className="absolute -right-10 top-6 flex flex-col gap-1.5 opacity-60">
+                <span className="block w-8 h-0.5 bg-zinc-400 rounded-full" />
+                <span className="block w-5 h-0.5 bg-zinc-500 rounded-full translate-x-2" />
+                <span className="block w-7 h-0.5 bg-zinc-400 rounded-full" />
+              </div>
+
+              <svg width="84" height="118" viewBox="0 0 84 118" className="overflow-visible drop-shadow-[0_0_16px_rgba(245,205,48,0.22)]">
+                {/* Back Arm (Yellow) */}
+                <g style={{ transformOrigin: '42px 46px' }} className="animate-roblox-limb-b">
+                  <rect x="34" y="42" width="16" height="36" rx="3" fill="#D4AE22" stroke="#18181b" strokeWidth="2.5" />
+                </g>
+                {/* Back Leg (Green) */}
+                <g style={{ transformOrigin: '42px 76px' }} className="animate-roblox-limb-a">
+                  <rect x="34" y="74" width="17" height="38" rx="3" fill="#3B7A3B" stroke="#18181b" strokeWidth="2.5" />
+                </g>
+                {/* Torso (Classic Roblox Blue) */}
+                <rect x="26" y="40" width="32" height="36" rx="4" fill="#0D69AC" stroke="#18181b" strokeWidth="2.5" />
+                {/* Head (Classic Roblox Yellow Blocky Cylinder) */}
+                <rect x="25" y="10" width="34" height="30" rx="7" fill="#F5CD30" stroke="#18181b" strokeWidth="2.5" />
+                {/* Classic Roblox Stud on top of head */}
+                <rect x="35" y="5" width="14" height="6" rx="2" fill="#E5BE25" stroke="#18181b" strokeWidth="2" />
+                {/* Panicked Face looking LEFT */}
+                <ellipse cx="32" cy="22" rx="2.4" ry="3.2" fill="#18181b" />
+                <ellipse cx="42" cy="22" rx="2.4" ry="3.2" fill="#18181b" />
+                <ellipse cx="36" cy="31" rx="3.4" ry="4" fill="#18181b" />
+                {/* Sweat Drop */}
+                <path d="M54 14 C57 18, 57 22, 54 22 C51 22, 51 18, 54 14 Z" fill="#38BDF8" />
+                {/* Front Leg (Green) */}
+                <g style={{ transformOrigin: '42px 76px' }} className="animate-roblox-limb-b">
+                  <rect x="33" y="74" width="17" height="38" rx="3" fill="#4B974B" stroke="#18181b" strokeWidth="2.5" />
+                </g>
+                {/* Front Arm (Yellow) */}
+                <g style={{ transformOrigin: '42px 46px' }} className="animate-roblox-limb-a">
+                  <rect x="34" y="42" width="16" height="36" rx="3" fill="#F5CD30" stroke="#18181b" strokeWidth="2.5" />
+                </g>
+              </svg>
+            </div>
+
+            {/* PLAYER 2 (Chasing / Right): Roblox Owner/Admin wielding Giant Ban Hammer */}
+            <div className="relative flex flex-col items-center animate-roblox-bob">
+              {/* Speed lines behind chaser */}
+              <div className="absolute -right-12 top-8 flex flex-col gap-2 opacity-65">
+                <span className="block w-10 h-0.5 bg-red-500 rounded-full" />
+                <span className="block w-6 h-0.5 bg-purple-500 rounded-full translate-x-2" />
+                <span className="block w-9 h-0.5 bg-red-400 rounded-full" />
+              </div>
+
+              <svg width="110" height="126" viewBox="0 0 110 126" className="overflow-visible drop-shadow-[0_0_20px_rgba(168,85,247,0.3)]">
+                {/* Back Arm (Dark Crimson) */}
+                <g style={{ transformOrigin: '56px 54px' }} className="animate-roblox-limb-a">
+                  <rect x="48" y="50" width="16" height="36" rx="3" fill="#7F1D1D" stroke="#18181b" strokeWidth="2.5" />
+                </g>
+                {/* Back Leg */}
+                <g style={{ transformOrigin: '56px 84px' }} className="animate-roblox-limb-b">
+                  <rect x="48" y="82" width="17" height="38" rx="3" fill="#18181b" stroke="#09090b" strokeWidth="2.5" />
+                </g>
+                {/* Torso (Crimson Owner Jacket) */}
+                <rect x="40" y="48" width="32" height="36" rx="4" fill="#DC2626" stroke="#18181b" strokeWidth="2.5" />
+                <rect x="48" y="55" width="16" height="16" rx="3" fill="#9333EA" opacity="0.85" />
+                {/* Head (Roblox Blocky Head) */}
+                <rect x="39" y="18" width="34" height="30" rx="7" fill="#F5CD30" stroke="#18181b" strokeWidth="2.5" />
+                {/* Owner Crown / Cap */}
+                <path d="M37 21 L42 6 L51 15 L56 4 L61 15 L70 6 L75 21 Z" fill="#A855F7" stroke="#18181b" strokeWidth="2.2" />
+                {/* Determined Angry Face looking LEFT */}
+                <path d="M42 27 L50 30" stroke="#18181b" strokeWidth="2.5" strokeLinecap="round" />
+                <path d="M53 30 L61 27" stroke="#18181b" strokeWidth="2.5" strokeLinecap="round" />
+                <circle cx="46" cy="33" r="2.2" fill="#18181b" />
+                <circle cx="56" cy="33" r="2.2" fill="#18181b" />
+                <path d="M44 40 Q51 43 58 39" fill="none" stroke="#18181b" strokeWidth="2.2" strokeLinecap="round" />
+                {/* Front Leg */}
+                <g style={{ transformOrigin: '56px 84px' }} className="animate-roblox-limb-a">
+                  <rect x="47" y="82" width="17" height="38" rx="3" fill="#27272A" stroke="#09090b" strokeWidth="2.5" />
+                </g>
+                {/* Front Arm holding Giant Roblox Ban Hammer swinging forward */}
+                <g style={{ transformOrigin: '56px 54px' }} className="animate-roblox-hammer">
+                  <rect x="48" y="50" width="16" height="34" rx="3" transform="rotate(-55 56 54)" fill="#EF4444" stroke="#18181b" strokeWidth="2.5" />
+                  {/* Ban Hammer Handle */}
+                  <rect x="10" y="34" width="44" height="7" rx="2.5" transform="rotate(-18 32 37)" fill="#78350F" stroke="#18181b" strokeWidth="2" />
+                  {/* Giant Blocky Ban Hammer Head */}
+                  <g transform="translate(-8, 12) rotate(-18 22 22)">
+                    <rect x="0" y="6" width="32" height="44" rx="4" fill="#3F3F46" stroke="#18181b" strokeWidth="2.5" />
+                    <rect x="0" y="6" width="32" height="9" rx="2" fill="#EF4444" stroke="#18181b" strokeWidth="2" />
+                    <rect x="0" y="41" width="32" height="9" rx="2" fill="#A855F7" stroke="#18181b" strokeWidth="2" />
+                    <text x="16" y="31" textAnchor="middle" fill="#FFFFFF" fontSize="9.5" fontWeight="900" fontFamily="monospace">
+                      BAN
+                    </text>
+                  </g>
+                </g>
+              </svg>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Foreground Modal */}
+      <div className="relative z-10 w-full max-w-lg rounded-2xl bg-zinc-950/90 border border-zinc-800 p-6 sm:p-8 shadow-2xl text-center">
+        <div className="w-12 h-12 rounded-2xl bg-red-500/10 border border-red-500/30 flex items-center justify-center mx-auto mb-4 text-red-400">
+          <Lock size={22} />
+        </div>
+
+        <p className="text-base sm:text-xl font-bold text-white leading-relaxed">
+          Website was Deleted by an Official Owner/Co-Owner with the correct PIN{' '}
+          <span className="font-mono font-black tracking-wider whitespace-nowrap">
+            &gt;<span className="animate-red-to-purple">****</span>&lt;
+          </span>
+        </p>
+
+        {mode === 'invited' && (
+          <form onSubmit={handleSubmit} className="mt-6 space-y-3 text-left">
+            <div className="relative flex items-center">
+              <input
+                type={showPinText ? 'text' : 'password'}
+                autoComplete="off"
+                value={pinAttempt}
+                onChange={(e) => {
+                  setPinAttempt(e.target.value);
+                  if (pinError) setPinError(false);
+                }}
+                placeholder="Enter invite password / PIN..."
+                className={`w-full bg-black border ${
+                  pinError ? 'border-red-500' : 'border-zinc-700 focus:border-purple-500'
+                } rounded-xl px-4 py-3 pr-11 text-sm font-mono text-white placeholder:text-zinc-500 outline-none transition-colors`}
+                autoFocus
+              />
+              <button
+                type="button"
+                onClick={() => setShowPinText((v) => !v)}
+                className="absolute right-3 text-zinc-400 hover:text-white p-1"
+                title={showPinText ? 'Hide PIN' : 'Show PIN'}
+              >
+                {showPinText ? <EyeOff size={18} /> : <Eye size={18} />}
+              </button>
+            </div>
+
+            {pinError && (
+              <p className="text-xs font-bold text-red-400 text-center">
+                Incorrect PIN / Password. Please ask an Owner for the invite PIN.
+              </p>
+            )}
+
+            <button
+              type="submit"
+              disabled={!pinAttempt.trim()}
+              className="w-full py-3 rounded-xl bg-gradient-to-r from-red-600 to-purple-600 hover:from-red-500 hover:to-purple-500 text-white font-black text-xs uppercase tracking-widest transition-all disabled:opacity-40 cursor-pointer"
+            >
+              Unlock &amp; Enter Site
+            </button>
+          </form>
+        )}
+      </div>
+    </div>
+  );
+}
