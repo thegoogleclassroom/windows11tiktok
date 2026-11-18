@@ -5,7 +5,7 @@ import { motion, AnimatePresence, MotionConfig } from 'motion/react';
 import { useAppStore } from '../store';
 import { AuthModal } from './AuthModal';
 import { MiniPlayer } from './MiniPlayer';
-import { saveReports, getMessages, getUsers, getNotifications, markNotificationAsRead, getFAQPosts, subscribeToNotifications, saveGameData, getGameData, subscribeToIncomingCalls, subscribeToMessages, updateUser, requestCentralProVerification, updateUserListeningState, subscribeToUserDoc, isQuotaBlocked, subscribeToLiveStreams, subscribeToAppSettings, GlobalAppSettings } from '../lib/db';
+import { saveReports, getMessages, getUsers, getNotifications, markNotificationAsRead, getFAQPosts, subscribeToNotifications, saveGameData, getGameData, subscribeToIncomingCalls, subscribeToMessages, updateUser, requestCentralProVerification, updateUserListeningState, subscribeToUserDoc, isQuotaBlocked, subscribeToLiveStreams, subscribeToAppSettings, GlobalAppSettings, subscribeToQuotaStatus, clearReadQuotaBlock } from '../lib/db';
 import { playNotificationSound } from '../lib/utils';
 import { TradientInfoModal } from './TradientInfoModal';
 import { HolographicBadge, CentralProBadge } from './UIPolish';
@@ -678,6 +678,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
     <div className="flex flex-col h-screen bg-white dark:bg-zinc-950 text-zinc-900 dark:text-zinc-50 overflow-hidden transition-colors">
       <GitHubUpdateBanner />
       <BookmarkBanner />
+      <QuotaNoticeBanner />
       <AnnouncementBanner />
 
       {/* TikTok Desktop Top Navigation Header */}
@@ -2669,6 +2670,50 @@ function SiteShutdownOverlay({
             </button>
           </form>
         )}
+      </div>
+    </div>
+  );
+}
+
+function QuotaNoticeBanner() {
+  const [readBlocked, setReadBlocked] = useState(false);
+  const [dismissed, setDismissed] = useState(false);
+
+  useEffect(() => {
+    return subscribeToQuotaStatus(({ readBlocked: blocked }) => {
+      setReadBlocked(blocked);
+      if (!blocked) {
+        setDismissed(false);
+      }
+    });
+  }, []);
+
+  if (!readBlocked || dismissed) return null;
+
+  return (
+    <div className="w-full bg-amber-950/95 border-b border-amber-500/40 text-amber-100 px-4 py-2 flex flex-wrap items-center justify-center gap-3 text-xs z-50 shrink-0">
+      <div className="flex items-center gap-2 font-semibold">
+        <AlertTriangle size={14} className="text-amber-400 shrink-0" />
+        <span>
+          Firebase free daily read quota reached — showing cached data. All profiles &amp; posts are safe and live sync resumes when quota resets.
+        </span>
+      </div>
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={() => clearReadQuotaBlock()}
+          className="px-2.5 py-1 rounded-md bg-amber-500 hover:bg-amber-400 text-zinc-950 font-bold text-[11px] transition-colors cursor-pointer"
+        >
+          Retry Sync
+        </button>
+        <button
+          type="button"
+          onClick={() => setDismissed(true)}
+          className="p-1 text-amber-300 hover:text-white transition-colors cursor-pointer"
+          aria-label="Dismiss quota notice"
+        >
+          <X size={14} />
+        </button>
       </div>
     </div>
   );

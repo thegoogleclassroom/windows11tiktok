@@ -193,7 +193,8 @@ export const initDb = async () => {};
 const lastSyncedDocs = new Map<string, Map<string, string>>();
 const readCache = new Map<string, { data: any[]; fetchedAt: number }>();
 const inflightFetches = new Map<string, Promise<any[]>>();
-let quotaBlockedUntil = 0;
+let readQuotaBlockedUntil = 0;
+let writeQuotaBlockedUntil = 0;
 
 const COLLECTION_TTL_MS: Record<string, number> = {
   users: 120_000,
@@ -212,7 +213,44 @@ const COLLECTION_TTL_MS: Record<string, number> = {
 
 const getCollectionTtl = (collName: string) => COLLECTION_TTL_MS[collName] ?? 30_000;
 
-export const isQuotaBlocked = () => Date.now() < quotaBlockedUntil;
+export const isReadQuotaBlocked = () => Date.now() < readQuotaBlockedUntil;
+export const isWriteQuotaBlocked = () => Date.now() < writeQuotaBlockedUntil;
+export const isQuotaBlocked = () => isReadQuotaBlocked() || isWriteQuotaBlocked();
+
+const emitQuotaStatus = () => {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(
+      new CustomEvent('ct-quota-status-changed', {
+        detail: {
+          readBlocked: isReadQuotaBlocked(),
+          writeBlocked: isWriteQuotaBlocked(),
+        },
+      })
+    );
+  }
+};
+
+export const clearReadQuotaBlock = () => {
+  readQuotaBlockedUntil = 0;
+  emitQuotaStatus();
+};
+
+export const subscribeToQuotaStatus = (
+  callback: (status: { readBlocked: boolean; writeBlocked: boolean }) => void
+) => {
+  const handler = () => {
+    callback({
+      readBlocked: isReadQuotaBlocked(),
+      writeBlocked: isWriteQuotaBlocked(),
+    });
+  };
+  handler();
+  if (typeof window !== 'undefined') {
+    window.addEventListener('ct-quota-status-changed', handler);
+    return () => window.removeEventListener('ct-quota-status-changed', handler);
+  }
+  return () => {};
+};
 
 export const isQuotaError = (err: any): boolean => {
   const code = err?.code || '';
@@ -220,13 +258,37 @@ export const isQuotaError = (err: any): boolean => {
   return code === 'resource-exhausted' || msg.includes('resource-exhausted') || msg.includes('quota exceeded') || msg.includes('quota limit');
 };
 
-export const handleWriteQuotaError = (err: any) => {
+export const handleWriteQuotaError = (err: any, operationKind: 'read' | 'write' | 'auto' = 'auto') => {
   if (isQuotaError(err)) {
-    const wasAlreadyBlocked = isQuotaBlocked();
-    // Pause Firestore reads/writes for 5 minutes to avoid SDK retry storms & console spam
-    quotaBlockedUntil = Date.now() + 5 * 60 * 1000;
+    const msg = (err?.message || String(err || '')).toLowerCase();
+    const isExplicitRead = msg.includes('read units') || msg.includes('read ops');
+    const isExplicitWrite = msg.includes('write units') || msg.includes('write ops');
+
+    const blockRead =
+      isExplicitRead ||
+      (operationKind === 'read' && !isExplicitWrite) ||
+      (operationKind === 'auto' && !isExplicitWrite);
+    const blockWrite =
+      isExplicitWrite ||
+      (operationKind === 'write' && !isExplicitRead) ||
+      (operationKind === 'auto' && !isExplicitRead);
+
+    const wasAlreadyBlocked =
+      (blockRead ? isReadQuotaBlocked() : true) &&
+      (blockWrite ? isWriteQuotaBlocked() : true);
+
+    if (blockRead) {
+      readQuotaBlockedUntil = Math.max(readQuotaBlockedUntil, Date.now() + 90_000);
+    }
+    if (blockWrite) {
+      writeQuotaBlockedUntil = Math.max(writeQuotaBlockedUntil, Date.now() + 5 * 60 * 1000);
+    }
+
+    emitQuotaStatus();
     if (!wasAlreadyBlocked) {
-      console.warn('Firestore free daily quota reached — pausing remote sync for 5 minutes and using local cache.');
+      console.warn(
+        `Firestore free daily ${blockRead && !blockWrite ? 'read' : blockWrite && !blockRead ? 'write' : 'read/write'} quota reached — using local cache.`
+      );
     }
     return true;
   }
@@ -313,17 +375,56 @@ const mergeWithUnsyncedMessages = <T,>(collName: string, items: T[]): T[] => {
   return Array.from(map.values()) as T[];
 };
 
+const PRIORITY_CACHE_COLLECTIONS = new Set(['users', 'videos', 'announcements']);
+const EVICTABLE_CACHE_KEYS = [
+  'ct_cache_reports',
+  'ct_cache_audit_logs',
+  'ct_cache_stories',
+  'ct_cache_faq_posts',
+  'ct_cache_sneak_peeks',
+  'ct_cache_messages',
+  'ct_cache_notifications',
+];
+
+const compactCollectionForStorage = <T>(collName: string, items: T[]): T[] => {
+  if (collName === 'users' || collName === 'announcements' || collName === 'app_settings') {
+    return items;
+  }
+  return items.map((item: any) => {
+    if (!item || typeof item !== 'object') return item;
+    const copy: any = { ...item };
+    if ('videoData' in copy) delete copy.videoData;
+    for (const key of ['mediaUrl', 'imageUrl', 'videoUrl', 'audioUrl']) {
+      const val = copy[key];
+      if (typeof val === 'string' && val.startsWith('data:') && val.length > 60_000) {
+        delete copy[key];
+      }
+    }
+    return copy as T;
+  });
+};
+
 const setCachedCollection = <T>(collName: string, items: T[], updateTimestamp = true) => {
   const merged = mergeWithUnsyncedMessages(collName, items);
   const prev = readCache.get(collName);
   readCache.set(collName, { data: merged, fetchedAt: updateTimestamp ? Date.now() : (prev?.fetchedAt || 0) });
+
+  const storagePayload = compactCollectionForStorage(collName, merged);
   try {
-    localStorage.setItem(`ct_cache_${collName}`, JSON.stringify(merged));
+    localStorage.setItem(`ct_cache_${collName}`, JSON.stringify(storagePayload));
   } catch {
-    // Trim messages cache if oversized by base64 media
-    if (collName === 'messages' && merged.length > 40) {
+    if (PRIORITY_CACHE_COLLECTIONS.has(collName)) {
+      // Reclaim localStorage space from bulky non-critical caches so profiles & videos never vanish
+      for (const evictKey of EVICTABLE_CACHE_KEYS) {
+        try {
+          localStorage.removeItem(evictKey);
+          localStorage.setItem(`ct_cache_${collName}`, JSON.stringify(storagePayload));
+          return;
+        } catch {}
+      }
+    } else if (collName === 'messages' && storagePayload.length > 30) {
       try {
-        localStorage.setItem(`ct_cache_${collName}`, JSON.stringify(merged.slice(-40)));
+        localStorage.setItem(`ct_cache_${collName}`, JSON.stringify(storagePayload.slice(-30)));
       } catch {}
     }
   }
@@ -363,7 +464,7 @@ const fetchCollection = async <T>(collName: string): Promise<T[]> => {
     return mergeWithUnsyncedMessages(collName, cachedMem.data as T[]);
   }
 
-  if (isQuotaBlocked()) {
+  if (isReadQuotaBlocked()) {
     return mergeWithUnsyncedMessages(collName, getCachedCollection<T>(collName));
   }
 
@@ -380,7 +481,7 @@ const fetchCollection = async <T>(collName: string): Promise<T[]> => {
       setCachedCollection(collName, items, true);
       return mergeWithUnsyncedMessages(collName, items);
     } catch (err: any) {
-      const isQuota = handleWriteQuotaError(err);
+      const isQuota = handleWriteQuotaError(err, 'read');
       if (!isQuota) {
         const msg = err?.message || String(err);
         if (!msg.includes('Missing or insufficient permissions') && !msg.includes('permission-denied')) {
@@ -399,8 +500,12 @@ const fetchCollection = async <T>(collName: string): Promise<T[]> => {
 
 const saveCollection = async <T extends { id: string }>(collName: string, items: T[]) => {
   if (!items || items.length === 0) return;
-  setCachedCollection(collName, items, false);
-  if (isQuotaBlocked()) return;
+  if (collName === 'users') {
+    upsertCachedCollection(collName, items);
+  } else {
+    setCachedCollection(collName, items, false);
+  }
+  if (isWriteQuotaBlocked()) return;
 
   try {
     let knownMap = lastSyncedDocs.get(collName);
@@ -442,52 +547,113 @@ const saveCollection = async <T extends { id: string }>(collName: string, items:
       }
     }
   } catch (err) {
-    handleWriteQuotaError(err);
+    handleWriteQuotaError(err, 'write');
   }
+};
+
+export const upsertUserInCache = (user: User) => {
+  if (!user?.id) return;
+  try {
+    upsertCachedCollection<User>('users', [user]);
+  } catch {}
+};
+
+export const getCachedUserById = (id: string): User | null => {
+  if (!id) return null;
+  return getCachedCollection<User>('users').find(u => u.id === id) || null;
 };
 
 export const getUsers = () => fetchCollection<User>('users');
 
 export const getUser = async (id: string): Promise<User | null> => {
   const cachedMem = readCache.get('users');
-  if (cachedMem && (isQuotaBlocked() || Date.now() - cachedMem.fetchedAt < getCollectionTtl('users'))) {
+  if (cachedMem && (isReadQuotaBlocked() || Date.now() - cachedMem.fetchedAt < getCollectionTtl('users'))) {
     const found = (cachedMem.data as User[]).find(u => u.id === id);
-    if (found || isQuotaBlocked()) return found || null;
+    if (found || isReadQuotaBlocked()) return found || null;
   }
-  if (isQuotaBlocked()) {
+  if (isReadQuotaBlocked()) {
     return getCachedCollection<User>('users').find(u => u.id === id) || null;
   }
   try {
     const docRef = doc(db, 'users', id);
     const snap = await getDoc(docRef);
-    return snap.exists() ? snap.data() as User : null;
+    if (snap.exists()) {
+      const userData = snap.data() as User;
+      upsertUserInCache(userData);
+      return userData;
+    }
+    return null;
   } catch (err) {
-    handleWriteQuotaError(err);
+    handleWriteQuotaError(err, 'read');
     return getCachedCollection<User>('users').find(u => u.id === id) || null;
   }
 };
 export const getUserFresh = async (id: string): Promise<User | null> => {
   if (!id) return null;
-  if (isQuotaBlocked()) {
+  if (isReadQuotaBlocked()) {
     return getCachedCollection<User>('users').find(u => u.id === id) || null;
   }
   try {
     const snap = await getDoc(doc(db, 'users', id));
     if (snap.exists()) {
       const userData = snap.data() as User;
-      try {
-        const cached = getCachedCollection<User>('users');
-        if (cached.length > 0) {
-          const exists = cached.some(u => u.id === id);
-          setCachedCollection('users', exists ? cached.map(u => u.id === id ? userData : u) : [...cached, userData], false);
-        }
-      } catch {}
+      upsertUserInCache(userData);
       return userData;
     }
     return null;
   } catch (err) {
-    handleWriteQuotaError(err);
+    handleWriteQuotaError(err, 'read');
     return getCachedCollection<User>('users').find(u => u.id === id) || null;
+  }
+};
+export const getUserByHandle = async (handle: string): Promise<User | null> => {
+  if (!handle) return null;
+  const target = handle.trim().toLowerCase();
+  const cachedMatch = getCachedCollection<User>('users').find(
+    u => u.handle?.toLowerCase() === target
+  );
+  if (isReadQuotaBlocked()) {
+    return cachedMatch || null;
+  }
+  try {
+    let snap = await getDocs(query(collection(db, 'users'), where('handle', '==', handle.trim())));
+    if (snap.empty && handle.trim() !== target) {
+      snap = await getDocs(query(collection(db, 'users'), where('handle', '==', target)));
+    }
+    if (!snap.empty) {
+      const userData = snap.docs[0].data() as User;
+      upsertUserInCache(userData);
+      return userData;
+    }
+    return cachedMatch || null;
+  } catch (err) {
+    handleWriteQuotaError(err, 'read');
+    return cachedMatch || null;
+  }
+};
+export const getUserByEmail = async (email: string): Promise<User | null> => {
+  if (!email) return null;
+  const target = email.trim().toLowerCase();
+  const cachedMatch = getCachedCollection<User>('users').find(
+    u => u.email?.toLowerCase() === target
+  );
+  if (isReadQuotaBlocked()) {
+    return cachedMatch || null;
+  }
+  try {
+    let snap = await getDocs(query(collection(db, 'users'), where('email', '==', email.trim())));
+    if (snap.empty && email.trim() !== target) {
+      snap = await getDocs(query(collection(db, 'users'), where('email', '==', target)));
+    }
+    if (!snap.empty) {
+      const userData = snap.docs[0].data() as User;
+      upsertUserInCache(userData);
+      return userData;
+    }
+    return cachedMatch || null;
+  } catch (err) {
+    handleWriteQuotaError(err, 'read');
+    return cachedMatch || null;
   }
 };
 export const saveUsers = (users: User[]) => saveCollection('users', users);
@@ -546,18 +712,13 @@ export const subscribeToUserDoc = (userId: string, callback: (user: User | null)
   return onSnapshot(doc(db, 'users', userId), (snap) => {
     if (snap.exists()) {
       const userData = snap.data() as User;
-      try {
-        const cached = getCachedCollection<User>('users');
-        if (cached.length > 0) {
-          setCachedCollection('users', cached.map(u => u.id === userId ? { ...u, ...userData } : u), false);
-        }
-      } catch {}
+      upsertUserInCache(userData);
       callback(userData);
     } else {
       callback(null);
     }
   }, (err) => {
-    handleWriteQuotaError(err);
+    handleWriteQuotaError(err, 'read');
   });
 };
 
@@ -1728,7 +1889,7 @@ const setCachedAppSettings = (settings: GlobalAppSettings) => {
 
 export const getAppSettings = async (): Promise<GlobalAppSettings> => {
   const fallback = getCachedAppSettings();
-  if (isQuotaBlocked()) return fallback;
+  if (isReadQuotaBlocked()) return fallback;
   try {
     const docRef = doc(db, 'app_settings', 'global');
     const snap = await getDoc(docRef);
@@ -1739,7 +1900,7 @@ export const getAppSettings = async (): Promise<GlobalAppSettings> => {
     }
     return fallback;
   } catch (err) {
-    if (!handleWriteQuotaError(err)) {
+    if (!handleWriteQuotaError(err, 'read')) {
       console.error("Error fetching app settings:", err);
     }
     return fallback;
@@ -1755,12 +1916,12 @@ export const saveAppSettings = async (settings: Partial<GlobalAppSettings> & { u
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new CustomEvent('ct-app-settings-updated', { detail: merged }));
   }
-  if (isQuotaBlocked()) return;
+  if (isWriteQuotaBlocked()) return;
   try {
     const docRef = doc(db, 'app_settings', 'global');
     await setDoc(docRef, deepClean(merged), { merge: true });
   } catch (err) {
-    if (!handleWriteQuotaError(err)) {
+    if (!handleWriteQuotaError(err, 'write')) {
       console.error("Error saving app settings:", err);
     }
   }

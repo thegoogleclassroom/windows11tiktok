@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useAppStore } from '../store';
-import { getUsers, saveUsers, updateUser } from '../lib/db';
+import { getUsers, saveUsers, updateUser, getUserByEmail, isReadQuotaBlocked, upsertUserInCache } from '../lib/db';
 import { User } from '../types';
 import { signInWithGoogle, signInAsGuest } from '../lib/firebase';
 import { Loader2 } from 'lucide-react';
@@ -15,10 +15,13 @@ export function AuthModal({ onClose }: { onClose: () => void }) {
   const [loading, setLoading] = useState(false);
 
   const syncUserToDb = async (email: string, displayName: string | null, photoURL: string | null) => {
+    const normalizedEmail = email.trim().toLowerCase();
     const users = await getUsers();
-    const existingUser = users.find(u => u.email === email);
+    const existingUser =
+      users.find(u => u.email?.toLowerCase() === normalizedEmail) ||
+      (await getUserByEmail(email));
     const deviceId = getDeviceId();
-    const isOwner = email.toLowerCase() === 'zaellacruze1@gmail.com';
+    const isOwner = normalizedEmail === 'zaellacruze1@gmail.com';
     
     if (existingUser) {
       const updates: Partial<User> = {};
@@ -33,7 +36,14 @@ export function AuthModal({ onClose }: { onClose: () => void }) {
       if (Object.keys(updates).length > 0) {
         await updateUser(existingUser.id, updates);
       }
+      upsertUserInCache(existingUser);
       return existingUser;
+    }
+
+    if (isReadQuotaBlocked()) {
+      throw new Error(
+        'Firebase free daily read quota is currently reached, so existing accounts cannot be verified right now. All profile data is safe and will reload once the quota resets.'
+      );
     }
 
     const newUser: User = {
@@ -59,6 +69,7 @@ export function AuthModal({ onClose }: { onClose: () => void }) {
       };
     }
     
+    upsertUserInCache(newUser);
     await saveUsers([...users, newUser]);
     return newUser;
   };
@@ -84,7 +95,10 @@ export function AuthModal({ onClose }: { onClose: () => void }) {
       }
       
       const users = await getUsers();
-      const existingUser = users.find(u => u.email === email);
+      const normalizedEmail = email.trim().toLowerCase();
+      const existingUser =
+        users.find(u => u.email?.toLowerCase() === normalizedEmail) ||
+        (await getUserByEmail(email));
 
       if (isSignUp) {
         if (existingUser) {
@@ -92,23 +106,25 @@ export function AuthModal({ onClose }: { onClose: () => void }) {
           setLoading(false);
           return;
         }
-        // In a real app, you'd use Firebase createUserWithEmailAndPassword here.
-        // For this demo, we'll just save them to the local DB if it's not the owner
         const newUser = await syncUserToDb(email, null, null);
         setCurrentUser(newUser);
         onClose();
       } else {
         if (!existingUser) {
-          setError('User not found. Please sign up or use Google Sign-in.');
+          if (isReadQuotaBlocked()) {
+            setError('Firebase free daily read quota is currently reached. Your account is safe — please try again once quota resets.');
+          } else {
+            setError('User not found. Please sign up or use Google Sign-in.');
+          }
           setLoading(false);
           return;
         }
-        // Simplified auth check for demo since we didn't require password saving in DB
+        upsertUserInCache(existingUser);
         setCurrentUser(existingUser);
         onClose();
       }
-    } catch (err) {
-      setError('An error occurred during authentication.');
+    } catch (err: any) {
+      setError(err?.message || 'An error occurred during authentication.');
     } finally {
       setLoading(false);
     }
