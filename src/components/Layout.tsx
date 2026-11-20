@@ -979,6 +979,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
                 <span className="hover:underline cursor-pointer">Guidelines</span>
                 <span className="hover:underline cursor-pointer">Terms</span>
                 <span className="hover:underline cursor-pointer">Privacy</span>
+                <Link to="/dmca" className="text-pink-500 font-bold hover:underline cursor-pointer">DMCA</Link>
               </div>
               <p className="text-[10px] text-zinc-500">© 2026 CentralTok</p>
             </div>

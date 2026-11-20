@@ -24,7 +24,7 @@ import { Admin } from './pages/Admin';
 import { Forum } from './pages/Forum';
 import { UpdatesAnnouncements } from './pages/UpdatesAnnouncements';
 import { SneakPeeks } from './pages/SneakPeeks';
-import { GamesApps } from './pages/GamesApps';
+import { GamesApps, DMCAPage } from './pages/GamesApps';
 
 import { BookmarkBanner } from './components/BookmarkBanner';
 
@@ -190,6 +190,7 @@ export default function App() {
               <Route path="/forum/sneak-peaks" element={<SneakPeeks />} />
               <Route path="/sneak-peeks" element={<SneakPeeks />} />
               <Route path="/games-apps" element={<GamesApps />} />
+              <Route path="/dmca" element={<DMCAPage />} />
               <Route path="/admin" element={<Admin />} />
             </Routes>
           </Layout>
