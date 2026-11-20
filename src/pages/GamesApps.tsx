@@ -797,13 +797,13 @@ export function DMCAPage() {
           </span>
         </div>
 
-        {/* Hero Notice */}
-        <div className="rounded-3xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-6 sm:p-10 shadow-xl relative overflow-hidden">
-          <div className="flex flex-col sm:flex-row sm:items-center gap-5 mb-6">
+        {/* Top: Title & 40-Paragraph Policy */}
+        <div className="rounded-3xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-6 sm:p-10 shadow-xl space-y-6">
+          <div className="flex flex-col sm:flex-row sm:items-center gap-5 border-b border-zinc-200 dark:border-zinc-800 pb-6">
             <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-pink-600 to-indigo-600 text-white flex items-center justify-center shadow-lg shadow-pink-600/25 shrink-0">
               <Scale size={32} />
             </div>
-            <div>
+            <div className="flex-1">
               <h1 className="text-3xl sm:text-4xl font-black tracking-tight text-zinc-900 dark:text-white">
                 DMCA &amp; Copyright Removal
               </h1>
@@ -811,9 +811,34 @@ export function DMCAPage() {
                 If we copied any game or application, copyright owners can request us to take it down immediately.
               </p>
             </div>
+            <span className="text-xs font-black uppercase tracking-widest text-pink-500 shrink-0 self-start sm:self-center">
+              {DMCA_POLICY_PARAGRAPHS.length} Paragraphs
+            </span>
           </div>
 
-          {/* Official Contact Email Box */}
+          <div>
+            <h2 className="text-2xl font-black tracking-tight text-zinc-900 dark:text-white">
+              Complete DMCA Handling, Game Removal &amp; Timeline Policy
+            </h2>
+            <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">
+              40 detailed paragraphs covering how we review DMCA reports, what we do to reported games, and exact takedown timeframes.
+            </p>
+          </div>
+
+          <div className="space-y-4">
+            {DMCA_POLICY_PARAGRAPHS.map((paragraph, idx) => (
+              <p
+                key={idx}
+                className="text-sm sm:text-[15px] leading-relaxed text-zinc-700 dark:text-zinc-300 bg-zinc-50/70 dark:bg-zinc-950/60 border border-zinc-200/70 dark:border-zinc-800/70 rounded-2xl px-5 py-4"
+              >
+                {paragraph}
+              </p>
+            ))}
+          </div>
+        </div>
+
+        {/* Middle: Official DMCA Email & Required Info */}
+        <div className="rounded-3xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-6 sm:p-10 shadow-xl relative overflow-hidden">
           <div className="rounded-2xl bg-zinc-50 dark:bg-zinc-950 border-2 border-pink-500/40 p-5 sm:p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div className="flex items-center gap-3.5 min-w-0">
               <div className="w-11 h-11 rounded-xl bg-pink-500/15 text-pink-500 flex items-center justify-center shrink-0">
@@ -900,10 +925,10 @@ export function DMCAPage() {
           </div>
         </div>
 
-        {/* Interactive Takedown Notice Builder */}
+        {/* Bottom: Send Report Now */}
         <div className="rounded-3xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-6 sm:p-8 shadow-lg">
           <h2 className="text-xl font-black text-zinc-900 dark:text-white tracking-tight mb-1">
-            Prepare Your DMCA Removal Email
+            Send Report Now
           </h2>
           <p className="text-xs sm:text-sm text-zinc-500 dark:text-zinc-400 mb-5">
             Fill in the Date, your Name, the Game name, and How you want it removed for copyright, then send directly to <span className="font-bold text-zinc-800 dark:text-zinc-200">{DMCA_EMAIL}</span>.
@@ -957,7 +982,7 @@ export function DMCAPage() {
               className="px-5 py-3 rounded-xl bg-gradient-to-r from-pink-600 to-indigo-600 hover:from-pink-500 hover:to-indigo-500 text-white font-black text-xs uppercase tracking-widest flex items-center gap-2 shadow-lg shadow-pink-600/20"
             >
               <Send size={14} />
-              <span>Send DMCA Email Now</span>
+              <span>Send Report Now</span>
             </a>
             <button
               type="button"
@@ -967,34 +992,6 @@ export function DMCAPage() {
               {copiedTemplate ? <Check size={14} className="text-emerald-500" /> : <Copy size={14} />}
               <span>{copiedTemplate ? 'Copied Notice Template' : 'Copy Formatted Notice'}</span>
             </button>
-          </div>
-        </div>
-
-        {/* Full 40-Paragraph Policy */}
-        <div className="rounded-3xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-6 sm:p-10 shadow-lg space-y-5">
-          <div className="border-b border-zinc-200 dark:border-zinc-800 pb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-            <div>
-              <h2 className="text-2xl font-black tracking-tight text-zinc-900 dark:text-white">
-                Complete DMCA Handling, Game Removal &amp; Timeline Policy
-              </h2>
-              <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">
-                40 detailed paragraphs covering how we review DMCA reports, what we do to reported games, and exact takedown timeframes.
-              </p>
-            </div>
-            <span className="text-xs font-black uppercase tracking-widest text-pink-500 shrink-0">
-              {DMCA_POLICY_PARAGRAPHS.length} Paragraphs
-            </span>
-          </div>
-
-          <div className="space-y-4">
-            {DMCA_POLICY_PARAGRAPHS.map((paragraph, idx) => (
-              <p
-                key={idx}
-                className="text-sm sm:text-[15px] leading-relaxed text-zinc-700 dark:text-zinc-300 bg-zinc-50/70 dark:bg-zinc-950/60 border border-zinc-200/70 dark:border-zinc-800/70 rounded-2xl px-5 py-4"
-              >
-                {paragraph}
-              </p>
-            ))}
           </div>
         </div>
       </div>
