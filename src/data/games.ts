@@ -24,14 +24,15 @@ export const GAMES: GameItem[] = [
   },
   { 
     id: 'gta-5-6', 
-    title: 'GTA 5/6', 
+    title: 'GTA V|VI', 
+    // Saved HTTPS link kept for later reference (not launched via iframe/redirect):
     url: 'https://gta5-87g.pages.dev/?low=1&fps=30&res=1280x720', 
     category: 'Action', 
     color: 'yellow', 
     icon: 'https://cdn.jsdelivr.net/gh/Arcticons-Team/Arcticons/icons/black/gta_v.svg',
     isNew: true,
     frameColor: 'yellow',
-    badge: 'New!!'
+    badge: 'Notice'
   },
   {
     id: 'magic-tiles-3',

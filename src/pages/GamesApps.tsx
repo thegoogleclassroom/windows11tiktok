@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { Gamepad2, Rocket, Stars, Sparkles, AlertCircle, Play, Info, Square, LayoutGrid, Users, Lightbulb, X, Send, AlertTriangle, Search } from 'lucide-react';
 import { subscribeToAppSettings, getUsers, updateUserGame, submitSuggestion, updateUserListeningState } from '../lib/db';
@@ -6,7 +7,11 @@ import { useAppStore } from '../store';
 import { User, AppSuggestion } from '../types';
 import { GAMES, APPS, GameItem } from '../data/games';
 
+// Preserved HTTPS link for later developer reference (iframe & redirect disabled)
+export const SAVED_GTA_IFRAME_URL = 'https://gta5-87g.pages.dev/?low=1&fps=30&res=1280x720';
+
 export function GamesApps() {
+  const navigate = useNavigate();
   const { 
     currentUser,
     isGameActive, 
@@ -32,8 +37,8 @@ export function GamesApps() {
   const [showSuggestModal, setShowSuggestModal] = useState(false);
   const [suggestionData, setSuggestionData] = useState({ name: '', type: 'game' as 'game' | 'app', description: '' });
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [gtaFlowStep, setGtaFlowStep] = useState<'idle' | 'video' | 'bookmark_warning'>('idle');
-  const [bookmarkCountdown, setBookmarkCountdown] = useState(5);
+  const [gtaFlowStep, setGtaFlowStep] = useState<'idle' | 'removed_notice'>('idle');
+  const [gtaRedirectCountdown, setGtaRedirectCountdown] = useState(12);
   const [gameSearchQuery, setGameSearchQuery] = useState('');
 
   useEffect(() => {
@@ -69,14 +74,23 @@ export function GamesApps() {
     };
   }, [isGameActive]);
 
+  const handleReturnToGamesMenu = () => {
+    setGtaFlowStep('idle');
+    setIsGameActive(false);
+    setActiveGameUrl('');
+    setActiveGameTitle(null);
+    navigate('/games-apps');
+  };
+
   useEffect(() => {
-    let timerId: any;
-    if (gtaFlowStep === 'bookmark_warning') {
-      setBookmarkCountdown(5);
+    let timerId: ReturnType<typeof setInterval> | null = null;
+    if (gtaFlowStep === 'removed_notice') {
+      setGtaRedirectCountdown(12);
       timerId = setInterval(() => {
-        setBookmarkCountdown((prev) => {
+        setGtaRedirectCountdown((prev) => {
           if (prev <= 1) {
-            clearInterval(timerId);
+            if (timerId) clearInterval(timerId);
+            handleReturnToGamesMenu();
             return 0;
           }
           return prev - 1;
@@ -89,21 +103,12 @@ export function GamesApps() {
   }, [gtaFlowStep]);
 
   const handleItemClick = (item: GameItem) => {
-    if (item.id === 'gta-5-6' || item.title === 'GTA 5/6') {
-      setGtaFlowStep('video');
-      setBookmarkCountdown(5);
+    if (item.id === 'gta-5-6' || item.title === 'GTA V|VI' || item.title === 'GTA 5/6') {
+      setGtaFlowStep('removed_notice');
+      setGtaRedirectCountdown(12);
       return;
     }
     launchItem(item.url, item.title);
-  };
-
-  const handleFinishGtaWarning = () => {
-    const targetUrl = 'https://gta5-87g.pages.dev/?low=1&fps=30&res=1280x720';
-    setGtaFlowStep('idle');
-    launchItem(targetUrl, 'GTA 5/6');
-    try {
-      window.open(targetUrl, '_blank', 'noopener,noreferrer');
-    } catch {}
   };
 
   const launchItem = async (url: string, title: string) => {
@@ -578,117 +583,44 @@ export function GamesApps() {
           </div>
         )}
 
-        {/* GTA 5/6 Blackout & Growing Modal Sequence */}
-        {gtaFlowStep !== 'idle' && (
-          <div className="fixed inset-0 z-[3000] bg-black flex items-center justify-center p-4 overflow-y-auto">
-            {gtaFlowStep === 'video' && (
-              <motion.div
-                key="gta-video-modal"
-                initial={{ scale: 0.1, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                exit={{ scale: 0.1, opacity: 0 }}
-                transition={{ type: 'spring', damping: 24, stiffness: 260 }}
-                className="w-full max-w-2xl bg-zinc-900 border-2 border-yellow-400/90 rounded-3xl p-6 sm:p-8 text-white shadow-2xl relative my-auto"
+        {/* GTA V|VI Safety Removal Notice Modal */}
+        {gtaFlowStep === 'removed_notice' && (
+          <div className="fixed inset-0 z-[3000] bg-black/95 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto">
+            <motion.div
+              key="gta-removed-notice-modal"
+              initial={{ scale: 0.85, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.85, opacity: 0 }}
+              transition={{ type: 'spring', damping: 24, stiffness: 260 }}
+              className="w-full max-w-xl bg-zinc-950 border-2 border-red-600 rounded-3xl p-6 sm:p-8 text-white shadow-2xl shadow-red-600/30 relative my-auto text-center"
+            >
+              <button
+                onClick={handleReturnToGamesMenu}
+                className="absolute top-4 right-4 p-2 bg-zinc-900 hover:bg-zinc-800 text-zinc-400 hover:text-white rounded-full transition-colors cursor-pointer"
+                aria-label="Close"
               >
-                <button
-                  onClick={() => setGtaFlowStep('idle')}
-                  className="absolute top-4 right-4 p-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-white rounded-full transition-colors cursor-pointer"
-                  aria-label="Close"
-                >
-                  <X size={20} />
-                </button>
+                <X size={20} />
+              </button>
 
-                <div className="flex flex-col items-center text-center">
-                  <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-amber-500 to-yellow-400 flex items-center justify-center text-zinc-950 font-black text-4xl shadow-xl shadow-yellow-500/30 mb-4 animate-bounce">
-                    !
-                  </div>
+              <div className="w-20 h-20 rounded-2xl bg-red-600/20 border-2 border-red-500 flex items-center justify-center text-red-500 mx-auto mb-5 animate-pulse">
+                <AlertTriangle size={44} />
+              </div>
 
-                  <h2 className="text-2xl sm:text-4xl font-black uppercase tracking-tight text-yellow-400 drop-shadow-md mb-2">
-                    WATCH THE VIDEO!!!
-                  </h2>
+              <span className="px-3 py-1 rounded-full text-[11px] font-black uppercase tracking-widest bg-red-500/10 text-red-400 border border-red-500/30 mb-3 inline-block">
+                GTA V|VI — Temporarily Removed
+              </span>
 
-                  <p className="text-zinc-200 text-sm sm:text-base font-semibold max-w-lg leading-relaxed mb-4">
-                    The site is not dangerous at all, It was flagged Dangerous because Rockstar claimed it was
-                  </p>
+              <p className="text-zinc-100 text-base sm:text-lg font-bold leading-relaxed mb-6">
+                This game was not deleted because of the DMCA, it was actually removed because the warning was not enough to you guys, to not BOOKMARK THE LINK!!! and one of you did and got your computer taken, I&apos;m removing this for the safely for you guys. Be prepared for GTA 4, GTA 3, etc.
+              </p>
 
-                  <div className="w-full bg-black rounded-2xl overflow-hidden border border-zinc-700 shadow-2xl">
-                    <video
-                      src="./GTAV.mp4"
-                      controls
-                      autoPlay
-                      playsInline
-                      className="w-full max-h-[340px] object-contain bg-black"
-                    >
-                      <source src="./GTAV.mp4" type="video/mp4" />
-                      <source src="/GTAV.mp4" type="video/mp4" />
-                      Your browser does not support the video tag.
-                    </video>
-                  </div>
-
-                  <button
-                    onClick={() => setGtaFlowStep('bookmark_warning')}
-                    className="w-full mt-6 py-4 px-6 bg-gradient-to-r from-yellow-400 to-amber-500 hover:from-yellow-300 hover:to-amber-400 text-zinc-950 font-black text-sm uppercase tracking-widest rounded-2xl shadow-xl shadow-yellow-500/25 transition-all flex items-center justify-center gap-2 hover:scale-[1.01] active:scale-95 cursor-pointer"
-                  >
-                    <span>Continue</span>
-                    <Play size={16} fill="currentColor" />
-                  </button>
-                </div>
-              </motion.div>
-            )}
-
-            {gtaFlowStep === 'bookmark_warning' && (
-              <motion.div
-                key="gta-warning-modal"
-                initial={{ scale: 0.1, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                exit={{ scale: 0.1, opacity: 0 }}
-                transition={{ type: 'spring', damping: 24, stiffness: 260 }}
-                className="w-full max-w-xl bg-zinc-950 border-2 border-red-600 rounded-3xl p-6 sm:p-8 text-white shadow-2xl shadow-red-600/30 relative my-auto text-center"
+              <button
+                onClick={handleReturnToGamesMenu}
+                className="w-full py-4 px-6 rounded-2xl font-black text-sm uppercase tracking-widest transition-all flex items-center justify-center gap-2 shadow-xl bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 hover:to-rose-500 text-white shadow-red-600/30 cursor-pointer hover:scale-[1.01] active:scale-95"
               >
-                <button
-                  onClick={() => setGtaFlowStep('idle')}
-                  className="absolute top-4 right-4 p-2 bg-zinc-900 hover:bg-zinc-800 text-zinc-400 hover:text-white rounded-full transition-colors cursor-pointer"
-                  aria-label="Close"
-                >
-                  <X size={20} />
-                </button>
-
-                <div className="w-20 h-20 rounded-2xl bg-red-600/20 border-2 border-red-500 flex items-center justify-center text-red-500 mx-auto mb-5 animate-pulse">
-                  <AlertTriangle size={44} />
-                </div>
-
-                <span className="px-3 py-1 rounded-full text-[11px] font-black uppercase tracking-widest bg-red-500/10 text-red-400 border border-red-500/30 mb-3 inline-block">
-                  Urgent Notice
-                </span>
-
-                <h2 className="text-xl sm:text-2xl font-black uppercase tracking-tight text-red-500 leading-snug mb-4">
-                  DO NOT BOOKMARK THIS LINK, OR YOUR COMPUTER WILL BE TAKEN BY THE SCHOOL!
-                </h2>
-
-                <p className="text-zinc-400 text-xs sm:text-sm font-medium mb-6 leading-relaxed max-w-md mx-auto">
-                  To keep your game access and avoid school IT detection, never bookmark this page.
-                </p>
-
-                <button
-                  disabled={bookmarkCountdown > 0}
-                  onClick={handleFinishGtaWarning}
-                  className={`w-full py-4 px-6 rounded-2xl font-black text-sm uppercase tracking-widest transition-all flex items-center justify-center gap-2 shadow-xl ${
-                    bookmarkCountdown > 0
-                      ? 'bg-zinc-800 text-zinc-500 border border-zinc-700 cursor-not-allowed opacity-80'
-                      : 'bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 hover:to-rose-500 text-white shadow-red-600/30 cursor-pointer hover:scale-[1.01] active:scale-95 animate-pulse'
-                  }`}
-                >
-                  {bookmarkCountdown > 0 ? (
-                    <span>Continue ({bookmarkCountdown}s)</span>
-                  ) : (
-                    <>
-                      <span>Continue</span>
-                      <Play size={16} fill="currentColor" />
-                    </>
-                  )}
-                </button>
-              </motion.div>
-            )}
+                <span>Back to Games &amp; Apps Menu ({gtaRedirectCountdown}s)</span>
+              </button>
+            </motion.div>
           </div>
         )}
       </AnimatePresence>
