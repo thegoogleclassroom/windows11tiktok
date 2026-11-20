@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import Cropper from 'react-easy-crop';
 import { 
   getUsers, getUserFresh, getUserByHandle, getVideos, saveUsers, deleteVideoFromDB, getAppeals, saveAppeals, 
-  updateUser, submitVerificationRequest, subscribeToUserDoc, isReadQuotaBlocked, clearReadQuotaBlock, subscribeToQuotaStatus
+  updateUser, submitVerificationRequest, subscribeToUserDoc, isFirebasePartDisabledNow, FIREBASE_OUTAGE_MESSAGE
 } from '../lib/db';
 import { User, Video, Appeal } from '../types';
 import { useAppStore } from '../store';
@@ -68,11 +68,7 @@ export function Profile() {
   const [removedVideos, setRemovedVideos] = useState<Video[]>([]);
   const [showListeningModal, setShowListeningModal] = useState(false);
   const [nowTick, setNowTick] = useState(Date.now());
-  const [readQuotaPaused, setReadQuotaPaused] = useState(() => isReadQuotaBlocked());
-
-  useEffect(() => {
-    return subscribeToQuotaStatus(({ readBlocked }) => setReadQuotaPaused(readBlocked));
-  }, []);
+  const [profileOutageNotice, setProfileOutageNotice] = useState<string | null>(null);
 
   const areFriends = isFriend(currentUser, profileUser);
   const isOwnProfile = currentUser?.id === profileUser?.id;
@@ -92,7 +88,6 @@ export function Profile() {
     if (!user && currentUser && currentUser.handle?.toLowerCase() === normalizedHandle) {
       user = currentUser;
     }
-    setReadQuotaPaused(isReadQuotaBlocked());
     if (user) {
       setProfileUser(prev => {
         if (
@@ -204,6 +199,10 @@ export function Profile() {
 
   const handleFollow = async () => {
     if (!currentUser || !profileUser) return;
+    if (isFirebasePartDisabledNow('profiles_follow')) {
+      setProfileOutageNotice(FIREBASE_OUTAGE_MESSAGE);
+      return;
+    }
     
     const isNowFollowing = !isFollowing;
     
@@ -233,11 +232,19 @@ export function Profile() {
   };
 
   const handleReport = () => {
+    if (isFirebasePartDisabledNow('support_reports')) {
+      setProfileOutageNotice(FIREBASE_OUTAGE_MESSAGE);
+      return;
+    }
     alert(`User ${profileUser?.username} has been reported. Our team will review this account.`);
   };
 
   const handleSubmitAppeal = async () => {
     if (!currentUser || !appealVideo || !appealReason.trim()) return;
+    if (isFirebasePartDisabledNow('profiles_follow')) {
+      setProfileOutageNotice(FIREBASE_OUTAGE_MESSAGE);
+      return;
+    }
     setIsSubmittingAppeal(true);
     try {
       const appeals = await getAppeals();
@@ -273,50 +280,19 @@ export function Profile() {
   };
 
   if (loading) return <div className="p-8 text-center">Loading...</div>;
-  if (!profileUser) {
-    if (readQuotaPaused) {
-      return (
-        <div className="w-full h-full flex items-center justify-center p-6">
-          <div className="max-w-md w-full rounded-2xl border border-amber-500/30 bg-amber-500/10 dark:bg-zinc-900 p-6 text-center space-y-4">
-            <div className="w-12 h-12 mx-auto rounded-full bg-amber-500/20 text-amber-500 flex items-center justify-center">
-              <AlertTriangle size={24} />
-            </div>
-            <div className="space-y-1.5">
-              <h2 className="text-lg font-bold text-zinc-900 dark:text-white">
-                Profiles Are Safe (Firebase Quota Reached)
-              </h2>
-              <p className="text-sm text-zinc-600 dark:text-zinc-400">
-                @{handle}&apos;s data was not deleted. Firestore&apos;s free daily read quota is temporarily exhausted and this browser does not have a cached copy yet. Live profiles load again automatically when Firebase&apos;s daily quota resets.
-              </p>
-            </div>
-            <div className="flex items-center justify-center gap-3 pt-1">
-              <button
-                onClick={() => {
-                  clearReadQuotaBlock();
-                  setLoading(true);
-                  loadProfile();
-                }}
-                className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-zinc-950 font-bold text-sm transition-colors"
-              >
-                Retry Loading Profile
-              </button>
-              <Link
-                to="/"
-                className="px-4 py-2 rounded-xl bg-zinc-200 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-700 text-sm font-semibold transition-colors"
-              >
-                Back Home
-              </Link>
-            </div>
-          </div>
-        </div>
-      );
-    }
-    return <div className="p-8 text-center text-zinc-500">User not found</div>;
-  }
+  if (!profileUser) return <div className="p-8 text-center text-zinc-500">User not found</div>;
 
   return (
     <div className="w-full h-full overflow-y-auto hide-scrollbar pb-24 md:pb-0">
       <div className="max-w-4xl mx-auto border-x border-zinc-200 dark:border-zinc-800 min-h-screen">
+        {profileOutageNotice && (
+          <div className="m-4 px-4 py-3 rounded-xl bg-red-500/15 border border-red-500/40 text-red-500 text-xs font-bold flex items-center justify-between gap-2">
+            <span>{profileOutageNotice}</span>
+            <button type="button" onClick={() => setProfileOutageNotice(null)} className="shrink-0 hover:text-red-400">
+              <X size={14} />
+            </button>
+          </div>
+        )}
         
         {/* Profile Banner (CentralPro or custom) */}
         {profileUser.profileBannerUrl && !profileUser.isSystemWiped && (
@@ -1112,7 +1088,14 @@ function EditProfileModal({ user, onClose }: { user: User, onClose: () => void }
   
   const fileRef = useRef<HTMLInputElement>(null);
 
+  const [editOutageError, setEditOutageError] = useState<string | null>(null);
+
   const handleSave = async () => {
+    if (isFirebasePartDisabledNow('profiles_follow')) {
+      setEditOutageError(FIREBASE_OUTAGE_MESSAGE);
+      return;
+    }
+    setEditOutageError(null);
     try {
       const cleanHandle = handleInput.trim().replace(/^@/, '').toLowerCase().replace(/[^a-z0-9_]/g, '');
       const updateData: Partial<User> = {
@@ -1171,6 +1154,11 @@ function EditProfileModal({ user, onClose }: { user: User, onClose: () => void }
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
       <div className="bg-white dark:bg-zinc-900 w-full max-w-md rounded-2xl shadow-xl overflow-hidden animate-in fade-in zoom-in duration-200 flex flex-col max-h-[90vh]">
+        {editOutageError && (
+          <div className="mx-4 mt-4 px-3 py-2 rounded-xl bg-red-500/15 border border-red-500/40 text-red-500 text-xs font-bold">
+            {editOutageError}
+          </div>
+        )}
         
         <div className="flex items-center justify-between p-4 border-b border-zinc-200 dark:border-zinc-800">
           <div className="flex items-center gap-4">

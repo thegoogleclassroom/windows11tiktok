@@ -7,7 +7,7 @@ import {
   Phone, X, Check, Maximize2, Minimize2, Tv, Sparkles
 } from 'lucide-react';
 import { useAppStore } from '../store';
-import { createCall, updateCall, addIceCandidate, subscribeToCall, deleteCall, getUsers, db } from '../lib/db';
+import { createCall, updateCall, addIceCandidate, subscribeToCall, deleteCall, getUsers, db, isFirebasePartDisabledNow, FIREBASE_OUTAGE_MESSAGE } from '../lib/db';
 import { collection, query, where, onSnapshot } from 'firebase/firestore';
 import { CameraDeviceSelector } from './CameraDeviceSelector';
 
@@ -404,6 +404,10 @@ export function CallOverlay() {
   useEffect(() => {
     if (!isCalling || !callData || !currentUser) return;
 
+    if (isFirebasePartDisabledNow('voice_video_calls')) {
+      setCallNotice(FIREBASE_OUTAGE_MESSAGE);
+      return;
+    }
     if (callStatus === 'idle' && !callIdRef.current && !startingSessionRef.current) {
       startingSessionRef.current = true;
       isCallerRef.current = true;
@@ -591,7 +595,7 @@ export function CallOverlay() {
       callDocCreated = true;
 
       if (!created) {
-        setCallNotice('Call signal could not reach server (offline or quota reached).');
+        setCallNotice(FIREBASE_OUTAGE_MESSAGE);
       }
 
       // Flush any candidates that arrived right as createCall was in flight

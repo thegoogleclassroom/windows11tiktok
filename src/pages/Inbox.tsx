@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useAppStore } from '../store';
-import { getNotifications, getMessages, getUsers, getGroupChats, saveGroupChats, getReports, addReport } from '../lib/db';
+import { getNotificationsForUser, getMessagesForUser, getUsers, getGroupChatsForUser, saveGroupChats, getReports, getReportsForUser, addReport, isFirebasePartDisabledNow, FIREBASE_OUTAGE_MESSAGE } from '../lib/db';
 import { AppNotification, Message, User, GroupChat, Report } from '../types';
 import { Heart, MessageCircle, UserPlus, Bell, ShieldCheck, Users, Plus, X, Search, Check, LifeBuoy, Phone, Activity, Server, Database, Sparkles, Youtube, ShieldAlert, Paperclip } from 'lucide-react';
 import { Link } from 'react-router-dom';
@@ -45,20 +45,23 @@ export function Inbox() {
     setShowNotificationPrompt(localStorage.getItem('notificationPromptDismissed') !== 'true');
     
     const loadInbox = async () => {
-      const [allUsers, allNotifs, allMsgs, allGroups, allReports] = await Promise.all([
-        getUsers(),
-        getNotifications(),
-        getMessages(),
-        getGroupChats(),
-        getReports()
-      ]);
+      if (typeof document !== 'undefined' && document.hidden) return;
       const isStaff = currentUser.role === 'staff' || currentUser.role === 'owner';
-      const relevantIntercoms = allReports
+      const [allUsers, userRawNotifs, userGroups, relevantReports] = await Promise.all([
+        getUsers(),
+        getNotificationsForUser(currentUser.id),
+        getGroupChatsForUser(currentUser.id),
+        isStaff ? getReports() : getReportsForUser(currentUser.id)
+      ]);
+      const groupIds = userGroups.map(g => g.id);
+      const userMsgs = await getMessagesForUser(currentUser.id, groupIds);
+
+      const relevantIntercoms = relevantReports
         .filter(r => r.intercomStatus && (r.reporterId === currentUser.id || (isStaff && r.intercomStaffId === currentUser.id)))
         .sort((a, b) => (b.intercomUpdatedAt || b.timestamp) - (a.intercomUpdatedAt || a.timestamp));
       setIntercomReports(relevantIntercoms);
       
-      const userNotifs = allNotifs
+      const userNotifs = userRawNotifs
         .filter(n => n.userId === currentUser.id)
         .map(n => ({ 
           ...n, 
@@ -77,12 +80,10 @@ export function Inbox() {
         .sort((a, b) => b.timestamp - a.timestamp);
       
       // Filter direct messages
-      const dmMsgs = allMsgs.filter(m => !m.groupId && (m.fromUserId === currentUser.id || m.toUserId === currentUser.id));
+      const dmMsgs = userMsgs.filter(m => !m.groupId && (m.fromUserId === currentUser.id || m.toUserId === currentUser.id));
       
       // Filter group messages
-      const userGroups = allGroups.filter(g => (g.members || []).includes(currentUser.id));
-      const groupIds = userGroups.map(g => g.id);
-      const groupMsgs = allMsgs.filter(m => m.groupId && (groupIds || []).includes(m.groupId));
+      const groupMsgs = userMsgs.filter(m => m.groupId && (groupIds || []).includes(m.groupId));
       
       const convosMap = new Map<string, { user?: User, group?: GroupChat, lastMessage: Message }>();
       
@@ -133,12 +134,23 @@ export function Inbox() {
     };
     
     loadInbox();
-    const interval = setInterval(loadInbox, 30000);
-    return () => clearInterval(interval);
+    const interval = setInterval(loadInbox, 180_000);
+    const onVisibility = () => {
+      if (!document.hidden) void loadInbox();
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
   }, [currentUser]);
 
   const createGroup = async () => {
     if (!groupName.trim() || selectedFriends.length === 0 || !currentUser) return;
+    if (isFirebasePartDisabledNow('chat')) {
+      setSupportMediaError(FIREBASE_OUTAGE_MESSAGE);
+      return;
+    }
     
     const newGroup: GroupChat = {
       id: `group_${Date.now()}`,
@@ -150,8 +162,7 @@ export function Inbox() {
       avatarUrl: `https://api.dicebear.com/7.x/identicon/svg?seed=${groupName}`
     };
     
-    const allGroups = await getGroupChats();
-    await saveGroupChats([...allGroups, newGroup]);
+    await saveGroupChats([newGroup]);
     
     setShowCreateGroup(false);
     setGroupName('');
@@ -235,6 +246,10 @@ export function Inbox() {
 
   const submitSupport = async () => {
     if (!supportReason.trim() || !currentUser) return;
+    if (isFirebasePartDisabledNow('support_reports')) {
+      setSupportMediaError(FIREBASE_OUTAGE_MESSAGE);
+      return;
+    }
     await addReport({
       reporterId: currentUser.id,
       reason: supportReason.trim(),

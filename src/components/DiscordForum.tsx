@@ -3,7 +3,7 @@ import { useAppStore } from '../store';
 import { 
   getFAQCategories, saveFAQCategories, getFAQPosts, saveFAQPosts, deleteFAQPostFromDB, 
   getUsers, announceForumPostToEveryone, getForumEditRequests, saveForumEditRequests, 
-  deleteForumEditRequestFromDB, isQuotaBlocked
+  deleteForumEditRequestFromDB, isQuotaBlocked, isFirebasePartDisabledNow, FIREBASE_OUTAGE_MESSAGE
 } from '../lib/db';
 import { FAQCategory, FAQPost, FAQReply, User, ForumEditRequest } from '../types';
 import { 
@@ -33,6 +33,7 @@ export function DiscordForum() {
   const [selectedPost, setSelectedPost] = useState<FAQPost | null>(null);
   const [replyText, setReplyText] = useState('');
   const [isReplyPreview, setIsReplyPreview] = useState(false);
+  const [forumOutageError, setForumOutageError] = useState<string | null>(null);
   const replyTextareaRef = useRef<HTMLTextAreaElement>(null);
   
   // Modals
@@ -227,6 +228,10 @@ export function DiscordForum() {
   // Handle creating post
   const handleCreatePost = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isFirebasePartDisabledNow('forums_announcements')) {
+      setForumOutageError(FIREBASE_OUTAGE_MESSAGE);
+      return;
+    }
     if (!isStaffOrOwner || !currentUser) return;
     if (!newTitle.trim() || !newContent.trim() || !newCategory) return;
 
@@ -450,6 +455,10 @@ export function DiscordForum() {
       setShowAuthModal(true);
       return;
     }
+    if (isFirebasePartDisabledNow('forums_announcements')) {
+      setForumOutageError(FIREBASE_OUTAGE_MESSAGE);
+      return;
+    }
     if (!replyText.trim() || !selectedPost) return;
 
     const newReply: FAQReply = {
@@ -475,6 +484,10 @@ export function DiscordForum() {
   const handleReact = async (postId: string, emoji: string) => {
     if (!currentUser) {
       setShowAuthModal(true);
+      return;
+    }
+    if (isFirebasePartDisabledNow('forums_announcements')) {
+      setForumOutageError(FIREBASE_OUTAGE_MESSAGE);
       return;
     }
     const target = posts.find(p => p.id === postId);
@@ -548,6 +561,11 @@ export function DiscordForum() {
 
       {/* Main Forum Content */}
       <div className="p-4 md:p-6 space-y-6">
+        {(forumOutageError || isFirebasePartDisabledNow('forums_announcements')) && (
+          <div className="px-4 py-3 rounded-xl bg-red-500/15 border border-red-500/40 text-red-400 text-xs font-bold">
+            {forumOutageError || FIREBASE_OUTAGE_MESSAGE}
+          </div>
+        )}
 
         {/* If viewing a single thread */}
         {selectedPost ? (

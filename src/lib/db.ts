@@ -193,64 +193,62 @@ export const initDb = async () => {};
 const lastSyncedDocs = new Map<string, Map<string, string>>();
 const readCache = new Map<string, { data: any[]; fetchedAt: number }>();
 const inflightFetches = new Map<string, Promise<any[]>>();
-let readQuotaBlockedUntil = 0;
-let writeQuotaBlockedUntil = 0;
+const scopedFetchTimestamps = new Map<string, number>();
+
+const READ_QUOTA_KEY = 'ct_read_quota_until';
+const WRITE_QUOTA_KEY = 'ct_write_quota_until';
+const getStoredTimestamp = (key: string): number => {
+  try {
+    const val = Number(localStorage.getItem(key) || '0');
+    return Number.isFinite(val) ? val : 0;
+  } catch {
+    return 0;
+  }
+};
+const setStoredTimestamp = (key: string, val: number) => {
+  try {
+    localStorage.setItem(key, String(val));
+  } catch {}
+};
+
+let readQuotaBlockedUntil = getStoredTimestamp(READ_QUOTA_KEY);
+let writeQuotaBlockedUntil = getStoredTimestamp(WRITE_QUOTA_KEY);
+let consecutiveReadQuotaHits = 0;
 
 const COLLECTION_TTL_MS: Record<string, number> = {
-  users: 120_000,
-  videos: 90_000,
-  stories: 60_000,
-  announcements: 120_000,
-  faq_categories: 120_000,
-  faq_posts: 90_000,
-  sneak_peeks: 90_000,
-  app_suggestions: 90_000,
-  messages: 20_000,
-  notifications: 30_000,
-  group_chats: 30_000,
-  user_statuses: 15_000,
+  users: 10 * 60_000,
+  videos: 10 * 60_000,
+  stories: 5 * 60_000,
+  announcements: 15 * 60_000,
+  faq_categories: 15 * 60_000,
+  faq_posts: 10 * 60_000,
+  sneak_peeks: 10 * 60_000,
+  app_suggestions: 10 * 60_000,
+  centralpro_requests: 10 * 60_000,
+  reports: 5 * 60_000,
+  appeals: 5 * 60_000,
+  audit_logs: 5 * 60_000,
+  messages: 3 * 60_000,
+  notifications: 5 * 60_000,
+  group_chats: 5 * 60_000,
+  user_statuses: 2 * 60_000,
 };
 
-const getCollectionTtl = (collName: string) => COLLECTION_TTL_MS[collName] ?? 30_000;
+const getCollectionTtl = (collName: string) => COLLECTION_TTL_MS[collName] ?? 120_000;
 
-export const isReadQuotaBlocked = () => Date.now() < readQuotaBlockedUntil;
-export const isWriteQuotaBlocked = () => Date.now() < writeQuotaBlockedUntil;
+export const isReadQuotaBlocked = () => {
+  if (Date.now() < readQuotaBlockedUntil) return true;
+  const stored = getStoredTimestamp(READ_QUOTA_KEY);
+  if (stored > readQuotaBlockedUntil) readQuotaBlockedUntil = stored;
+  return Date.now() < readQuotaBlockedUntil;
+};
+export const isWriteQuotaBlocked = () => {
+  if (Date.now() < writeQuotaBlockedUntil) return true;
+  const stored = getStoredTimestamp(WRITE_QUOTA_KEY);
+  if (stored > writeQuotaBlockedUntil) writeQuotaBlockedUntil = stored;
+  return Date.now() < writeQuotaBlockedUntil;
+};
 export const isQuotaBlocked = () => isReadQuotaBlocked() || isWriteQuotaBlocked();
-
-const emitQuotaStatus = () => {
-  if (typeof window !== 'undefined') {
-    window.dispatchEvent(
-      new CustomEvent('ct-quota-status-changed', {
-        detail: {
-          readBlocked: isReadQuotaBlocked(),
-          writeBlocked: isWriteQuotaBlocked(),
-        },
-      })
-    );
-  }
-};
-
-export const clearReadQuotaBlock = () => {
-  readQuotaBlockedUntil = 0;
-  emitQuotaStatus();
-};
-
-export const subscribeToQuotaStatus = (
-  callback: (status: { readBlocked: boolean; writeBlocked: boolean }) => void
-) => {
-  const handler = () => {
-    callback({
-      readBlocked: isReadQuotaBlocked(),
-      writeBlocked: isWriteQuotaBlocked(),
-    });
-  };
-  handler();
-  if (typeof window !== 'undefined') {
-    window.addEventListener('ct-quota-status-changed', handler);
-    return () => window.removeEventListener('ct-quota-status-changed', handler);
-  }
-  return () => {};
-};
 
 export const isQuotaError = (err: any): boolean => {
   const code = err?.code || '';
@@ -273,23 +271,17 @@ export const handleWriteQuotaError = (err: any, operationKind: 'read' | 'write' 
       (operationKind === 'write' && !isExplicitRead) ||
       (operationKind === 'auto' && !isExplicitRead);
 
-    const wasAlreadyBlocked =
-      (blockRead ? isReadQuotaBlocked() : true) &&
-      (blockWrite ? isWriteQuotaBlocked() : true);
-
     if (blockRead) {
-      readQuotaBlockedUntil = Math.max(readQuotaBlockedUntil, Date.now() + 90_000);
+      consecutiveReadQuotaHits = Math.min(consecutiveReadQuotaHits + 1, 4);
+      const backoffMs = consecutiveReadQuotaHits === 1 ? 5 * 60_000 : consecutiveReadQuotaHits === 2 ? 10 * 60_000 : 15 * 60_000;
+      readQuotaBlockedUntil = Math.max(readQuotaBlockedUntil, Date.now() + backoffMs);
+      setStoredTimestamp(READ_QUOTA_KEY, readQuotaBlockedUntil);
     }
     if (blockWrite) {
-      writeQuotaBlockedUntil = Math.max(writeQuotaBlockedUntil, Date.now() + 5 * 60 * 1000);
+      writeQuotaBlockedUntil = Math.max(writeQuotaBlockedUntil, Date.now() + 10 * 60_000);
+      setStoredTimestamp(WRITE_QUOTA_KEY, writeQuotaBlockedUntil);
     }
 
-    emitQuotaStatus();
-    if (!wasAlreadyBlocked) {
-      console.warn(
-        `Firestore free daily ${blockRead && !blockWrite ? 'read' : blockWrite && !blockRead ? 'write' : 'read/write'} quota reached — using local cache.`
-      );
-    }
     return true;
   }
   return false;
@@ -318,7 +310,9 @@ const getCachedCollection = <T>(collName: string): T[] => {
     const cached = localStorage.getItem(`ct_cache_${collName}`);
     if (cached) {
       const parsed = JSON.parse(cached) as T[];
-      readCache.set(collName, { data: parsed, fetchedAt: 0 });
+      const persistedTs = getStoredTimestamp(`ct_cache_ts_${collName}`);
+      readCache.set(collName, { data: parsed, fetchedAt: persistedTs });
+      recordCollectionSnapshot(collName, parsed as any[]);
       return parsed;
     }
   } catch {}
@@ -407,7 +401,11 @@ const compactCollectionForStorage = <T>(collName: string, items: T[]): T[] => {
 const setCachedCollection = <T>(collName: string, items: T[], updateTimestamp = true) => {
   const merged = mergeWithUnsyncedMessages(collName, items);
   const prev = readCache.get(collName);
-  readCache.set(collName, { data: merged, fetchedAt: updateTimestamp ? Date.now() : (prev?.fetchedAt || 0) });
+  const nextTs = updateTimestamp ? Date.now() : (prev?.fetchedAt || getStoredTimestamp(`ct_cache_ts_${collName}`));
+  readCache.set(collName, { data: merged, fetchedAt: nextTs });
+  if (updateTimestamp) {
+    setStoredTimestamp(`ct_cache_ts_${collName}`, nextTs);
+  }
 
   const storagePayload = compactCollectionForStorage(collName, merged);
   try {
@@ -459,8 +457,12 @@ const recordCollectionSnapshot = <T extends { id?: string }>(collName: string, i
 };
 
 const fetchCollection = async <T>(collName: string): Promise<T[]> => {
+  // Hydrate memory cache + persisted timestamp from localStorage before checking TTL
+  if (!readCache.has(collName)) {
+    getCachedCollection<T>(collName);
+  }
   const cachedMem = readCache.get(collName);
-  if (cachedMem && Date.now() - cachedMem.fetchedAt < getCollectionTtl(collName)) {
+  if (cachedMem && cachedMem.fetchedAt > 0 && Date.now() - cachedMem.fetchedAt < getCollectionTtl(collName)) {
     return mergeWithUnsyncedMessages(collName, cachedMem.data as T[]);
   }
 
@@ -476,6 +478,7 @@ const fetchCollection = async <T>(collName: string): Promise<T[]> => {
   const req = (async (): Promise<T[]> => {
     try {
       const snapshot = await getDocs(collection(db, collName));
+      consecutiveReadQuotaHits = 0;
       const items = snapshot.docs.map(doc => doc.data() as T);
       recordCollectionSnapshot(collName, items as any[]);
       setCachedCollection(collName, items, true);
@@ -773,6 +776,7 @@ export const subscribeToVideo = (videoId: string, callback: (video: Video) => vo
 };
 
 export const ensureVideoInDB = async (video: Video) => {
+  if (isQuotaBlocked()) return;
   try {
     const docRef = doc(db, 'videos', video.id);
     const snap = await getDoc(docRef);
@@ -783,11 +787,12 @@ export const ensureVideoInDB = async (video: Video) => {
       await setDoc(docRef, dbVideo);
     }
   } catch (err) {
-    console.error(err);
+    handleWriteQuotaError(err);
   }
 };
 
 export const incrementVideoView = async (id: string, viewerId: string | null) => {
+  if (isQuotaBlocked()) return;
   try {
     const docRef = doc(db, 'videos', id);
     const snap = await getDoc(docRef);
@@ -801,8 +806,8 @@ export const incrementVideoView = async (id: string, viewerId: string | null) =>
         viewedBy: viewerId ? arrayUnion(viewerId) : (video.viewedBy || [])
       });
     }
-  } catch(err) {
-    console.error(err);
+  } catch (err) {
+    handleWriteQuotaError(err);
   }
 };
 
@@ -898,6 +903,134 @@ export const markMessagesSeen = async (messageIds: string[], userId: string) => 
   } catch (err) {
     handleWriteQuotaError(err);
   }
+};
+
+export const getMessagesForUser = async (userId: string, groupIds: string[] = []): Promise<Message[]> => {
+  const filterForUser = (all: Message[]) => {
+    const gSet = new Set(groupIds);
+    return all.filter(
+      m => m.fromUserId === userId || m.toUserId === userId || (m.groupId && gSet.has(m.groupId))
+    );
+  };
+  if (!userId) return [];
+  const scopeKey = `messages:user:${userId}:${groupIds.slice().sort().join(',')}`;
+  const lastFetched = scopedFetchTimestamps.get(scopeKey) || 0;
+  if (isReadQuotaBlocked() || Date.now() - lastFetched < 90_000) {
+    const cached = mergeWithUnsyncedMessages('messages', getCachedCollection<Message>('messages'));
+    return filterForUser(cached);
+  }
+  try {
+    const queries = [
+      getDocs(query(collection(db, 'messages'), where('toUserId', '==', userId))),
+      getDocs(query(collection(db, 'messages'), where('fromUserId', '==', userId))),
+    ];
+    for (let i = 0; i < groupIds.length; i += 10) {
+      const chunk = groupIds.slice(i, i + 10);
+      if (chunk.length > 0) {
+        queries.push(getDocs(query(collection(db, 'messages'), where('groupId', 'in', chunk))));
+      }
+    }
+    const snaps = await Promise.all(queries);
+    const collected = new Map<string, Message>();
+    for (const snap of snaps) {
+      for (const d of snap.docs) {
+        const msg = d.data() as Message;
+        if (msg?.id) collected.set(msg.id, msg);
+      }
+    }
+    const incoming = Array.from(collected.values());
+    recordCollectionSnapshot('messages', incoming);
+    upsertCachedCollection('messages', incoming);
+    scopedFetchTimestamps.set(scopeKey, Date.now());
+    const merged = mergeWithUnsyncedMessages('messages', getCachedCollection<Message>('messages'));
+    return filterForUser(merged);
+  } catch (err) {
+    handleWriteQuotaError(err, 'read');
+    const cached = mergeWithUnsyncedMessages('messages', getCachedCollection<Message>('messages'));
+    return filterForUser(cached);
+  }
+};
+
+export const subscribeToDirectMessages = (
+  userIdA: string,
+  userIdB: string,
+  callback: (messages: Message[]) => void
+) => {
+  if (!userIdA && !userIdB) return () => {};
+  const matchesPair = (m: Message) => {
+    if (m.groupId) return false;
+    if (userIdA && userIdB) {
+      return (
+        (m.fromUserId === userIdA && m.toUserId === userIdB) ||
+        (m.fromUserId === userIdB && m.toUserId === userIdA)
+      );
+    }
+    const sole = userIdA || userIdB;
+    return m.fromUserId === sole || m.toUserId === sole;
+  };
+  const emitCached = () => {
+    const cached = mergeWithUnsyncedMessages('messages', getCachedCollection<Message>('messages'));
+    callback(cached.filter(matchesPair).sort((a, b) => a.timestamp - b.timestamp));
+  };
+
+  emitCached();
+  if (isQuotaBlocked()) {
+    return () => {};
+  }
+
+  const mapA = new Map<string, Message>();
+  const mapB = new Map<string, Message>();
+  const emitMerged = () => {
+    const combined = new Map<string, Message>();
+    mapA.forEach((v, k) => combined.set(k, v));
+    mapB.forEach((v, k) => combined.set(k, v));
+    const list = Array.from(combined.values()).filter(matchesPair);
+    if (list.length > 0) {
+      recordCollectionSnapshot('messages', list);
+      upsertCachedCollection('messages', list);
+    }
+    const unsynced = getUnsyncedMessages().filter(m => matchesPair(m) && !combined.has(m.id));
+    callback([...list, ...unsynced].sort((a, b) => a.timestamp - b.timestamp));
+  };
+
+  const unsubs: Array<() => void> = [];
+  if (userIdA) {
+    unsubs.push(
+      onSnapshot(
+        query(collection(db, 'messages'), where('toUserId', '==', userIdA)),
+        (snap) => {
+          mapA.clear();
+          snap.docs.forEach(d => {
+            const m = d.data() as Message;
+            if (matchesPair(m)) mapA.set(m.id, m);
+          });
+          emitMerged();
+        },
+        (err) => { handleWriteQuotaError(err, 'read'); }
+      )
+    );
+  }
+  if (userIdB && userIdB !== userIdA) {
+    unsubs.push(
+      onSnapshot(
+        query(collection(db, 'messages'), where('toUserId', '==', userIdB)),
+        (snap) => {
+          mapB.clear();
+          snap.docs.forEach(d => {
+            const m = d.data() as Message;
+            if (matchesPair(m)) mapB.set(m.id, m);
+          });
+          emitMerged();
+        },
+        (err) => { handleWriteQuotaError(err, 'read'); }
+      )
+    );
+  }
+  return () => {
+    unsubs.forEach(u => {
+      try { u(); } catch {}
+    });
+  };
 };
 
 export const subscribeToMessages = (callback: (messages: Message[]) => void, targetUserId?: string) => {
@@ -1004,6 +1137,42 @@ export const toggleMessageReaction = async (messageId: string, emoji: string, us
 };
 
 export const getGroupChats = () => fetchCollection<GroupChat>('group_chats');
+export const getGroupChatsForUser = async (userId: string): Promise<GroupChat[]> => {
+  if (!userId) return [];
+  const scopeKey = `group_chats:user:${userId}`;
+  const lastFetched = scopedFetchTimestamps.get(scopeKey) || 0;
+  const cached = getCachedCollection<GroupChat>('group_chats').filter(g => (g.members || []).includes(userId));
+  if (isReadQuotaBlocked() || (cached.length > 0 && Date.now() - lastFetched < 3 * 60_000)) {
+    return cached;
+  }
+  try {
+    const snap = await getDocs(query(collection(db, 'group_chats'), where('members', 'array-contains', userId)));
+    const items = snap.docs.map(d => d.data() as GroupChat);
+    upsertCachedCollection('group_chats', items);
+    scopedFetchTimestamps.set(scopeKey, Date.now());
+    return items;
+  } catch (err) {
+    handleWriteQuotaError(err, 'read');
+    return cached;
+  }
+};
+export const getGroupChatById = async (groupId: string): Promise<GroupChat | null> => {
+  if (!groupId) return null;
+  const cached = getCachedCollection<GroupChat>('group_chats').find(g => g.id === groupId) || null;
+  if (cached || isReadQuotaBlocked()) return cached;
+  try {
+    const snap = await getDoc(doc(db, 'group_chats', groupId));
+    if (snap.exists()) {
+      const group = snap.data() as GroupChat;
+      upsertCachedCollection('group_chats', [group]);
+      return group;
+    }
+    return null;
+  } catch (err) {
+    handleWriteQuotaError(err, 'read');
+    return cached;
+  }
+};
 export const saveGroupChats = (groups: GroupChat[]) => saveCollection('group_chats', groups);
 
 export const updateGroupChat = async (groupId: string, data: any) => {
@@ -1205,6 +1374,28 @@ export const cleanupGroupVoiceSignals = async (groupId: string, userId: string) 
 export const getUserStatuses = () => fetchCollection<UserStatus>('user_statuses');
 export const saveUserStatuses = (statuses: UserStatus[]) => saveCollection('user_statuses', statuses);
 
+export const subscribeToUserStatus = (userId: string, callback: (status: UserStatus | null) => void) => {
+  if (!userId || isQuotaBlocked()) return () => {};
+  return onSnapshot(doc(db, 'user_statuses', userId), (snap) => {
+    callback(snap.exists() ? (snap.data() as UserStatus) : null);
+  }, (err) => {
+    handleWriteQuotaError(err, 'read');
+  });
+};
+
+export const subscribeToTypingIn = (channelId: string, callback: (statuses: UserStatus[]) => void) => {
+  if (!channelId || isQuotaBlocked()) return () => {};
+  return onSnapshot(
+    query(collection(db, 'user_statuses'), where('typingIn', '==', channelId)),
+    (snap) => {
+      callback(snap.docs.map(d => d.data() as UserStatus));
+    },
+    (err) => {
+      handleWriteQuotaError(err, 'read');
+    }
+  );
+};
+
 export const updateTypingStatus = async (userId: string, isTyping: boolean, typingIn?: string) => {
   if (isQuotaBlocked()) return;
   try {
@@ -1225,19 +1416,38 @@ export const updateTypingStatus = async (userId: string, isTyping: boolean, typi
 
 export const markMessagesFromUserAsRead = async (currentUserId: string, otherUserId: string) => {
   try {
-    const allMsgs = await getMessages();
-    const unreadIds = allMsgs
+    const userMsgs = await getMessagesForUser(currentUserId);
+    const unreadIds = userMsgs
       .filter(m => m.fromUserId === otherUserId && m.toUserId === currentUserId && !m.read)
       .map(m => m.id);
     if (unreadIds.length > 0) {
       await markMessagesSeen(unreadIds, currentUserId);
     }
   } catch (err) {
-    console.error("Error marking messages as read:", err);
+    handleWriteQuotaError(err);
   }
 };
 
 export const getNotifications = () => fetchCollection<AppNotification>('notifications');
+export const getNotificationsForUser = async (userId: string): Promise<AppNotification[]> => {
+  if (!userId) return [];
+  const scopeKey = `notifications:user:${userId}`;
+  const lastFetched = scopedFetchTimestamps.get(scopeKey) || 0;
+  const cached = getCachedCollection<AppNotification>('notifications').filter(n => n.userId === userId);
+  if (isReadQuotaBlocked() || (cached.length > 0 && Date.now() - lastFetched < 2 * 60_000)) {
+    return cached;
+  }
+  try {
+    const snap = await getDocs(query(collection(db, 'notifications'), where('userId', '==', userId)));
+    const items = snap.docs.map(d => d.data() as AppNotification);
+    upsertCachedCollection('notifications', items, (n) => n.userId === userId);
+    scopedFetchTimestamps.set(scopeKey, Date.now());
+    return items;
+  } catch (err) {
+    handleWriteQuotaError(err, 'read');
+    return cached;
+  }
+};
 export const saveNotifications = (notifications: AppNotification[]) => saveCollection('notifications', notifications);
 
 export const addNotifications = async (newNotifs: AppNotification[]) => {
@@ -1301,7 +1511,6 @@ export const subscribeToNotifications = (userId: string, callback: (notification
 export const announceForumPostToEveryone = async (post: FAQPost, author: User) => {
   try {
     const allUsers = await getUsers();
-    const existingNotifs = await getNotifications();
     const newNotifs: AppNotification[] = allUsers.map(user => ({
       id: `notif_forum_${post.id}_${user.id}`,
       userId: user.id,
@@ -1313,13 +1522,32 @@ export const announceForumPostToEveryone = async (post: FAQPost, author: User) =
       read: false,
       timestamp: Date.now()
     }));
-    await saveNotifications([...existingNotifs, ...newNotifs]);
+    await addNotifications(newNotifs);
   } catch (err) {
     console.error("Error announcing forum post to everyone:", err);
   }
 };
 
 export const getReports = () => fetchCollection<Report>('reports');
+export const getReportsForUser = async (userId: string): Promise<Report[]> => {
+  if (!userId) return [];
+  const scopeKey = `reports:user:${userId}`;
+  const lastFetched = scopedFetchTimestamps.get(scopeKey) || 0;
+  const cached = getCachedCollection<Report>('reports').filter(r => r.reporterId === userId);
+  if (isReadQuotaBlocked() || (cached.length > 0 && Date.now() - lastFetched < 2 * 60_000)) {
+    return cached;
+  }
+  try {
+    const snap = await getDocs(query(collection(db, 'reports'), where('reporterId', '==', userId)));
+    const items = snap.docs.map(d => d.data() as Report);
+    upsertCachedCollection('reports', items, (r) => r.reporterId === userId);
+    scopedFetchTimestamps.set(scopeKey, Date.now());
+    return items;
+  } catch (err) {
+    handleWriteQuotaError(err, 'read');
+    return cached;
+  }
+};
 export const saveReports = (reports: Report[]) => saveCollection('reports', reports);
 
 export const addReport = async (report: Omit<Report, 'id'>) => {
@@ -1593,10 +1821,9 @@ export const deleteForumEditRequestFromDB = async (reqId: string) => {
 export const getCentralProRequests = async (): Promise<CentralProRequest[]> => {
   let reqs: CentralProRequest[] = [];
   
-  // 1. Fetch from Firestore
+  // 1. Fetch via cached collection helper (honors 10m TTL & quota guard)
   try {
-    const snapshot = await getDocs(collection(db, 'centralpro_requests'));
-    reqs = snapshot.docs.map(doc => doc.data() as CentralProRequest);
+    reqs = [...(await fetchCollection<CentralProRequest>('centralpro_requests'))];
     if (reqs.length > 0) {
       try {
         localStorage.setItem('centralpro_all_requests', JSON.stringify(reqs));
@@ -1851,6 +2078,82 @@ export const subscribeToSneakPeeks = (callback: (peeks: SneakPeek[]) => void) =>
 
 const APP_SETTINGS_CACHE_KEY = 'ct_cache_app_settings';
 
+export type FirebaseFeatureKey =
+  | 'chat'
+  | 'voice_video_calls'
+  | 'live_streams'
+  | 'video_uploads_stories'
+  | 'video_comments_likes'
+  | 'profiles_follow'
+  | 'forums_announcements'
+  | 'support_reports'
+  | 'explore_search';
+
+export const FIREBASE_OUTAGE_MESSAGE =
+  'Server has an outage/overflow data-usage, Please atleast wait until the staff fixes this, may take 24 hours';
+
+export const FIREBASE_FEATURE_PARTS: Array<{
+  key: FirebaseFeatureKey;
+  label: string;
+  pathHint: string;
+  description: string;
+}> = [
+  {
+    key: 'chat',
+    label: 'Chat & Direct Messages',
+    pathHint: '/messages/:handle, Group Chats & Intercom DMs',
+    description: 'Pressing Send shows a red outage message visible only to the sender and skips delivery.'
+  },
+  {
+    key: 'voice_video_calls',
+    label: 'Voice & Video Calls',
+    pathHint: '1-on-1 Calls & Group Voice Rooms',
+    description: 'Blocks starting voice/video calls or joining group voice rooms.'
+  },
+  {
+    key: 'live_streams',
+    label: 'LIVE Streams & Live Chat',
+    pathHint: '/live & /live/:streamId',
+    description: 'Blocks starting broadcasts, live chat messages, reactions, and live polls.'
+  },
+  {
+    key: 'video_uploads_stories',
+    label: 'Video Uploads & 24h Stories',
+    pathHint: '/upload & Stories Bar',
+    description: 'Blocks publishing new feed videos, images, and 24-hour stories.'
+  },
+  {
+    key: 'video_comments_likes',
+    label: 'Video Comments, Likes & Bookmarks',
+    pathHint: 'For You / Following Feed Actions',
+    description: 'Blocks posting comments, toggling likes, and saving bookmarks.'
+  },
+  {
+    key: 'profiles_follow',
+    label: 'Profiles, Edits & Following',
+    pathHint: '/profile/:handle',
+    description: 'Blocks following/unfollowing users, editing profiles, and submitting appeals.'
+  },
+  {
+    key: 'forums_announcements',
+    label: 'Forums, Updates & Sneak Peeks',
+    pathHint: '/forum, /forum/updates & /forum/sneak-peeks',
+    description: 'Blocks creating posts, commenting, and reacting across forums.'
+  },
+  {
+    key: 'support_reports',
+    label: 'Support & Bug Reports',
+    pathHint: 'Support Modal & Video Report Modal',
+    description: 'Blocks submitting new support tickets and bug/video reports.'
+  },
+  {
+    key: 'explore_search',
+    label: 'Explore & Live Search',
+    pathHint: '/explore',
+    description: 'Blocks Explore search queries and live creator discovery.'
+  }
+];
+
 export interface GlobalAppSettings {
   useCache: boolean;
   youtubeApiKeyIndex: number;
@@ -1859,6 +2162,8 @@ export interface GlobalAppSettings {
   siteShutdownMode?: 'off' | 'invited' | 'full';
   siteShutdownPin?: string;
   siteShutdownAt?: number;
+  firebaseShutdownEnabled?: boolean;
+  firebaseDisabledParts?: Partial<Record<FirebaseFeatureKey, boolean>>;
 }
 
 const getDefaultAppSettings = (): GlobalAppSettings => ({
@@ -1868,10 +2173,12 @@ const getDefaultAppSettings = (): GlobalAppSettings => ({
   gamesAppsCrashed: false,
   siteShutdownMode: 'off',
   siteShutdownPin: '',
-  siteShutdownAt: 0
+  siteShutdownAt: 0,
+  firebaseShutdownEnabled: false,
+  firebaseDisabledParts: {}
 });
 
-const getCachedAppSettings = (): GlobalAppSettings => {
+export const getCachedAppSettings = (): GlobalAppSettings => {
   try {
     const raw = localStorage.getItem(APP_SETTINGS_CACHE_KEY);
     if (raw) {
@@ -1881,21 +2188,40 @@ const getCachedAppSettings = (): GlobalAppSettings => {
   return getDefaultAppSettings();
 };
 
-const setCachedAppSettings = (settings: GlobalAppSettings) => {
+export const isFirebasePartShutDown = (
+  settings: GlobalAppSettings | null | undefined,
+  part: FirebaseFeatureKey
+): boolean => {
+  return Boolean(settings?.firebaseShutdownEnabled && settings?.firebaseDisabledParts?.[part]);
+};
+
+export const isFirebasePartDisabledNow = (part: FirebaseFeatureKey): boolean => {
+  return isFirebasePartShutDown(getCachedAppSettings(), part);
+};
+
+const APP_SETTINGS_TS_KEY = 'ct_app_settings_ts';
+
+const setCachedAppSettings = (settings: GlobalAppSettings, updateTimestamp = true) => {
   try {
     localStorage.setItem(APP_SETTINGS_CACHE_KEY, JSON.stringify(settings));
+    if (updateTimestamp) {
+      setStoredTimestamp(APP_SETTINGS_TS_KEY, Date.now());
+    }
   } catch {}
 };
 
 export const getAppSettings = async (): Promise<GlobalAppSettings> => {
   const fallback = getCachedAppSettings();
-  if (isReadQuotaBlocked()) return fallback;
+  const lastFetched = getStoredTimestamp(APP_SETTINGS_TS_KEY);
+  if (isReadQuotaBlocked() || (lastFetched > 0 && Date.now() - lastFetched < 10 * 60_000)) {
+    return fallback;
+  }
   try {
     const docRef = doc(db, 'app_settings', 'global');
     const snap = await getDoc(docRef);
     if (snap.exists()) {
       const merged = { ...getDefaultAppSettings(), ...snap.data() } as GlobalAppSettings;
-      setCachedAppSettings(merged);
+      setCachedAppSettings(merged, true);
       return merged;
     }
     return fallback;

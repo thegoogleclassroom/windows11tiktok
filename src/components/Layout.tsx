@@ -5,7 +5,7 @@ import { motion, AnimatePresence, MotionConfig } from 'motion/react';
 import { useAppStore } from '../store';
 import { AuthModal } from './AuthModal';
 import { MiniPlayer } from './MiniPlayer';
-import { saveReports, getMessages, getUsers, getNotifications, markNotificationAsRead, getFAQPosts, subscribeToNotifications, saveGameData, getGameData, subscribeToIncomingCalls, subscribeToMessages, updateUser, requestCentralProVerification, updateUserListeningState, subscribeToUserDoc, isQuotaBlocked, subscribeToLiveStreams, subscribeToAppSettings, GlobalAppSettings, subscribeToQuotaStatus, clearReadQuotaBlock } from '../lib/db';
+import { saveReports, getMessages, getUsers, getUser, getCachedUserById, getNotifications, markNotificationAsRead, getFAQPosts, subscribeToNotifications, saveGameData, getGameData, subscribeToIncomingCalls, subscribeToMessages, updateUser, requestCentralProVerification, updateUserListeningState, subscribeToUserDoc, isQuotaBlocked, subscribeToLiveStreams, subscribeToAppSettings, GlobalAppSettings, isFirebasePartShutDown, FIREBASE_OUTAGE_MESSAGE } from '../lib/db';
 import { playNotificationSound } from '../lib/utils';
 import { TradientInfoModal } from './TradientInfoModal';
 import { HolographicBadge, CentralProBadge } from './UIPolish';
@@ -168,16 +168,15 @@ export function Layout({ children }: { children: React.ReactNode }) {
     }
 
     const unsubscribe = subscribeToMessages(async (messages) => {
-      const users = await getUsers();
       const incoming = messages.filter(message => message.toUserId === currentUser.id);
       const unread = incoming.filter(m => !m.read).length;
       setUnreadCount(unread);
 
       const freshUnread = incoming.filter(m => !m.read && !knownMessageIds.current.has(m.id));
-      freshUnread.forEach(m => {
+      for (const m of freshUnread) {
         knownMessageIds.current.add(m.id);
-        if (dndRef.current) return;
-        const sender = users.find(user => user.id === m.fromUserId);
+        if (dndRef.current) continue;
+        const sender = getCachedUserById(m.fromUserId) || (await getUser(m.fromUserId));
         if (sender) {
           setMessageToast({username: sender.username, avatarUrl: sender.avatarUrl, handle: sender.handle});
           playNotificationSound(soundRef.current);
@@ -191,7 +190,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
             } catch (err) {}
           }
         }
-      });
+      }
       incoming.forEach(message => knownMessageIds.current.add(message.id));
     }, currentUser.id);
 
@@ -234,8 +233,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
         const sessionKey = `ct_shown_forum_${latest.id}`;
         if (!sessionStorage.getItem(sessionKey)) {
           sessionStorage.setItem(sessionKey, 'true');
-          const users = await getUsers();
-          const author = users.find(u => u.id === latest.fromUserId);
+          const author = getCachedUserById(latest.fromUserId) || (await getUser(latest.fromUserId));
           setForumToast({
             id: latest.id,
             title: latest.title || 'New Forum Announcement',
@@ -260,8 +258,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
         const sessionKey = `ct_shown_reward_${latest.id}`;
         if (!sessionStorage.getItem(sessionKey)) {
           sessionStorage.setItem(sessionKey, 'true');
-          const users = await getUsers();
-          const author = users.find(u => u.id === latest.fromUserId);
+          const author = getCachedUserById(latest.fromUserId) || (await getUser(latest.fromUserId));
           setRewardToast({
             id: latest.id,
             message: latest.message || '',
@@ -288,8 +285,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
         const sessionKey = `ct_shown_intercom_${latest.id}`;
         if (!sessionStorage.getItem(sessionKey)) {
           sessionStorage.setItem(sessionKey, 'true');
-          const users = await getUsers();
-          const staff = users.find(u => u.id === latest.fromUserId);
+          const staff = getCachedUserById(latest.fromUserId) || (await getUser(latest.fromUserId));
           setIntercomToast({
             id: latest.id,
             reportId: latest.reportId!,
@@ -316,8 +312,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
 
         if (!knownCallIds.current.has(call.id) && call.status === 'offering') {
           knownCallIds.current.add(call.id);
-          const users = await getUsers();
-          const caller = users.find(u => u.id === call.callerId);
+          const caller = getCachedUserById(call.callerId) || (await getUser(call.callerId));
           const callerName = caller?.username || 'Someone';
 
           if ('Notification' in window && Notification.permission === 'granted') {
@@ -420,7 +415,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
           ? (prev.isPlaying ? prev.currentTime + (now - prev.syncedAt) / 1000 : prev.currentTime)
           : 0;
         const scrubbed = prev ? Math.abs((parsed.currentTime || 0) - expectedTime) > 3.5 : false;
-        const heartbeatDue = !prev || (Boolean(parsed.isPlaying) && now - prev.syncedAt > 60000);
+        const heartbeatDue = !prev || (!(typeof document !== 'undefined' && document.hidden) && Boolean(parsed.isPlaying) && now - prev.syncedAt > 60000);
 
         if (trackChanged || playToggled || scrubbed || heartbeatDue) {
           const nextSeq = trackChanged ? ((prev?.trackSeq || 0) + 1) : (prev?.trackSeq || 1);
@@ -589,6 +584,10 @@ export function Layout({ children }: { children: React.ReactNode }) {
 
   const handleSupportSubmit = async () => {
     if (!supportMessage.trim()) return;
+    if (isFirebasePartShutDown(globalAppSettings, 'support_reports')) {
+      setSupportMediaError(FIREBASE_OUTAGE_MESSAGE);
+      return;
+    }
     const { addReport } = await import('../lib/db');
     await addReport({
       videoId: 'general_support',
@@ -678,7 +677,6 @@ export function Layout({ children }: { children: React.ReactNode }) {
     <div className="flex flex-col h-screen bg-white dark:bg-zinc-950 text-zinc-900 dark:text-zinc-50 overflow-hidden transition-colors">
       <GitHubUpdateBanner />
       <BookmarkBanner />
-      <QuotaNoticeBanner />
       <AnnouncementBanner />
 
       {/* TikTok Desktop Top Navigation Header */}
@@ -2670,50 +2668,6 @@ function SiteShutdownOverlay({
             </button>
           </form>
         )}
-      </div>
-    </div>
-  );
-}
-
-function QuotaNoticeBanner() {
-  const [readBlocked, setReadBlocked] = useState(false);
-  const [dismissed, setDismissed] = useState(false);
-
-  useEffect(() => {
-    return subscribeToQuotaStatus(({ readBlocked: blocked }) => {
-      setReadBlocked(blocked);
-      if (!blocked) {
-        setDismissed(false);
-      }
-    });
-  }, []);
-
-  if (!readBlocked || dismissed) return null;
-
-  return (
-    <div className="w-full bg-amber-950/95 border-b border-amber-500/40 text-amber-100 px-4 py-2 flex flex-wrap items-center justify-center gap-3 text-xs z-50 shrink-0">
-      <div className="flex items-center gap-2 font-semibold">
-        <AlertTriangle size={14} className="text-amber-400 shrink-0" />
-        <span>
-          Firebase free daily read quota reached — showing cached data. All profiles &amp; posts are safe and live sync resumes when quota resets.
-        </span>
-      </div>
-      <div className="flex items-center gap-2">
-        <button
-          type="button"
-          onClick={() => clearReadQuotaBlock()}
-          className="px-2.5 py-1 rounded-md bg-amber-500 hover:bg-amber-400 text-zinc-950 font-bold text-[11px] transition-colors cursor-pointer"
-        >
-          Retry Sync
-        </button>
-        <button
-          type="button"
-          onClick={() => setDismissed(true)}
-          className="p-1 text-amber-300 hover:text-white transition-colors cursor-pointer"
-          aria-label="Dismiss quota notice"
-        >
-          <X size={14} />
-        </button>
       </div>
     </div>
   );

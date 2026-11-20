@@ -1,10 +1,10 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAppStore } from '../store';
-import { getUsers, getReports, saveReports, resolveReport, getAppeals, saveAppeals, getAuditLogs, saveAuditLogs, addAuditLog, saveUsers, updateUser, getVideos, saveVideos, getAppSettings, saveAppSettings, GlobalAppSettings, saveNotifications, addNotifications, getNotifications, getAnnouncements, saveAnnouncement, deleteAnnouncement, subscribeToAnnouncements, subscribeToVerificationRequests, voteOnVerificationRequest, updateVerificationRequestStatus, updateUserVerificationStatus, subscribeToSuggestions, getVerificationRequests, updateDoc, doc, db, wipeUserFromSystem, getCentralProRequests, approveCentralProPayment, declineCentralProPayment, updateReportIntercom } from '../lib/db';
+import { getUsers, getReports, saveReports, resolveReport, getAppeals, saveAppeals, getAuditLogs, saveAuditLogs, addAuditLog, saveUsers, updateUser, getVideos, saveVideos, getAppSettings, saveAppSettings, subscribeToAppSettings, GlobalAppSettings, FirebaseFeatureKey, FIREBASE_FEATURE_PARTS, FIREBASE_OUTAGE_MESSAGE, saveNotifications, addNotifications, getNotifications, getAnnouncements, saveAnnouncement, deleteAnnouncement, subscribeToAnnouncements, subscribeToVerificationRequests, voteOnVerificationRequest, updateVerificationRequestStatus, updateUserVerificationStatus, subscribeToSuggestions, getVerificationRequests, updateDoc, doc, db, wipeUserFromSystem, getCentralProRequests, approveCentralProPayment, declineCentralProPayment, updateReportIntercom } from '../lib/db';
 import { setDoc } from 'firebase/firestore';
 import { User, Report, Appeal, AuditLog, Video, AppNotification, Announcement, VerificationRequest, AppSuggestion, CentralProRequest } from '../types';
-import { ShieldAlert, AlertTriangle, Users, FileText, CheckCircle, XCircle, Trash2, Ban, Search, Filter, RotateCcw, Loader2, Power, Gamepad2, Settings, Megaphone, Plus, Calendar, Palette, Maximize, Target, Layout as LayoutIcon, Ghost, X, Lightbulb, UserCheck, HelpCircle, Rocket, MessageCircle, Lock, Unlock, Volume2, VolumeX, Copy, Check, Eye, EyeOff } from 'lucide-react';
+import { ShieldAlert, AlertTriangle, Users, FileText, CheckCircle, XCircle, Trash2, Ban, Search, Filter, RotateCcw, Loader2, Power, Gamepad2, Settings, Megaphone, Plus, Calendar, Palette, Maximize, Target, Layout as LayoutIcon, Ghost, X, Lightbulb, UserCheck, HelpCircle, Rocket, MessageCircle, Lock, Unlock, Volume2, VolumeX, Copy, Check, Eye, EyeOff, Database } from 'lucide-react';
 import { getDeviceId } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
 import { GAMES, APPS } from '../data/games';
@@ -164,7 +164,9 @@ export function Admin() {
     gamesAppsCrashed: false,
     siteShutdownMode: 'off',
     siteShutdownPin: '',
-    siteShutdownAt: 0
+    siteShutdownAt: 0,
+    firebaseShutdownEnabled: false,
+    firebaseDisabledParts: {}
   });
   const [selectedShutdownMode, setSelectedShutdownMode] = useState<'invited' | 'full'>('invited');
   const [invitePinDraft, setInvitePinDraft] = useState('');
@@ -264,7 +266,10 @@ export function Admin() {
   useEffect(() => {
     if (isMod && activeTab === 'centralpro') {
       refreshCentralProList();
-      const interval = setInterval(refreshCentralProList, 30000);
+      const interval = setInterval(() => {
+        if (typeof document !== 'undefined' && document.hidden) return;
+        void refreshCentralProList();
+      }, 120_000);
       return () => clearInterval(interval);
     }
   }, [isMod, activeTab]);
@@ -722,6 +727,49 @@ export function Admin() {
     setAppSettings(newSettings);
     await saveAppSettings(newSettings);
     await logAction('update_api_index', 'system', `Updated YouTube API strategy to ${index === 0 ? 'Automatic' : `Key ${index}`}`);
+  };
+
+  const toggleFirebaseShutdownEnabled = async () => {
+    if (!isOwner) return;
+    const nextEnabled = !appSettings.firebaseShutdownEnabled;
+    const newSettings: GlobalAppSettings = {
+      ...appSettings,
+      firebaseShutdownEnabled: nextEnabled
+    };
+    setAppSettings(newSettings);
+    await saveAppSettings(newSettings);
+    await logAction('firebase_shutdown_toggle', 'system', `Set Firebase Shutdown mode to ${nextEnabled ? 'ENABLED' : 'DISABLED'}`);
+  };
+
+  const toggleFirebasePart = async (partKey: FirebaseFeatureKey) => {
+    if (!isOwner) return;
+    const currentParts = { ...(appSettings.firebaseDisabledParts || {}) };
+    const nextVal = !currentParts[partKey];
+    currentParts[partKey] = nextVal;
+    const newSettings: GlobalAppSettings = {
+      ...appSettings,
+      firebaseShutdownEnabled: nextVal ? true : appSettings.firebaseShutdownEnabled,
+      firebaseDisabledParts: currentParts
+    };
+    setAppSettings(newSettings);
+    await saveAppSettings(newSettings);
+    await logAction('firebase_part_toggle', partKey, `${nextVal ? 'Shut down' : 'Restored'} Firebase feature: ${partKey}`);
+  };
+
+  const setAllFirebaseParts = async (disableAll: boolean) => {
+    if (!isOwner) return;
+    const nextParts: Partial<Record<FirebaseFeatureKey, boolean>> = {};
+    FIREBASE_FEATURE_PARTS.forEach(p => {
+      nextParts[p.key] = disableAll;
+    });
+    const newSettings: GlobalAppSettings = {
+      ...appSettings,
+      firebaseShutdownEnabled: disableAll ? true : appSettings.firebaseShutdownEnabled,
+      firebaseDisabledParts: nextParts
+    };
+    setAppSettings(newSettings);
+    await saveAppSettings(newSettings);
+    await logAction('firebase_parts_bulk', 'system', disableAll ? 'Shut down all specific Firebase features' : 'Cleared all specific Firebase feature shutdowns');
   };
 
   const finalizeCrash = async (targetType: 'server' | 'games', immediate = false) => {
@@ -2275,6 +2323,143 @@ export function Admin() {
                     <span className="text-[11px] text-zinc-500">
                       Owner access to Moderation (/admin) stays open so you can always restore the site or update the PIN.
                     </span>
+                  </div>
+                </div>
+
+                {/* Firebase Shutdown (Selective Page/Feature Outage Mode - Does NOT shut down Firestore) */}
+                <div className="mt-6 bg-zinc-50 dark:bg-zinc-950 p-6 rounded-2xl border border-zinc-200 dark:border-zinc-800 space-y-5">
+                  <div className="flex flex-wrap items-center justify-between gap-4">
+                    <div className="flex items-start gap-3">
+                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
+                        appSettings.firebaseShutdownEnabled
+                          ? 'bg-red-500/15 text-red-500 border border-red-500/30'
+                          : 'bg-emerald-500/15 text-emerald-500 border border-emerald-500/30'
+                      }`}>
+                        <Database size={20} />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <h3 className="font-bold text-lg">Firebase Shutdown (Selective Features)</h3>
+                          <span className={`px-2.5 py-0.5 rounded text-[10px] font-black uppercase tracking-widest ${
+                            appSettings.firebaseShutdownEnabled
+                              ? 'bg-red-500/15 text-red-500 border border-red-500/30'
+                              : 'bg-zinc-200 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400'
+                          }`}>
+                            {appSettings.firebaseShutdownEnabled ? 'Outage Mode ON' : 'OFF'}
+                          </span>
+                        </div>
+                        <p className="text-xs text-zinc-500 mt-1">
+                          Does <strong>not</strong> actually shut down Firebase or the site. Instead, it puts only the specific pages &amp; features you toggle below into outage mode and shows users the red outage notice.
+                        </p>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={toggleFirebaseShutdownEnabled}
+                      className={`relative inline-flex h-8 w-14 items-center rounded-full transition-colors focus:outline-none cursor-pointer shrink-0 ${
+                        appSettings.firebaseShutdownEnabled ? 'bg-red-600' : 'bg-zinc-300 dark:bg-zinc-700'
+                      }`}
+                      title="Enable or disable Firebase Shutdown Mode"
+                    >
+                      <span
+                        className={`inline-block h-6 w-6 transform rounded-full bg-white transition-transform ${
+                          appSettings.firebaseShutdownEnabled ? 'translate-x-7' : 'translate-x-1'
+                        }`}
+                      />
+                    </button>
+                  </div>
+
+                  <div className="p-3.5 rounded-xl bg-red-500/10 border border-red-500/30 text-xs">
+                    <span className="font-black uppercase tracking-wider text-red-500 block mb-1">
+                      Message shown to users when a toggled feature is used (Chat shows this in red only to the sender):
+                    </span>
+                    <p className="font-semibold text-red-600 dark:text-red-400 select-text">
+                      "{FIREBASE_OUTAGE_MESSAGE}"
+                    </p>
+                  </div>
+
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="text-xs font-bold text-zinc-500 uppercase tracking-wider">
+                      Specific Firebase Pages &amp; Features ({FIREBASE_FEATURE_PARTS.filter(p => appSettings.firebaseDisabledParts?.[p.key]).length} / {FIREBASE_FEATURE_PARTS.length} shut down)
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setAllFirebaseParts(true)}
+                        className="px-3 py-1.5 rounded-lg bg-red-600/15 hover:bg-red-600/25 text-red-500 border border-red-500/30 text-xs font-bold cursor-pointer"
+                      >
+                        Shut Down All Parts
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setAllFirebaseParts(false)}
+                        className="px-3 py-1.5 rounded-lg bg-zinc-200 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-700 text-xs font-bold cursor-pointer"
+                      >
+                        Clear All
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                    {FIREBASE_FEATURE_PARTS.map((part) => {
+                      const isPartDisabled = Boolean(appSettings.firebaseDisabledParts?.[part.key]);
+                      const isEffectivelyOut = Boolean(appSettings.firebaseShutdownEnabled && isPartDisabled);
+                      return (
+                        <div
+                          key={part.key}
+                          className={`p-4 rounded-xl border transition-all flex flex-col justify-between gap-3 ${
+                            isEffectivelyOut
+                              ? 'bg-red-500/10 border-red-500/40'
+                              : isPartDisabled
+                              ? 'bg-amber-500/10 border-amber-500/30'
+                              : 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800'
+                          }`}
+                        >
+                          <div>
+                            <div className="flex items-start justify-between gap-2">
+                              <div>
+                                <h4 className="font-bold text-sm leading-tight">{part.label}</h4>
+                                <span className="inline-block mt-1 px-2 py-0.5 rounded bg-zinc-100 dark:bg-zinc-800 text-[10px] font-mono text-zinc-500">
+                                  {part.pathHint}
+                                </span>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => toggleFirebasePart(part.key)}
+                                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none cursor-pointer shrink-0 ${
+                                  isPartDisabled ? 'bg-red-600' : 'bg-zinc-300 dark:bg-zinc-700'
+                                }`}
+                                title={`Toggle ${part.label}`}
+                              >
+                                <span
+                                  className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                                    isPartDisabled ? 'translate-x-6' : 'translate-x-1'
+                                  }`}
+                                />
+                              </button>
+                            </div>
+                            <p className="text-xs text-zinc-500 mt-2 leading-relaxed">{part.description}</p>
+                          </div>
+
+                          <div className="flex items-center justify-between pt-2 border-t border-zinc-200/70 dark:border-zinc-800/70">
+                            <span className={`text-[10px] font-black uppercase tracking-wider ${
+                              isEffectivelyOut
+                                ? 'text-red-500'
+                                : isPartDisabled
+                                ? 'text-amber-500'
+                                : 'text-emerald-500'
+                            }`}>
+                              {isEffectivelyOut
+                                ? 'Outage Active'
+                                : isPartDisabled
+                                ? 'Armed (Enable Master Switch)'
+                                : 'Operational'}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               </div>

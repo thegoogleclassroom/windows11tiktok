@@ -1,6 +1,12 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider, signInWithPopup, signInAnonymously, browserPopupRedirectResolver } from 'firebase/auth';
-import { getFirestore, initializeFirestore } from 'firebase/firestore';
+import {
+  getFirestore,
+  initializeFirestore,
+  persistentLocalCache,
+  persistentMultipleTabManager,
+  memoryLocalCache,
+} from 'firebase/firestore';
 import { getAnalytics, isSupported } from 'firebase/analytics';
 
 // Safe base64-encoded key to prevent GitHub secret scanning and ensure Firebase never receives an empty string
@@ -47,14 +53,28 @@ const getDbInstance = (appInstance: any) => {
     : (envDbId || "ai-studio-centraltok-20b3b741-dd0c-4874-8036-490f35162ac6");
 
   try {
+    const settings = {
+      localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
+      experimentalAutoDetectLongPolling: true,
+    };
     return dbId
-      ? initializeFirestore(appInstance, { experimentalAutoDetectLongPolling: true }, dbId)
-      : initializeFirestore(appInstance, { experimentalAutoDetectLongPolling: true });
+      ? initializeFirestore(appInstance, settings, dbId)
+      : initializeFirestore(appInstance, settings);
   } catch {
     try {
-      return dbId ? getFirestore(appInstance, dbId) : getFirestore(appInstance);
+      const memSettings = {
+        localCache: memoryLocalCache(),
+        experimentalAutoDetectLongPolling: true,
+      };
+      return dbId
+        ? initializeFirestore(appInstance, memSettings, dbId)
+        : initializeFirestore(appInstance, memSettings);
     } catch {
-      return getFirestore(appInstance);
+      try {
+        return dbId ? getFirestore(appInstance, dbId) : getFirestore(appInstance);
+      } catch {
+        return getFirestore(appInstance);
+      }
     }
   }
 };

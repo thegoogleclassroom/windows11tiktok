@@ -2,15 +2,16 @@ import React, { useEffect, useState, useRef } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useAppStore } from '../store';
 import { 
-  getMessages, getUsers, addMessage, addNotifications, markMessagesSeen,
-  getGroupChats, deleteMessage, updateTypingStatus, 
-  getUserStatuses, createWatchParty, subscribeToWatchPartiesByGroup,
+  getUsers, getUserByHandle, addMessage, addNotifications, markMessagesSeen,
+  getGroupChatById, deleteMessage, updateTypingStatus, 
+  createWatchParty, subscribeToWatchPartiesByGroup,
   joinWatchParty, removeGroupMember, toggleGroupAdmin, addGroupMember,
   toggleMessageReaction, subscribeToGroupChat, joinVoiceChannel, leaveVoiceChannel,
   toggleVoiceChannelMute, subscribeToGroupVoiceSignals, sendGroupVoiceOffer,
   sendGroupVoiceAnswer, addGroupVoiceCandidate, cleanupGroupVoiceSignals,
-  getReportById, getReports, subscribeToReport, subscribeToChannelMessages,
-  updateReportIntercom
+  getReportById, subscribeToReport, subscribeToChannelMessages, subscribeToDirectMessages,
+  subscribeToUserStatus, subscribeToTypingIn,
+  updateReportIntercom, subscribeToAppSettings, GlobalAppSettings, isFirebasePartShutDown, FIREBASE_OUTAGE_MESSAGE
 } from '../lib/db';
 import { Message, User, GroupChat, UserStatus, WatchParty, Report } from '../types';
 import { 
@@ -74,6 +75,8 @@ export function Chat() {
   const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [audioStream, setAudioStream] = useState<MediaStream | null>(null);
   const [chatErrorToast, setChatErrorToast] = useState<string | null>(null);
+  const [appSettings, setAppSettings] = useState<GlobalAppSettings | null>(null);
+  const [localOutageMessages, setLocalOutageMessages] = useState<Array<{ id: string; timestamp: number }>>([]);
   
   const [allUsers, setAllUsers] = useState<User[]>([]);
   const [typingUsers, setTypingUsers] = useState<string[]>([]);
@@ -93,6 +96,11 @@ export function Chat() {
   const [isDeafened, setIsDeafened] = useState(false);
   const [speakingUsers, setSpeakingUsers] = useState<string[]>([]);
   const [remoteAudioStreams, setRemoteAudioStreams] = useState<Record<string, MediaStream>>({});
+
+  useEffect(() => {
+    const unsub = subscribeToAppSettings(setAppSettings);
+    return () => unsub();
+  }, []);
   
   const bottomRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -120,143 +128,150 @@ export function Chat() {
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages.length]);
+  }, [messages.length, localOutageMessages.length]);
 
+  const mergeAndSetMessages = (chatMsgs: Message[], targetOtherId?: string) => {
+    const sorted = [...chatMsgs].sort((a, b) => a.timestamp - b.timestamp);
+    setMessages(prev => {
+      const remoteIds = new Set(sorted.map(m => m.id));
+      const recentLocal = prev.filter(m => !remoteIds.has(m.id) && Date.now() - m.timestamp < 120_000);
+      const combined = recentLocal.length > 0
+        ? [...sorted, ...recentLocal].sort((a, b) => a.timestamp - b.timestamp)
+        : sorted;
+
+      if (
+        prev.length === combined.length &&
+        prev.every((m, idx) =>
+          m.id === combined[idx].id &&
+          (m.seenBy?.length || 0) === (combined[idx].seenBy?.length || 0) &&
+          JSON.stringify(m.reactions || {}) === JSON.stringify(combined[idx].reactions || {})
+        )
+      ) {
+        return prev;
+      }
+      return combined;
+    });
+
+    if (currentUser) {
+      const unreadIds: string[] = [];
+      for (const m of sorted) {
+        const isCurrentChat = reportId
+          ? m.groupId === `intercom_${reportId}`
+          : groupId
+          ? m.groupId === groupId
+          : (targetOtherId ? m.fromUserId === targetOtherId && m.toUserId === currentUser.id : true);
+        if (
+          isCurrentChat &&
+          m.fromUserId !== currentUser.id &&
+          !(m.seenBy || []).includes(currentUser.id) &&
+          !markedSeenIdsRef.current.has(m.id)
+        ) {
+          unreadIds.push(m.id);
+          markedSeenIdsRef.current.add(m.id);
+        }
+      }
+      if (unreadIds.length > 0) {
+        void markMessagesSeen(unreadIds, currentUser.id);
+      }
+    }
+  };
+
+  // Initial room metadata load (uses cached users + single-doc fetches, no polling loop)
   useEffect(() => {
-    const loadChat = async () => {
+    let cancelled = false;
+    const initRoom = async () => {
       if (isLoadingChatRef.current) return;
       isLoadingChatRef.current = true;
       try {
         const users = await getUsers();
+        if (cancelled) return;
         setAllUsers(prev => (prev.length === users.length ? prev : users));
-      
-      const currentHandle = handle;
-      const currentGroupId = groupId;
-      const currentReportId = reportId;
-      
-      if (currentReportId) {
-        const rep = (await getReportById(currentReportId)) || (await getReports()).find(r => r.id === currentReportId) || null;
-        if (!rep) {
-          navigate('/messages');
-          return;
-        }
-        setIntercomReport(rep);
-        setGroup(null);
-        setOtherUser(null);
-      } else if (currentGroupId) {
-        const groups = await getGroupChats();
-        const g = groups.find(x => x.id === currentGroupId);
-        if (!g) {
-          navigate('/messages');
-          return;
-        }
-        setGroup(g);
-        setOtherUser(null);
-        setIntercomReport(null);
-      } else if (currentHandle) {
-        const user = users.find(u => u.handle === currentHandle);
-        if (!user) {
-          navigate('/messages');
-          return;
-        }
-        setOtherUser(user);
-        setGroup(null);
-        setIntercomReport(null);
-      }
-      
-      const allMsgs = await getMessages();
-      let chatMsgs: Message[] = [];
-      
-      if (reportId) {
-        chatMsgs = allMsgs.filter(m => m.groupId === `intercom_${reportId}`);
-      } else if (groupId) {
-        chatMsgs = allMsgs.filter(m => m.groupId === groupId);
-      } else {
-        const user = users.find(u => u.handle === handle);
-        if (user) {
-          if (currentUser) {
-            chatMsgs = allMsgs.filter(m => 
-              (m.fromUserId === currentUser.id && m.toUserId === user.id) || 
-              (m.fromUserId === user.id && m.toUserId === currentUser.id)
-            );
-          } else {
-            chatMsgs = allMsgs.filter(m => 
-              m.toUserId === user.id || m.fromUserId === user.id
-            );
+
+        if (reportId) {
+          const rep = await getReportById(reportId);
+          if (cancelled) return;
+          if (!rep) {
+            navigate('/messages');
+            return;
           }
-        }
-      }
-      
-      chatMsgs.sort((a, b) => a.timestamp - b.timestamp);
-      setMessages(prev => {
-        // Merge any freshly created local messages from current session just in case
-        const remoteIds = new Set(chatMsgs.map(m => m.id));
-        const recentLocal = prev.filter(m => !remoteIds.has(m.id) && Date.now() - m.timestamp < 120_000);
-        const combined = recentLocal.length > 0
-          ? [...chatMsgs, ...recentLocal].sort((a, b) => a.timestamp - b.timestamp)
-          : chatMsgs;
-
-        if (
-          prev.length === combined.length &&
-          prev.every((m, idx) =>
-            m.id === combined[idx].id &&
-            (m.seenBy?.length || 0) === (combined[idx].seenBy?.length || 0) &&
-            JSON.stringify(m.reactions || {}) === JSON.stringify(combined[idx].reactions || {})
-          )
-        ) {
-          return prev;
-        }
-        return combined;
-      });
-
-      // Read Receipts Logic (only mark each unread message once per session)
-      if (currentUser) {
-        const targetOtherId = otherUser?.id || users.find(u => u.handle === handle)?.id;
-        const unreadIds: string[] = [];
-        for (const m of allMsgs) {
-          const isCurrentChat = reportId
-            ? m.groupId === `intercom_${reportId}`
-            : groupId
-            ? m.groupId === groupId
-            : (m.fromUserId === targetOtherId && m.toUserId === currentUser.id);
-          if (
-            isCurrentChat &&
-            m.fromUserId !== currentUser.id &&
-            !(m.seenBy || []).includes(currentUser.id) &&
-            !markedSeenIdsRef.current.has(m.id)
-          ) {
-            unreadIds.push(m.id);
-            markedSeenIdsRef.current.add(m.id);
+          setIntercomReport(rep);
+          setGroup(null);
+          setOtherUser(null);
+        } else if (groupId) {
+          const g = await getGroupChatById(groupId);
+          if (cancelled) return;
+          if (!g) {
+            navigate('/messages');
+            return;
           }
+          setGroup(g);
+          setOtherUser(null);
+          setIntercomReport(null);
+        } else if (handle) {
+          const user = users.find(u => u.handle === handle) || await getUserByHandle(handle);
+          if (cancelled) return;
+          if (!user) {
+            navigate('/messages');
+            return;
+          }
+          setOtherUser(user);
+          setGroup(null);
+          setIntercomReport(null);
         }
-
-        if (unreadIds.length > 0) {
-          await markMessagesSeen(unreadIds, currentUser.id);
-        }
-
-        // Typing Status Logic
-        const statuses = await getUserStatuses();
-        const currentTypingIn = reportId ? `intercom_${reportId}` : (groupId || targetOtherId);
-        const activeTyping = statuses
-          .filter(s => 
-            s.userId !== currentUser.id && 
-            s.isTyping && 
-            s.typingIn === currentTypingIn && 
-            Date.now() - s.lastActive < 4000
-          )
-          .map(s => users.find(u => u.id === s.userId)?.username || 'Someone');
-        
-        setTypingUsers(prev => (prev.join('|') === activeTyping.join('|') ? prev : activeTyping));
-      }
       } finally {
         isLoadingChatRef.current = false;
       }
     };
-    
-    loadChat();
-    const interval = setInterval(loadChat, 12000);
-    return () => clearInterval(interval);
-  }, [handle, groupId, reportId, currentUser?.id, navigate, otherUser?.id]);
+    initRoom();
+    return () => {
+      cancelled = true;
+    };
+  }, [handle, groupId, reportId, navigate]);
+
+  // Real-time scoped message subscription for DMs and Group Chats
+  useEffect(() => {
+    if (reportId) return;
+    if (groupId) {
+      return subscribeToChannelMessages(groupId, (chanMsgs) => {
+        mergeAndSetMessages(chanMsgs);
+      });
+    }
+    if (otherUser?.id) {
+      return subscribeToDirectMessages(currentUser?.id || '', otherUser.id, (dmMsgs) => {
+        mergeAndSetMessages(dmMsgs, otherUser.id);
+      });
+    }
+  }, [reportId, groupId, otherUser?.id, currentUser?.id]);
+
+  // Scoped real-time typing status (single doc for DM, filtered query for group/intercom)
+  useEffect(() => {
+    if (!currentUser) {
+      setTypingUsers([]);
+      return;
+    }
+    if (otherUser?.id && !groupId && !reportId) {
+      return subscribeToUserStatus(otherUser.id, (status) => {
+        if (
+          status &&
+          status.isTyping &&
+          (status.typingIn === currentUser.id || status.typingIn === otherUser.id) &&
+          Date.now() - status.lastActive < 5000
+        ) {
+          setTypingUsers([otherUser.username || 'Someone']);
+        } else {
+          setTypingUsers([]);
+        }
+      });
+    }
+    const channelKey = reportId ? `intercom_${reportId}` : groupId;
+    if (!channelKey) return;
+    return subscribeToTypingIn(channelKey, (statuses) => {
+      const activeTyping = statuses
+        .filter(s => s.userId !== currentUser.id && s.isTyping && Date.now() - s.lastActive < 5000)
+        .map(s => allUsers.find(u => u.id === s.userId)?.username || 'Someone');
+      setTypingUsers(prev => (prev.join('|') === activeTyping.join('|') ? prev : activeTyping));
+    });
+  }, [reportId, groupId, otherUser?.id, otherUser?.username, currentUser?.id, allUsers]);
 
   // Real-time subscription for Intercom DM channel & report status (open/closed/muted)
   useEffect(() => {
@@ -265,19 +280,13 @@ export function Chat() {
       if (rep) setIntercomReport(rep);
     });
     const unsubMsgs = subscribeToChannelMessages(`intercom_${reportId}`, (chanMsgs) => {
-      setMessages(prev => {
-        const remoteIds = new Set(chanMsgs.map(m => m.id));
-        const recentLocal = prev.filter(m => m.groupId === `intercom_${reportId}` && !remoteIds.has(m.id) && Date.now() - m.timestamp < 30_000);
-        return recentLocal.length > 0
-          ? [...chanMsgs, ...recentLocal].sort((a, b) => a.timestamp - b.timestamp)
-          : chanMsgs;
-      });
+      mergeAndSetMessages(chanMsgs);
     });
     return () => {
       unsubReport();
       unsubMsgs();
     };
-  }, [reportId]);
+  }, [reportId, currentUser?.id]);
 
   useEffect(() => {
     if (!groupId) {
@@ -322,6 +331,10 @@ export function Chat() {
   const handleJoinVoiceRoom = async () => {
     if (!group || !currentUser) {
       if (!currentUser) setShowAuthModal(true);
+      return;
+    }
+    if (isFirebasePartShutDown(appSettings, 'voice_video_calls')) {
+      showNotice(FIREBASE_OUTAGE_MESSAGE);
       return;
     }
     if (inVoiceRoomRef.current) return;
@@ -548,6 +561,19 @@ export function Chat() {
   const sendMessage = async (content: string, imageUrl?: string, videoUrl?: string, audioUrl?: string, isSystem = false) => {
     if ((!content.trim() && !imageUrl && !videoUrl && !audioUrl) || !currentUser) return;
     if (!otherUser && !group && !intercomReport) return;
+
+    // Selective Firebase Shutdown for Chat: show red outage message ONLY to the sender locally without sending to Firestore/recipient
+    if (!isSystem && isFirebasePartShutDown(appSettings, 'chat')) {
+      setLocalOutageMessages(prev => [
+        ...prev,
+        { id: `outage_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`, timestamp: Date.now() }
+      ]);
+      setNewMessage('');
+      setReplyingTo(null);
+      updateTyping(false);
+      return;
+    }
+
     if (!isSystem && intercomReport) {
       if (intercomReport.intercomStatus === 'closed') {
         showNotice('This Intercom DM is closed.');
@@ -616,6 +642,11 @@ export function Chat() {
   const handleToggleReaction = async (messageId: string, emoji: string) => {
     if (!currentUser) {
       setShowAuthModal(true);
+      return;
+    }
+    if (isFirebasePartShutDown(appSettings, 'chat')) {
+      showNotice(FIREBASE_OUTAGE_MESSAGE);
+      setOpenReactionPickerId(null);
       return;
     }
     setOpenReactionPickerId(null);
@@ -1051,6 +1082,10 @@ export function Chat() {
             }`}
             title={group ? (inVoiceRoom ? 'In Voice Room' : 'Join Group Voice Room') : 'Voice Call'}
             onClick={() => {
+              if (isFirebasePartShutDown(appSettings, 'voice_video_calls')) {
+                showNotice(FIREBASE_OUTAGE_MESSAGE);
+                return;
+              }
               if (group) {
                 if (inVoiceRoom) handleLeaveVoiceRoom();
                 else handleJoinVoiceRoom();
@@ -1243,7 +1278,7 @@ export function Chat() {
           </div>
         )}
 
-        {messages.length === 0 ? (
+        {messages.length === 0 && localOutageMessages.length === 0 ? (
           <div className="text-center text-zinc-500 my-auto">
             {intercomReport
               ? `Intercom DM open regarding: "${intercomReport.reason}". Staff and the reporter can communicate directly here.`
@@ -1436,6 +1471,18 @@ export function Chat() {
             </span>
           </div>
         )}
+
+        {/* Sender-only red outage messages (never persisted or sent to recipients) */}
+        {localOutageMessages.map((om) => (
+          <div key={om.id} className="flex flex-col items-end animate-in fade-in slide-in-from-bottom-2 duration-200">
+            <div className="max-w-[85%] rounded-2xl rounded-br-sm px-4 py-3 bg-red-600/15 border border-red-500 text-red-600 dark:text-red-400 shadow-sm">
+              <p className="text-sm font-bold leading-relaxed">{FIREBASE_OUTAGE_MESSAGE}</p>
+              <span className="block text-[10px] text-red-500/80 mt-1 font-semibold">
+                Not delivered • Only visible to you
+              </span>
+            </div>
+          </div>
+        ))}
         
         <div ref={bottomRef} />
       </div>

@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAppStore } from '../store';
-import { saveVideos, getVideos, getStories, saveStories } from '../lib/db';
+import { saveVideos, getVideos, getStories, saveStories, isFirebasePartDisabledNow, FIREBASE_OUTAGE_MESSAGE } from '../lib/db';
 import { Video, Story } from '../types';
 import { CameraDeviceSelector } from '../components/CameraDeviceSelector';
 import { 
@@ -46,6 +46,7 @@ export function Upload() {
   const [visibility, setVisibility] = useState<'everyone' | 'friends' | 'only_you'>('everyone');
   const [isUploading, setIsUploading] = useState(false);
   const [filter, setFilter] = useState('');
+  const [uploadOutageError, setUploadOutageError] = useState<string | null>(null);
   
   // Editor States
   const [selectedMusic, setSelectedMusic] = useState<typeof SONGS[0] | null>(null);
@@ -200,6 +201,11 @@ export function Upload() {
 
   const handleUpload = async () => {
     if (!file) return;
+    if (isFirebasePartDisabledNow('video_uploads_stories')) {
+      setUploadOutageError(FIREBASE_OUTAGE_MESSAGE);
+      return;
+    }
+    setUploadOutageError(null);
     setIsUploading(true);
     
     try {
@@ -292,6 +298,11 @@ export function Upload() {
   return (
     <div className="w-full max-w-4xl mx-auto p-4 md:p-8 overflow-y-auto hide-scrollbar pb-24">
       <div className="bg-white dark:bg-zinc-900 rounded-2xl shadow-sm border border-zinc-200 dark:border-zinc-800 p-6 md:p-8">
+        {(uploadOutageError || isFirebasePartDisabledNow('video_uploads_stories')) && (
+          <div className="mb-4 px-4 py-3 rounded-xl bg-red-500/15 border border-red-500/40 text-red-500 text-xs font-bold">
+            {uploadOutageError || FIREBASE_OUTAGE_MESSAGE}
+          </div>
+        )}
         
         {/* Post Destination: Feed vs Story */}
         <div className="flex items-center justify-between mb-6 flex-wrap gap-4 border-b border-zinc-200 dark:border-zinc-800 pb-4">

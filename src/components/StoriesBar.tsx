@@ -76,8 +76,18 @@ export function StoriesBar() {
 
   useEffect(() => {
     loadStories();
-    const interval = setInterval(loadStories, 30000); // refresh every 30s
-    return () => clearInterval(interval);
+    const interval = setInterval(() => {
+      if (typeof document !== 'undefined' && document.hidden) return;
+      void loadStories();
+    }, 300_000);
+    const onVisibility = () => {
+      if (!document.hidden) void loadStories();
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
   }, [currentUser?.id]);
 
   const currentUserGroup = storyGroups.find(g => g.user.id === currentUser?.id);

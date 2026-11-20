@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAppStore } from '../store';
 import { Video, Comment, User } from '../types';
-import { addCommentToVideo, getUsers, ensureVideoInDB } from '../lib/db';
+import { addCommentToVideo, getUsers, ensureVideoInDB, isFirebasePartDisabledNow, FIREBASE_OUTAGE_MESSAGE } from '../lib/db';
 import { X, Send } from 'lucide-react';
 import { HolographicBadge } from './UIPolish';
 
@@ -11,6 +11,7 @@ export function Comments({ video, onClose }: { video: Video, onClose: () => void
   const [users, setUsers] = useState<User[]>([]);
   const [newComment, setNewComment] = useState('');
   const [replyTo, setReplyTo] = useState<Comment | null>(null);
+  const [commentOutageError, setCommentOutageError] = useState<string | null>(null);
 
   useEffect(() => {
     getUsers().then(setUsers);
@@ -23,6 +24,11 @@ export function Comments({ video, onClose }: { video: Video, onClose: () => void
       return;
     }
     if (!newComment.trim()) return;
+    if (isFirebasePartDisabledNow('video_comments_likes')) {
+      setCommentOutageError(FIREBASE_OUTAGE_MESSAGE);
+      return;
+    }
+    setCommentOutageError(null);
 
     const comment: Comment = {
       id: Math.random().toString(36).substr(2, 9),
@@ -121,6 +127,11 @@ export function Comments({ video, onClose }: { video: Video, onClose: () => void
         <div className="px-4 py-2 bg-zinc-100 dark:bg-zinc-800 flex items-center justify-between text-sm">
           <span>Replying to {users.find(u => u.id === replyTo.userId)?.username}...</span>
           <button onClick={() => setReplyTo(null)} className="p-1 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded-full"><X size={16}/></button>
+        </div>
+      )}
+      {commentOutageError && (
+        <div className="mx-4 mb-2 px-3 py-2 rounded-xl bg-red-500/15 border border-red-500/40 text-red-500 text-xs font-bold">
+          {commentOutageError}
         </div>
       )}
       <form onSubmit={handleSend} className="p-4 border-t border-zinc-200 dark:border-zinc-800 flex gap-2">

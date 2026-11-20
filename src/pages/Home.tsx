@@ -2,9 +2,9 @@ import React, { useEffect, useState, useRef } from 'react';
 import { 
   getVideos, getUsers, saveUsers, saveVideos, incrementVideoView, updateVideo,
   ensureVideoInDB, addMessage, addNotifications,
-  subscribeToVideo, deleteVideoFromDB, getAppSettings, subscribeToAppSettings,
+  subscribeToVideo, deleteVideoFromDB, getCachedAppSettings, subscribeToAppSettings,
   updateUser, createWatchParty, joinWatchParty, subscribeToWatchParty, updateWatchPartyState,
-  doc, getDoc, db
+  doc, getDoc, db, isFirebasePartDisabledNow, FIREBASE_OUTAGE_MESSAGE
 } from '../lib/db';
 import { Video, User, WatchParty } from '../types';
 import { useAppStore } from '../store';
@@ -126,7 +126,7 @@ export function Home() {
 
       if (!nextVideo) {
         try {
-          const settings = await getAppSettings();
+          const settings = getCachedAppSettings();
           let feedItems: Array<{videoId?: string; title?: string; channelTitle?: string; channelId?: string}> = [];
           
           let staticResponseOk = false;
@@ -647,6 +647,7 @@ export const VideoItem: React.FC<{
   const [showShare, setShowShare] = useState(false);
   const [shareUsers, setShareUsers] = useState<User[]>([]);
   const [sharedTo, setSharedTo] = useState<string | null>(null);
+  const [feedOutageNotice, setFeedOutageNotice] = useState<string | null>(null);
   const [likePos, setLikePos] = useState<{ x: number, y: number } | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const lastTapRef = useRef<number>(0);
@@ -709,13 +710,13 @@ export const VideoItem: React.FC<{
   };
 
   useEffect(() => {
-    // Only subscribe to real-time updates for non-YouTube shorts (or YouTube shorts that are already in the DB, though their ID works too once added).
+    if (video.isYouTube || !isActive) return;
     const unsub = subscribeToVideo(video.id, (updatedVideo) => {
       setViews(updatedVideo.views || 0);
       setLikesCount(updatedVideo.likes?.length || 0);
     });
     return () => unsub();
-  }, [video.id]);
+  }, [video.id, video.isYouTube, isActive]);
 
   useEffect(() => {
     const observer = new IntersectionObserver((entries) => {
@@ -742,7 +743,7 @@ export const VideoItem: React.FC<{
               let userViewed: string[] = [];
               try { userViewed = JSON.parse(localStorage.getItem(userViewedKey) || '[]') as string[]; } catch {}
               if (!userViewed.includes(video.id)) localStorage.setItem(userViewedKey, JSON.stringify([...userViewed, video.id]));
-              if (!video.viewedBy?.includes(currentUser.id)) {
+              if (!video.isYouTube && !video.viewedBy?.includes(currentUser.id)) {
                 ensureVideoInDB(video).then(() => {
                   incrementVideoView(video.id, currentUser.id);
                   setViews(v => v + 1);
@@ -750,11 +751,13 @@ export const VideoItem: React.FC<{
               }
             } else {
               if (!localViewed.includes(video.id)) {
-                ensureVideoInDB(video).then(() => {
-                  incrementVideoView(video.id, null);
-                  setViews(v => v + 1);
-                  localStorage.setItem('viewedVideos', JSON.stringify([...localViewed, video.id]));
-                });
+                localStorage.setItem('viewedVideos', JSON.stringify([...localViewed, video.id]));
+                if (!video.isYouTube) {
+                  ensureVideoInDB(video).then(() => {
+                    incrementVideoView(video.id, null);
+                    setViews(v => v + 1);
+                  });
+                }
               }
             }
           }
@@ -850,6 +853,11 @@ export const VideoItem: React.FC<{
 
   const handleLike = async (e?: React.MouseEvent) => {
     if (!currentUser) return;
+    if (isFirebasePartDisabledNow('video_comments_likes')) {
+      setFeedOutageNotice(FIREBASE_OUTAGE_MESSAGE);
+      setTimeout(() => setFeedOutageNotice(null), 5000);
+      return;
+    }
     
     // Particle effect trigger
     if (e) {
@@ -886,6 +894,11 @@ export const VideoItem: React.FC<{
 
   const handleFavorite = async () => {
     if (!currentUser) return;
+    if (isFirebasePartDisabledNow('video_comments_likes')) {
+      setFeedOutageNotice(FIREBASE_OUTAGE_MESSAGE);
+      setTimeout(() => setFeedOutageNotice(null), 5000);
+      return;
+    }
     const newStatus = !isFavorited;
     setIsFavorited(newStatus);
     
@@ -917,6 +930,10 @@ export const VideoItem: React.FC<{
 
   const sendVideo = async (recipient: User) => {
     if (!currentUser) return;
+    if (isFirebasePartDisabledNow('chat')) {
+      setReportMediaError(FIREBASE_OUTAGE_MESSAGE);
+      return;
+    }
     await addMessage({
       id: `msg_${Date.now()}`,
       fromUserId: currentUser.id,
@@ -1002,6 +1019,10 @@ export const VideoItem: React.FC<{
 
   const submitReport = async () => {
     if (!currentUser || !reportReason) return;
+    if (isFirebasePartDisabledNow('support_reports')) {
+      setReportMediaError(FIREBASE_OUTAGE_MESSAGE);
+      return;
+    }
     
     const { addReport: dbAddReport } = await import('../lib/db');
     await dbAddReport({
@@ -1438,6 +1459,12 @@ export const VideoItem: React.FC<{
       </AmbientGlow>);
       })()}
       
+      {feedOutageNotice && (
+        <div className="absolute top-16 left-1/2 -translate-x-1/2 z-50 w-[90%] max-w-md px-4 py-2.5 rounded-xl bg-red-600/95 text-white text-xs font-bold text-center shadow-xl border border-red-400 pointer-events-auto">
+          {feedOutageNotice}
+        </div>
+      )}
+
       {showComments && (
         <>
           <div className="absolute inset-0 bg-black/50 z-30 pointer-events-auto" onClick={() => setShowComments(false)} />
@@ -1531,7 +1558,11 @@ export const VideoItem: React.FC<{
         <div className="absolute inset-0 bg-black/80 z-50 flex items-center justify-center p-4 pointer-events-auto">
           <div className="bg-white dark:bg-zinc-900 rounded-2xl p-6 w-full max-w-sm" onClick={e => e.stopPropagation()}>
             <h3 className="text-xl font-bold mb-4">Send video</h3>
-            {sharedTo ? <p className="text-green-500 text-center py-6">Video sent!</p> : (
+            {isFirebasePartDisabledNow('chat') ? (
+              <div className="p-3 rounded-xl bg-red-500/15 border border-red-500/40 text-red-500 text-xs font-bold">
+                {FIREBASE_OUTAGE_MESSAGE}
+              </div>
+            ) : sharedTo ? <p className="text-green-500 text-center py-6">Video sent!</p> : (
               <div className="max-h-64 overflow-y-auto space-y-2">
                 {shareUsers.map(user => (
                   <button key={user.id} onClick={() => sendVideo(user)} className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-zinc-100 dark:hover:bg-zinc-800 text-left">

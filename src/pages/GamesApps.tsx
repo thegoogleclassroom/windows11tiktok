@@ -42,13 +42,14 @@ export function GamesApps() {
     });
 
     const fetchAllUsers = async () => {
+      if (typeof document !== 'undefined' && document.hidden) return;
       const users = await getUsers();
       setAllUsers(users);
     };
     if (!isGameActive) {
       fetchAllUsers();
     }
-    const userInterval = isGameActive ? null : setInterval(fetchAllUsers, 60000);
+    const userInterval = isGameActive ? null : setInterval(fetchAllUsers, 300_000);
 
     const handleMessage = (event: MessageEvent) => {
       if (event.data.type === 'CINEMA_PLAYING') {

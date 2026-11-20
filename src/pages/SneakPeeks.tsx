@@ -2,7 +2,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAppStore } from '../store';
 import { 
-  getSneakPeeks, saveSneakPeeks, saveSneakPeek, deleteSneakPeekFromDB, subscribeToSneakPeeks, getUsers 
+  getSneakPeeks, saveSneakPeeks, saveSneakPeek, deleteSneakPeekFromDB, subscribeToSneakPeeks, getUsers,
+  isFirebasePartDisabledNow, FIREBASE_OUTAGE_MESSAGE
 } from '../lib/db';
 import { SneakPeek, SneakPeekComment, User } from '../types';
 import { 
@@ -239,6 +240,9 @@ export function SneakPeeks() {
       setShowAuthModal(true);
       return;
     }
+    if (isFirebasePartDisabledNow('forums_announcements')) {
+      return;
+    }
 
     let targetPeek: SneakPeek | undefined;
     const updatedPeeks = sneakPeeks.map(peek => {
@@ -269,6 +273,9 @@ export function SneakPeeks() {
   const handleAddComment = async (peekId: string) => {
     if (!currentUser) {
       setShowAuthModal(true);
+      return;
+    }
+    if (isFirebasePartDisabledNow('forums_announcements')) {
       return;
     }
 
@@ -318,6 +325,7 @@ export function SneakPeeks() {
   // Create Sneak Peek
   const handleCreateSneakPeek = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isFirebasePartDisabledNow('forums_announcements')) return;
     if (!isStaffOrOwner || !currentUser) return;
     if (!peekTitle.trim() || !peekContent.trim()) return;
 
@@ -451,6 +459,11 @@ export function SneakPeeks() {
   return (
     <div id="sneak-peeks-page" className="w-full h-full overflow-y-auto bg-[#111214] text-white p-2 md:p-6 pb-24 md:pb-8">
       <div className="max-w-5xl mx-auto space-y-6">
+        {isFirebasePartDisabledNow('forums_announcements') && (
+          <div className="px-4 py-3 rounded-xl bg-red-500/15 border border-red-500/40 text-red-400 text-xs font-bold">
+            {FIREBASE_OUTAGE_MESSAGE}
+          </div>
+        )}
 
         {/* Navigation Bar / Switcher Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-[#1e1f22] p-3 md:p-4 rounded-2xl border border-zinc-800 shadow-md">

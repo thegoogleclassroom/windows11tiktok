@@ -42,7 +42,7 @@ export function AuthModal({ onClose }: { onClose: () => void }) {
 
     if (isReadQuotaBlocked()) {
       throw new Error(
-        'Firebase free daily read quota is currently reached, so existing accounts cannot be verified right now. All profile data is safe and will reload once the quota resets.'
+        'Unable to verify account right now. Please try again in a moment.'
       );
     }
 
@@ -112,7 +112,7 @@ export function AuthModal({ onClose }: { onClose: () => void }) {
       } else {
         if (!existingUser) {
           if (isReadQuotaBlocked()) {
-            setError('Firebase free daily read quota is currently reached. Your account is safe — please try again once quota resets.');
+            setError('Unable to verify account right now. Please try again in a moment.');
           } else {
             setError('User not found. Please sign up or use Google Sign-in.');
           }

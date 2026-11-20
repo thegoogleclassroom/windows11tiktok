@@ -13,7 +13,8 @@ import {
   updateLiveStream, endLiveStream, joinLiveStream, leaveLiveStream,
   sendLiveReaction, voteLivePoll, subscribeToLiveChat, sendLiveChatMessage,
   deleteMessage, subscribeToLiveRtcHost, subscribeToLiveRtcViewer,
-  sendLiveRtcOffer, sendLiveRtcAnswer, addLiveRtcCandidate, cleanupLiveRtcForViewer
+  sendLiveRtcOffer, sendLiveRtcAnswer, addLiveRtcCandidate, cleanupLiveRtcForViewer,
+  isFirebasePartDisabledNow, FIREBASE_OUTAGE_MESSAGE
 } from '../lib/db';
 import { Video, User, LiveStream, Message, LivePoll, LiveRtcSignal } from '../types';
 import { useAppStore } from '../store';
@@ -145,6 +146,7 @@ export function Explore() {
   const [suggestedAccounts, setSuggestedAccounts] = useState<User[]>(SEED_CREATORS);
   const [trendingVideos, setTrendingVideos] = useState<(Video & { user?: User })[]>([]);
   const [selectedVideo, setSelectedVideo] = useState<Video | null>(null);
+  const [exploreOutageError, setExploreOutageError] = useState<string | null>(null);
   
   const navigate = useNavigate();
   const location = useLocation();
@@ -205,6 +207,12 @@ export function Explore() {
 
   const executeSearch = async (searchTerm: string) => {
     if (!searchTerm.trim()) return;
+    if (isFirebasePartDisabledNow('explore_search')) {
+      setExploreOutageError(FIREBASE_OUTAGE_MESSAGE);
+      setResults([]);
+      return;
+    }
+    setExploreOutageError(null);
     setActiveQuery(searchTerm.trim());
     setLoading(true);
     setResults([]);
@@ -301,6 +309,12 @@ export function Explore() {
             </button>
           )}
         </form>
+
+        {(exploreOutageError || isFirebasePartDisabledNow('explore_search')) && (
+          <div className="px-4 py-3 rounded-xl bg-red-500/15 border border-red-500/40 text-red-500 text-xs font-bold">
+            {exploreOutageError || FIREBASE_OUTAGE_MESSAGE}
+          </div>
+        )}
 
         {/* Trending Hashtags Bar */}
         <div className="flex items-center gap-2 overflow-x-auto pb-2 hide-scrollbar select-none text-xs">
@@ -648,6 +662,10 @@ function LiveDirectory() {
       setShowAuthModal(true);
       return;
     }
+    if (isFirebasePartDisabledNow('live_streams')) {
+      setPreviewError(FIREBASE_OUTAGE_MESSAGE);
+      return;
+    }
     setTitleInput(`${currentUser.username}'s Live Stream`);
     setPreviewError(null);
     setShowSetupModal(true);
@@ -675,6 +693,10 @@ function LiveDirectory() {
 
   const handleStartLive = async () => {
     if (!currentUser) return;
+    if (isFirebasePartDisabledNow('live_streams')) {
+      setPreviewError(FIREBASE_OUTAGE_MESSAGE);
+      return;
+    }
     setIsStarting(true);
     setPreviewError(null);
     try {
@@ -789,6 +811,12 @@ function LiveDirectory() {
             </button>
           </div>
         </div>
+
+        {(previewError || isFirebasePartDisabledNow('live_streams')) && !showSetupModal && (
+          <div className="px-4 py-3 rounded-xl bg-red-500/15 border border-red-500/40 text-red-400 text-xs font-bold">
+            {previewError || FIREBASE_OUTAGE_MESSAGE}
+          </div>
+        )}
 
         {/* Category Tabs */}
         <div className="flex items-center gap-2 overflow-x-auto pb-1 hide-scrollbar">
@@ -1588,6 +1616,10 @@ function LiveBroadcastRoom({ streamId }: { streamId: string }) {
       setShowAuthModal(true);
       return;
     }
+    if (isFirebasePartDisabledNow('live_streams')) {
+      setMediaError(FIREBASE_OUTAGE_MESSAGE);
+      return;
+    }
     if (!stream || (!stream.chatEnabled && !isHost) || isChatterMuted || slowRemainingSec > 0) return;
 
     const raw = (overrideText ?? chatInput).trim();
@@ -1613,12 +1645,20 @@ function LiveBroadcastRoom({ streamId }: { streamId: string }) {
   };
 
   const handleReactionClick = async (emoji: string) => {
+    if (isFirebasePartDisabledNow('live_streams')) {
+      setMediaError(FIREBASE_OUTAGE_MESSAGE);
+      return;
+    }
     spawnFloatingEmoji(emoji);
     await sendLiveReaction(streamId, emoji, currentUser?.username || 'Guest');
   };
 
   const handleCreatePoll = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isFirebasePartDisabledNow('live_streams')) {
+      setMediaError(FIREBASE_OUTAGE_MESSAGE);
+      return;
+    }
     if (!isHost || !pollQuestion.trim()) return;
     const cleanOptions = pollOptions.map(o => o.trim()).filter(Boolean);
     if (cleanOptions.length < 2) return;
@@ -2309,6 +2349,12 @@ function LiveBroadcastRoom({ streamId }: { streamId: string }) {
                 <div className="flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-zinc-900 border border-zinc-800 text-[11px] text-zinc-400">
                   <span className="truncate">Replying to <strong className="text-white">@{replyingTo.senderName}</strong></span>
                   <button onClick={() => setReplyingTo(null)} className="text-zinc-400 hover:text-white"><X size={13} /></button>
+                </div>
+              )}
+
+              {(mediaError || isFirebasePartDisabledNow('live_streams')) && (
+                <div className="px-3 py-2 rounded-xl bg-red-500/15 border border-red-500/40 text-red-400 text-[11px] font-bold">
+                  {mediaError || FIREBASE_OUTAGE_MESSAGE}
                 </div>
               )}
 
