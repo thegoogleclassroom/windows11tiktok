@@ -5,8 +5,8 @@ import { motion, AnimatePresence, MotionConfig } from 'motion/react';
 import { useAppStore } from '../store';
 import { AuthModal } from './AuthModal';
 import { MiniPlayer } from './MiniPlayer';
-import { saveReports, getMessages, getUsers, getUser, getCachedUserById, getNotifications, markNotificationAsRead, getFAQPosts, subscribeToNotifications, saveGameData, getGameData, subscribeToIncomingCalls, subscribeToMessages, updateUser, requestCentralProVerification, updateUserListeningState, subscribeToUserDoc, isQuotaBlocked, subscribeToLiveStreams, subscribeToAppSettings, GlobalAppSettings, isFirebasePartShutDown, FIREBASE_OUTAGE_MESSAGE } from '../lib/db';
-import { playNotificationSound } from '../lib/utils';
+import { saveReports, getMessages, getUsers, getUser, getCachedUserById, getNotifications, markNotificationAsRead, getFAQPosts, subscribeToNotifications, saveGameData, getGameData, subscribeToIncomingCalls, subscribeToMessages, updateUser, updateUserActivity, requestCentralProVerification, updateUserListeningState, subscribeToUserDoc, isQuotaBlocked, subscribeToLiveStreams, subscribeToAppSettings, GlobalAppSettings, isFirebasePartShutDown, FIREBASE_OUTAGE_MESSAGE } from '../lib/db';
+import { playNotificationSound, isUserOnline } from '../lib/utils';
 import { TradientInfoModal } from './TradientInfoModal';
 import { HolographicBadge, CentralProBadge } from './UIPolish';
 import * as Types from '../types';
@@ -196,6 +196,76 @@ export function Layout({ children }: { children: React.ReactNode }) {
 
     return () => unsubscribe();
   }, [currentUser?.id]);
+
+  // Track account owner interactions so online status and staff last-active evidence stay accurate (quota-safe 90s throttle)
+  const lastActivityWriteRef = useRef<number>(0);
+  const latestInteractionRef = useRef<{ at: number; action: string }>({ at: 0, action: 'Browsing' });
+  useEffect(() => {
+    if (!currentUser?.id) return;
+    const uid = currentUser.id;
+    const storageKey = `ct_last_active_write_${uid}`;
+    try {
+      const prevWrite = Number(localStorage.getItem(storageKey) || '0');
+      if (Number.isFinite(prevWrite) && prevWrite > 0) {
+        lastActivityWriteRef.current = prevWrite;
+      }
+    } catch {}
+
+    const getRouteLabel = (path: string) => {
+      if (path === '/') return 'For You Feed';
+      if (path.startsWith('/explore')) return 'Explore';
+      if (path.startsWith('/live')) return 'Live';
+      if (path.startsWith('/messages')) return 'Messages';
+      if (path.startsWith('/forum')) return 'Forum';
+      if (path.startsWith('/games-apps')) return 'Games & Apps';
+      if (path.startsWith('/dmca')) return 'DMCA Page';
+      if (path.startsWith('/admin')) return 'Moderation Panel';
+      if (path.startsWith('/upload')) return 'Upload';
+      if (path.startsWith('/profile') || path.startsWith('/@')) return 'Profile';
+      return 'Browsing CentralTok';
+    };
+
+    const flushActivity = (actionLabel: string, minIntervalMs = 90_000) => {
+      const now = Date.now();
+      latestInteractionRef.current = { at: now, action: actionLabel };
+      if (now - lastActivityWriteRef.current < minIntervalMs) return;
+      lastActivityWriteRef.current = now;
+      try {
+        localStorage.setItem(storageKey, String(now));
+      } catch {}
+      void updateUserActivity(uid, now, actionLabel);
+    };
+
+    const routeAction = getRouteLabel(location.pathname);
+    flushActivity(routeAction, 45_000);
+
+    const onUserInteract = () => {
+      const now = Date.now();
+      const label = getRouteLabel(location.pathname);
+      latestInteractionRef.current = { at: now, action: label };
+      flushActivity(label, 90_000);
+    };
+
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden' && latestInteractionRef.current.at > 0) {
+        if (Date.now() - lastActivityWriteRef.current >= 30_000) {
+          flushActivity(latestInteractionRef.current.action, 30_000);
+        }
+      }
+    };
+
+    window.addEventListener('pointerdown', onUserInteract, { passive: true });
+    window.addEventListener('keydown', onUserInteract, { passive: true });
+    window.addEventListener('touchstart', onUserInteract, { passive: true });
+    document.addEventListener('visibilitychange', onVisibility);
+
+    return () => {
+      window.removeEventListener('pointerdown', onUserInteract);
+      window.removeEventListener('keydown', onUserInteract);
+      window.removeEventListener('touchstart', onUserInteract);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, [currentUser?.id, location.pathname]);
 
   useEffect(() => {
     if (!currentUser) {
@@ -872,7 +942,12 @@ export function Layout({ children }: { children: React.ReactNode }) {
                       to={`/profile/${u.handle}`}
                       className="flex items-center gap-2.5 px-3 py-1.5 rounded-xl hover:bg-zinc-100 dark:hover:bg-zinc-900 transition-colors group"
                     >
-                      <img src={u.avatarUrl} alt="" className="w-7 h-7 rounded-full object-cover shrink-0" />
+                      <div className="relative shrink-0">
+                        <img src={u.avatarUrl} alt="" className="w-7 h-7 rounded-full object-cover" />
+                        {isUserOnline(u) && u.showActivityStatus !== false && !u.isGhostMode && (
+                          <span className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-emerald-500 border-2 border-white dark:border-zinc-950" title="Online now" />
+                        )}
+                      </div>
                       <div className="min-w-0 flex-1">
                         <p className="text-xs font-bold truncate text-zinc-800 dark:text-zinc-200 group-hover:text-[#FE2C55] flex items-center gap-1">
                           <span>{u.username}</span>

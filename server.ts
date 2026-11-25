@@ -42,6 +42,105 @@ async function startServer() {
     res.json({ status: "ok" });
   });
 
+  app.post("/api/google-space-webhook", async (req, res) => {
+    try {
+      const webhookUrl = (process.env.GOOGLE_CHAT_WEBHOOK_URL || "").trim();
+      if (!webhookUrl) {
+        return res.status(503).json({
+          error: "GOOGLE_CHAT_WEBHOOK_URL is not configured in server secrets or GitHub Actions secrets."
+        });
+      }
+
+      const parsedUrl = new URL(webhookUrl);
+      if (parsedUrl.protocol !== "https:" || parsedUrl.hostname !== "chat.googleapis.com") {
+        return res.status(400).json({ error: "Invalid Google Chat webhook URL configured." });
+      }
+
+      const {
+        title = "CentralTok Site Updated",
+        summary = "Site update pushed cleanly to GitHub Pages.",
+        updatedBy = "CentralTok Owner",
+        pageUrl = "https://thegoogleclassroom.github.io/windows11tiktok/"
+      } = req.body || {};
+
+      const escapeHtml = (value: unknown) =>
+        String(value ?? "")
+          .slice(0, 1500)
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;");
+
+      const safePageUrl = /^https?:\/\//i.test(String(pageUrl))
+        ? String(pageUrl)
+        : "https://thegoogleclassroom.github.io/windows11tiktok/";
+
+      const payload = {
+        text: `🚀 *${String(title).slice(0, 120)}* — ${String(updatedBy).slice(0, 60)}\n${String(summary).slice(0, 500)}\nLive: ${safePageUrl}`,
+        cardsV2: [
+          {
+            cardId: `manual-space-update-${Date.now()}`,
+            card: {
+              header: {
+                title: String(title).slice(0, 120),
+                subtitle: "Google Space: CentralTok Developers.",
+                imageUrl: "https://github.githubassets.com/favicons/favicon.png",
+                imageType: "CIRCLE"
+              },
+              sections: [
+                {
+                  header: "Update Summary",
+                  widgets: [
+                    {
+                      decoratedText: {
+                        topLabel: "Sent By",
+                        text: escapeHtml(updatedBy)
+                      }
+                    },
+                    {
+                      textParagraph: {
+                        text: escapeHtml(summary).replace(/\n/g, "<br>")
+                      }
+                    }
+                  ]
+                },
+                {
+                  widgets: [
+                    {
+                      buttonList: {
+                        buttons: [
+                          {
+                            text: "Open Live Site",
+                            onClick: { openLink: { url: safePageUrl } }
+                          }
+                        ]
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        ]
+      };
+
+      const upstream = await fetch(webhookUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json; charset=UTF-8" },
+        body: JSON.stringify(payload)
+      });
+
+      if (!upstream.ok) {
+        const errText = await upstream.text();
+        return res.status(upstream.status).json({ error: errText || "Google Space webhook rejected payload." });
+      }
+
+      res.json({ ok: true, space: "CentralTok Developers." });
+    } catch (error: any) {
+      console.error("Google Space webhook error:", error);
+      res.status(500).json({ error: error?.message || "Failed to send Google Space webhook." });
+    }
+  });
+
   const handleChat = async (req: express.Request, res: express.Response) => {
     if (req.method === 'GET') {
       return res.json({ status: "ok", message: "AI chat service is active" });

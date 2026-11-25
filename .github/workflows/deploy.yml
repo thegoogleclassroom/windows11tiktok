@@ -4,6 +4,11 @@ on:
   push:
     branches: ['main']
   workflow_dispatch:
+    inputs:
+      test_message:
+        description: 'Optional test message to send to CentralTok Developers. Google Space'
+        required: false
+        default: ''
 
 permissions:
   contents: read
@@ -27,6 +32,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
@@ -67,3 +74,170 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
+      - name: Notify Google Space (CentralTok Developers.)
+        if: success()
+        env:
+          GOOGLE_CHAT_WEBHOOK_URL: ${{ secrets.GOOGLE_CHAT_WEBHOOK_URL }}
+          PAGE_URL: ${{ steps.deployment.outputs.page_url }}
+          REPO_NAME: ${{ github.repository }}
+          BRANCH_NAME: ${{ github.ref_name }}
+          ACTOR_NAME: ${{ github.actor }}
+          COMMIT_SHA: ${{ github.sha }}
+          BEFORE_SHA: ${{ github.event.before }}
+          RUN_ID: ${{ github.run_id }}
+          SERVER_URL: ${{ github.server_url }}
+          TEST_MESSAGE: ${{ inputs.test_message }}
+        run: |
+          node -e '
+            const { execSync } = require("child_process");
+            const webhookUrl = (process.env.GOOGLE_CHAT_WEBHOOK_URL || "").trim();
+            if (!webhookUrl) {
+              console.log("GOOGLE_CHAT_WEBHOOK_URL secret is not configured; skipping Google Space notification.");
+              process.exit(0);
+            }
+
+            const safeExec = (cmd) => {
+              try {
+                return execSync(cmd, { encoding: "utf8" }).trim();
+              } catch {
+                return "";
+              }
+            };
+
+            const sha = process.env.COMMIT_SHA || safeExec("git rev-parse HEAD");
+            const before = process.env.BEFORE_SHA || "";
+            const isZeroBefore = !before || /^0+$/.test(before);
+            const hasParent = Boolean(safeExec("git rev-parse --verify HEAD~1"));
+            const range = !isZeroBefore ? `${before}..${sha}` : (hasParent ? "HEAD~1..HEAD" : "");
+
+            const commitsRaw = range
+              ? safeExec(`git log ${range} --no-merges --pretty=format:"• %s — %an (%h)" -n 12`)
+              : safeExec(`git log -1 --pretty=format:"• %s — %an (%h)"`);
+            const customTestMsg = (process.env.TEST_MESSAGE || "").trim();
+            const commitsText = customTestMsg
+              ? `• [TEST] ${customTestMsg}\n${commitsRaw || ""}`.trim()
+              : (commitsRaw || "• Manual workflow deployment");
+
+            const diffRaw = range
+              ? safeExec(`git diff --name-status ${range}`)
+              : safeExec("git show --name-status --pretty=\"\" HEAD");
+            const diffLines = diffRaw ? diffRaw.split("\n").filter(Boolean) : [];
+            const maxFiles = 15;
+            const visibleFiles = diffLines.slice(0, maxFiles).map((line) => {
+              const [status, ...rest] = line.split("\t");
+              const filePath = rest.join(" -> ");
+              const tag = status.startsWith("A") ? "[Added]" : status.startsWith("D") ? "[Removed]" : "[Updated]";
+              return `${tag} ${filePath}`;
+            });
+            if (diffLines.length > maxFiles) {
+              visibleFiles.push(`...and ${diffLines.length - maxFiles} more file(s)`);
+            }
+            const filesText = visibleFiles.length ? visibleFiles.join("\n") : "No repository file diffs (rebuilt/scheduled deploy)";
+
+            const pageUrl = process.env.PAGE_URL || "https://thegoogleclassroom.github.io/windows11tiktok/";
+            const repoName = process.env.REPO_NAME || "CentralTok";
+            const branch = process.env.BRANCH_NAME || "main";
+            const actor = process.env.ACTOR_NAME || "Developer";
+            const shortSha = (sha || "").slice(0, 7);
+            const serverUrl = process.env.SERVER_URL || "https://github.com";
+            const commitUrl = `${serverUrl}/${repoName}/commit/${sha}`;
+            const runUrl = `${serverUrl}/${repoName}/actions/runs/${process.env.RUN_ID || ""}`;
+
+            const escapeHtml = (s) =>
+              String(s)
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;");
+
+            const payload = {
+              text: `🚀 *CentralTok GitHub Pages Updated* (${shortSha}) by ${actor}\nLive: ${pageUrl}`,
+              cardsV2: [
+                {
+                  cardId: `gh-pages-${shortSha || Date.now()}`,
+                  card: {
+                    header: {
+                      title: "CentralTok Site Updated",
+                      subtitle: `CentralTok Developers. • ${branch} (${shortSha})`,
+                      imageUrl: "https://github.githubassets.com/favicons/favicon.png",
+                      imageType: "CIRCLE"
+                    },
+                    sections: [
+                      {
+                        header: "Deployment Info",
+                        widgets: [
+                          {
+                            decoratedText: {
+                              topLabel: "Updated By",
+                              text: escapeHtml(actor)
+                            }
+                          },
+                          {
+                            decoratedText: {
+                              topLabel: "Changed Files Count",
+                              text: `${diffLines.length} file(s) changed`
+                            }
+                          }
+                        ]
+                      },
+                      {
+                        header: "Commit Changes",
+                        widgets: [
+                          {
+                            textParagraph: {
+                              text: escapeHtml(commitsText).replace(/\n/g, "<br>")
+                            }
+                          }
+                        ]
+                      },
+                      {
+                        header: "Files Changed",
+                        widgets: [
+                          {
+                            textParagraph: {
+                              text: `<code>${escapeHtml(filesText).replace(/\n/g, "<br>")}</code>`
+                            }
+                          }
+                        ]
+                      },
+                      {
+                        widgets: [
+                          {
+                            buttonList: {
+                              buttons: [
+                                {
+                                  text: "Open Live Site",
+                                  onClick: { openLink: { url: pageUrl } }
+                                },
+                                {
+                                  text: "View Commit",
+                                  onClick: { openLink: { url: commitUrl } }
+                                },
+                                {
+                                  text: "Workflow Run",
+                                  onClick: { openLink: { url: runUrl } }
+                                }
+                              ]
+                            }
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                }
+              ]
+            };
+
+            (async () => {
+              const res = await fetch(webhookUrl, {
+                method: "POST",
+                headers: { "Content-Type": "application/json; charset=UTF-8" },
+                body: JSON.stringify(payload)
+              });
+              if (!res.ok) {
+                const body = await res.text();
+                console.error("Google Chat webhook failed:", res.status, body);
+                process.exit(1);
+              }
+              console.log("Notified CentralTok Developers. Google Space successfully!");
+            })();
+          '

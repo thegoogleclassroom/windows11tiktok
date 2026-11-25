@@ -76,3 +76,136 @@ export function playNotificationSound(sound: string = 'chime') {
   } catch {}
 }
 
+export const ONLINE_WINDOW_MS = 3 * 60 * 1000;
+
+export function resolveJoinTimestamp(user?: Pick<User, 'id' | 'createdAt'> | null): number | null {
+  if (!user) return null;
+  if (typeof user.createdAt === 'number' && Number.isFinite(user.createdAt) && user.createdAt > 1_577_836_800_000) {
+    return user.createdAt;
+  }
+  const parts = String(user.id || '').split('_');
+  for (const part of parts) {
+    const parsed = Number(part);
+    if (Number.isFinite(parsed) && parsed > 1_577_836_800_000 && parsed < 4_102_444_800_000) {
+      return parsed;
+    }
+  }
+  return null;
+}
+
+export function formatJoinDate(user?: Pick<User, 'id' | 'createdAt'> | null): string {
+  const ts = resolveJoinTimestamp(user);
+  if (!ts) return 'Unknown (Legacy)';
+  return new Date(ts).toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
+}
+
+export function isUserOnline(
+  userOrLastActive?: Pick<User, 'lastActive'> | number | null,
+  now: number = Date.now()
+): boolean {
+  const lastActive =
+    typeof userOrLastActive === 'number'
+      ? userOrLastActive
+      : userOrLastActive?.lastActive;
+  if (typeof lastActive !== 'number' || !Number.isFinite(lastActive) || lastActive <= 0) {
+    return false;
+  }
+  return now - lastActive <= ONLINE_WINDOW_MS;
+}
+
+export function formatLastActive(lastActive?: number | null, now: number = Date.now()): string {
+  if (typeof lastActive !== 'number' || !Number.isFinite(lastActive) || lastActive <= 0) {
+    return 'No activity recorded';
+  }
+  const diffMs = Math.max(0, now - lastActive);
+  if (diffMs <= ONLINE_WINDOW_MS) {
+    const secs = Math.floor(diffMs / 1000);
+    if (secs < 45) return 'Active just now';
+    return `Online (${Math.max(1, Math.floor(secs / 60))}m ago)`;
+  }
+  const mins = Math.floor(diffMs / 60_000);
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days}d ago`;
+  return new Date(lastActive).toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
+}
+
+export function buildGoogleSpaceWebhookPayload(opts: {
+  title?: string;
+  summary?: string;
+  updatedBy?: string;
+  pageUrl?: string;
+}) {
+  const title = String(opts.title || 'CentralTok Site Updated').slice(0, 120);
+  const summary = String(opts.summary || 'Site update pushed cleanly to GitHub Pages.').slice(0, 1500);
+  const updatedBy = String(opts.updatedBy || 'CentralTok Owner').slice(0, 60);
+  const rawUrl = String(opts.pageUrl || 'https://thegoogleclassroom.github.io/windows11tiktok/');
+  const safePageUrl = /^https?:\/\//i.test(rawUrl)
+    ? rawUrl
+    : 'https://thegoogleclassroom.github.io/windows11tiktok/';
+
+  const escapeHtml = (value: string) =>
+    value
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+
+  return {
+    text: `🚀 *${title}* — ${updatedBy}\n${summary.slice(0, 500)}\nLive: ${safePageUrl}`,
+    cardsV2: [
+      {
+        cardId: `space-update-${Date.now()}`,
+        card: {
+          header: {
+            title,
+            subtitle: 'Google Space: CentralTok Developers.',
+            imageUrl: 'https://github.githubassets.com/favicons/favicon.png',
+            imageType: 'CIRCLE',
+          },
+          sections: [
+            {
+              header: 'Update Summary',
+              widgets: [
+                {
+                  decoratedText: {
+                    topLabel: 'Sent By',
+                    text: escapeHtml(updatedBy),
+                  },
+                },
+                {
+                  textParagraph: {
+                    text: escapeHtml(summary).replace(/\n/g, '<br>'),
+                  },
+                },
+              ],
+            },
+            {
+              widgets: [
+                {
+                  buttonList: {
+                    buttons: [
+                      {
+                        text: 'Open Live Site',
+                        onClick: { openLink: { url: safePageUrl } },
+                      },
+                    ],
+                  },
+                },
+              ],
+            },
+          ],
+        },
+      },
+    ],
+  };
+}

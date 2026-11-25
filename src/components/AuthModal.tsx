@@ -24,7 +24,13 @@ export function AuthModal({ onClose }: { onClose: () => void }) {
     const isOwner = normalizedEmail === 'zaellacruze1@gmail.com';
     
     if (existingUser) {
-      const updates: Partial<User> = {};
+      const now = Date.now();
+      const updates: Partial<User> = {
+        lastActive: now,
+        lastAction: 'Logged in',
+      };
+      existingUser.lastActive = now;
+      existingUser.lastAction = 'Logged in';
       if (isOwner && existingUser.role !== 'owner') {
         updates.role = 'owner';
         existingUser.role = 'owner';
@@ -33,9 +39,7 @@ export function AuthModal({ onClose }: { onClose: () => void }) {
         updates.deviceId = deviceId;
         existingUser.deviceId = deviceId;
       }
-      if (Object.keys(updates).length > 0) {
-        await updateUser(existingUser.id, updates);
-      }
+      await updateUser(existingUser.id, updates);
       upsertUserInCache(existingUser);
       return existingUser;
     }
@@ -46,6 +50,7 @@ export function AuthModal({ onClose }: { onClose: () => void }) {
       );
     }
 
+    const createdAtNow = Date.now();
     const newUser: User = {
       id: Math.random().toString(36).substr(2, 9),
       email,
@@ -57,7 +62,10 @@ export function AuthModal({ onClose }: { onClose: () => void }) {
       followers: [],
       isPrivate: false,
       deviceId,
-      role: isOwner ? 'owner' : 'user'
+      role: isOwner ? 'owner' : 'user',
+      createdAt: createdAtNow,
+      lastActive: createdAtNow,
+      lastAction: 'Joined CentralTok',
     };
 
     const linkedBan = users.find(user => user.deviceId === deviceId && user.banStatus);

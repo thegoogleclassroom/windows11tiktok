@@ -4,8 +4,8 @@ import { useAppStore } from '../store';
 import { getUsers, getReports, saveReports, resolveReport, getAppeals, saveAppeals, getAuditLogs, saveAuditLogs, addAuditLog, saveUsers, updateUser, getVideos, saveVideos, getAppSettings, saveAppSettings, subscribeToAppSettings, GlobalAppSettings, FirebaseFeatureKey, FIREBASE_FEATURE_PARTS, FIREBASE_OUTAGE_MESSAGE, saveNotifications, addNotifications, getNotifications, getAnnouncements, saveAnnouncement, deleteAnnouncement, subscribeToAnnouncements, subscribeToVerificationRequests, voteOnVerificationRequest, updateVerificationRequestStatus, updateUserVerificationStatus, subscribeToSuggestions, getVerificationRequests, updateDoc, doc, db, wipeUserFromSystem, getCentralProRequests, approveCentralProPayment, declineCentralProPayment, updateReportIntercom } from '../lib/db';
 import { setDoc } from 'firebase/firestore';
 import { User, Report, Appeal, AuditLog, Video, AppNotification, Announcement, VerificationRequest, AppSuggestion, CentralProRequest } from '../types';
-import { ShieldAlert, AlertTriangle, Users, FileText, CheckCircle, XCircle, Trash2, Ban, Search, Filter, RotateCcw, Loader2, Power, Gamepad2, Settings, Megaphone, Plus, Calendar, Palette, Maximize, Target, Layout as LayoutIcon, Ghost, X, Lightbulb, UserCheck, HelpCircle, Rocket, MessageCircle, Lock, Unlock, Volume2, VolumeX, Copy, Check, Eye, EyeOff, Database } from 'lucide-react';
-import { getDeviceId } from '../lib/utils';
+import { ShieldAlert, AlertTriangle, Users, FileText, CheckCircle, XCircle, Trash2, Ban, Search, Filter, RotateCcw, Loader2, Power, Gamepad2, Settings, Megaphone, Plus, Calendar, Palette, Maximize, Target, Layout as LayoutIcon, Ghost, X, Lightbulb, UserCheck, HelpCircle, Rocket, MessageCircle, Lock, Unlock, Volume2, VolumeX, Copy, Check, Eye, EyeOff, Database, Send, ExternalLink } from 'lucide-react';
+import { getDeviceId, resolveJoinTimestamp, formatJoinDate, formatLastActive, isUserOnline } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
 import { GAMES, APPS } from '../data/games';
 import { ResponsiveContainer, BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, PieChart, Pie, Cell, AreaChart, Area } from 'recharts';
@@ -173,8 +173,14 @@ export function Admin() {
   const [showInvitePin, setShowInvitePin] = useState(false);
   const [copiedInvitePin, setCopiedInvitePin] = useState(false);
   const [siteShutdownError, setSiteShutdownError] = useState('');
+  const [spaceWebhookSummary, setSpaceWebhookSummary] = useState('Deployed latest CentralTok updates to GitHub Pages.');
+  const [spaceWebhookSending, setSpaceWebhookSending] = useState(false);
+  const [spaceWebhookStatus, setSpaceWebhookStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [copiedSecretName, setCopiedSecretName] = useState(false);
   
   const [logSearch, setLogSearch] = useState('');
+  const [userSearch, setUserSearch] = useState('');
+  const [userActivityFilter, setUserActivityFilter] = useState<'active_first' | 'online_only' | 'newest_joined' | 'default'>('active_first');
 
   // Pin & Countdown State
   const [pinModal, setPinModal] = useState<{ isOpen: boolean; action: () => void; title: string }>({ isOpen: false, action: () => {}, title: '' });
@@ -1015,7 +1021,25 @@ export function Admin() {
                           </span>
                         )}
                       </div>
-                      <p className="text-sm text-zinc-500 mb-1">Reported by: @{repUser?.handle || 'anonymous'}</p>
+                      <p className="text-sm text-zinc-500 mb-1 flex flex-wrap items-center gap-2">
+                        <span>Reported by: @{repUser?.handle || 'anonymous'}</span>
+                        {repUser && (
+                          <>
+                            <span className="text-[11px] px-2 py-0.5 rounded-full bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 font-semibold">
+                              Joined {formatJoinDate(repUser)}
+                            </span>
+                            <span className={`text-[11px] px-2 py-0.5 rounded-full font-semibold ${
+                              isUserOnline(repUser)
+                                ? 'bg-emerald-500/15 text-emerald-500'
+                                : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400'
+                            }`}>
+                              {isUserOnline(repUser)
+                                ? 'Online now'
+                                : `Last active: ${formatLastActive(repUser.lastActive)}`}
+                            </span>
+                          </>
+                        )}
+                      </p>
                       <p className="text-xs text-zinc-400 mb-4">{new Date(report.timestamp).toLocaleString()}</p>
                       <div className="flex flex-wrap gap-2">
                         {vid && (
@@ -1073,29 +1097,99 @@ export function Admin() {
             </div>
           )}
 
-          {activeTab === 'users' && (
+          {activeTab === 'users' && (() => {
+            const now = Date.now();
+            const onlineCount = users.filter(u => isUserOnline(u, now)).length;
+            const activeTodayCount = users.filter(u => typeof u.lastActive === 'number' && now - u.lastActive <= 86_400_000).length;
+            const filteredUsers = users
+              .filter(u => {
+                if (userActivityFilter === 'online_only' && !isUserOnline(u, now)) return false;
+                if (!userSearch.trim()) return true;
+                const q = userSearch.trim().toLowerCase();
+                return (
+                  u.username?.toLowerCase().includes(q) ||
+                  u.handle?.toLowerCase().includes(q) ||
+                  u.email?.toLowerCase().includes(q)
+                );
+              })
+              .sort((a, b) => {
+                if (userActivityFilter === 'active_first' || userActivityFilter === 'online_only') {
+                  return (b.lastActive || 0) - (a.lastActive || 0);
+                }
+                if (userActivityFilter === 'newest_joined') {
+                  return (resolveJoinTimestamp(b) || 0) - (resolveJoinTimestamp(a) || 0);
+                }
+                return 0;
+              });
+
+            return (
             <div className="space-y-4 overflow-x-auto">
-              <h2 className="text-xl font-bold mb-4">User Management</h2>
-              <table className="w-full text-left min-w-[600px]">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 mb-2">
+                <div>
+                  <h2 className="text-xl font-bold">User Management &amp; Activity</h2>
+                  <p className="text-xs text-zinc-500 mt-0.5">
+                    Online Now: <span className="font-bold text-emerald-500">{onlineCount}</span> • Active Last 24h: <span className="font-bold text-zinc-300">{activeTodayCount}</span> • Total: <span className="font-bold">{users.length}</span>
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="relative">
+                    <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
+                    <input
+                      type="text"
+                      value={userSearch}
+                      onChange={e => setUserSearch(e.target.value)}
+                      placeholder="Search username or @handle..."
+                      className="pl-8 pr-3 py-1.5 rounded-xl bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-xs outline-none focus:border-pink-500"
+                    />
+                  </div>
+                  {[
+                    { id: 'active_first', label: 'Most Active' },
+                    { id: 'online_only', label: `Online (${onlineCount})` },
+                    { id: 'newest_joined', label: 'Newest Joined' },
+                    { id: 'default', label: 'Default' },
+                  ].map(opt => (
+                    <button
+                      key={opt.id}
+                      onClick={() => setUserActivityFilter(opt.id as any)}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-colors ${
+                        userActivityFilter === opt.id
+                          ? 'bg-pink-600 text-white'
+                          : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700'
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <table className="w-full text-left min-w-[760px]">
                 <thead>
                   <tr className="border-b border-zinc-200 dark:border-zinc-800 text-sm text-zinc-500">
                     <th className="pb-3 font-semibold">User</th>
                     <th className="pb-3 font-semibold">Role</th>
                     <th className="pb-3 font-semibold">Status</th>
-                    <th className="pb-3 font-semibold">Join Date (ID)</th>
+                    <th className="pb-3 font-semibold">Join Date</th>
+                    <th className="pb-3 font-semibold">Last Active</th>
                     <th className="pb-3 font-semibold">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {users.map(u => (
+                  {filteredUsers.map(u => {
+                    const online = isUserOnline(u, now);
+                    return (
                     <tr key={u.id} className="border-b border-zinc-100 dark:border-zinc-800/50 hover:bg-zinc-50 dark:hover:bg-zinc-900/50 transition-colors">
                       <td className="py-3 pr-4">
                         <div className="flex items-center gap-3">
-                          {u.avatarUrl ? (
-                            <img src={u.avatarUrl} className="w-10 h-10 rounded-full bg-zinc-800 object-cover" />
-                          ) : (
-                            <div className="w-10 h-10 rounded-full bg-zinc-800" />
-                          )}
+                          <div className="relative shrink-0">
+                            {u.avatarUrl ? (
+                              <img src={u.avatarUrl} className="w-10 h-10 rounded-full bg-zinc-800 object-cover" />
+                            ) : (
+                              <div className="w-10 h-10 rounded-full bg-zinc-800" />
+                            )}
+                            {online && (
+                              <span className="absolute bottom-0 right-0 w-3 h-3 rounded-full bg-emerald-500 border-2 border-white dark:border-zinc-900 animate-pulse" title="Online now" />
+                            )}
+                          </div>
                           <div>
                             <p className="font-bold">{u.username}</p>
                             <p className="text-xs text-zinc-500">@{u.handle}</p>
@@ -1124,7 +1218,30 @@ export function Admin() {
                         )}
                       </td>
                       <td className="py-3 pr-4 text-sm text-zinc-500 whitespace-nowrap">
-                        {new Date(parseInt(u.id.split('_')[1] || '0')).toLocaleDateString() === 'Invalid Date' ? 'Unknown' : new Date(parseInt(u.id.split('_')[1])).toLocaleDateString()}
+                        {formatJoinDate(u)}
+                      </td>
+                      <td className="py-3 pr-4 text-xs whitespace-nowrap">
+                        {online ? (
+                          <div className="space-y-0.5">
+                            <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-500 font-bold">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping" />
+                              Online
+                            </span>
+                            {u.lastAction && (
+                              <p className="text-[11px] text-zinc-400">{u.lastAction}</p>
+                            )}
+                          </div>
+                        ) : u.lastActive ? (
+                          <div title={new Date(u.lastActive).toLocaleString()}>
+                            <p className="font-semibold text-zinc-700 dark:text-zinc-200">{formatLastActive(u.lastActive, now)}</p>
+                            <p className="text-[11px] text-zinc-400">
+                              {new Date(u.lastActive).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+                              {u.lastAction ? ` • ${u.lastAction}` : ''}
+                            </p>
+                          </div>
+                        ) : (
+                          <span className="text-zinc-400">No activity recorded</span>
+                        )}
                       </td>
                       <td className="py-3">
                         <div className="flex flex-wrap gap-2 items-center">
@@ -1213,11 +1330,13 @@ export function Admin() {
                         </div>
                       </td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
-          )}
+            );
+          })()}
 
           {activeTab === 'appeals' && (
             <div className="space-y-4">
@@ -2460,6 +2579,140 @@ export function Admin() {
                         </div>
                       );
                     })}
+                  </div>
+                </div>
+
+                {/* GitHub Pages -> Google Space Webhook (CentralTok Developers.) */}
+                <div className="mt-8 bg-zinc-950/60 border border-emerald-500/30 rounded-3xl p-6 space-y-5">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div>
+                      <h3 className="font-bold text-lg flex items-center gap-2 text-white">
+                        <MessageCircle className="text-emerald-400" size={20} />
+                        <span>GitHub Pages Update Webhook — CentralTok Developers.</span>
+                      </h3>
+                      <p className="text-xs text-zinc-400 mt-1">
+                        Every time your GitHub Pages site updates and finishes deploying, commit summaries and changed files are sent directly to your Google Space (<span className="text-emerald-400 font-bold">CentralTok Developers.</span>).
+                      </p>
+                    </div>
+                    <span className="px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 shrink-0 self-start">
+                      deploy.yml Active
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
+                    <div className="bg-zinc-900/90 border border-zinc-800 rounded-2xl p-4 space-y-1.5">
+                      <p className="text-[10px] font-black uppercase tracking-widest text-emerald-400">Step 1 • Google Space</p>
+                      <p className="font-bold text-white">Create Incoming Webhook</p>
+                      <p className="text-zinc-400 leading-relaxed">
+                        Open <span className="text-zinc-200 font-semibold">CentralTok Developers.</span> in Google Chat → Space menu → <span className="text-zinc-200 font-semibold">Apps &amp; integrations</span> → <span className="text-zinc-200 font-semibold">Add webhooks</span>, and copy the webhook URL.
+                      </p>
+                    </div>
+                    <div className="bg-zinc-900/90 border border-zinc-800 rounded-2xl p-4 space-y-1.5">
+                      <p className="text-[10px] font-black uppercase tracking-widest text-emerald-400">Step 2 • GitHub Secret</p>
+                      <p className="font-bold text-white">Save Actions Secret</p>
+                      <p className="text-zinc-400 leading-relaxed">
+                        In your GitHub repo → <span className="text-zinc-200 font-semibold">Settings → Secrets and variables → Actions</span>, add a New repository secret named:
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          try {
+                            navigator.clipboard.writeText('GOOGLE_CHAT_WEBHOOK_URL');
+                            setCopiedSecretName(true);
+                            setTimeout(() => setCopiedSecretName(false), 2000);
+                          } catch {}
+                        }}
+                        className="mt-1 inline-flex items-center gap-2 px-2.5 py-1 rounded-lg bg-zinc-950 border border-zinc-700 text-emerald-300 font-mono text-[11px] hover:border-emerald-500 transition-colors cursor-pointer"
+                      >
+                        <span>GOOGLE_CHAT_WEBHOOK_URL</span>
+                        {copiedSecretName ? <Check size={12} className="text-emerald-400" /> : <Copy size={12} />}
+                      </button>
+                    </div>
+                    <div className="bg-zinc-900/90 border border-zinc-800 rounded-2xl p-4 space-y-1.5">
+                      <p className="text-[10px] font-black uppercase tracking-widest text-emerald-400">Step 3 • Auto Dispatch</p>
+                      <p className="font-bold text-white">What Gets Sent</p>
+                      <p className="text-zinc-400 leading-relaxed">
+                        Whenever <span className="font-mono text-zinc-200">main</span> deploys to GitHub Pages, the workflow posts the author, commit log, list of added/updated/removed files, and links to Open Live Site &amp; View Commit.
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Test Update Post via Backend Server Secret */}
+                  <div className="bg-zinc-900/80 border border-zinc-800 rounded-2xl p-4 space-y-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div>
+                        <p className="text-xs font-bold text-white">Send a Manual / Test Space Update</p>
+                        <p className="text-[11px] text-zinc-400 mt-0.5">
+                          Use the test button below on the live server, or run <span className="font-mono text-zinc-200">Actions → Deploy static content to Pages → Run workflow (test_message)</span> on GitHub.
+                        </p>
+                      </div>
+                      <a
+                        href="https://thegoogleclassroom.github.io/windows11tiktok/"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-[11px] font-bold text-pink-400 hover:underline flex items-center gap-1"
+                      >
+                        <span>GitHub Pages Site</span>
+                        <ExternalLink size={12} />
+                      </a>
+                    </div>
+                    <div className="flex flex-col sm:flex-row gap-2.5">
+                      <input
+                        type="text"
+                        value={spaceWebhookSummary}
+                        onChange={(e) => setSpaceWebhookSummary(e.target.value)}
+                        placeholder="Describe what changed in this update..."
+                        className="flex-1 bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder:text-zinc-500 outline-none focus:border-emerald-500"
+                      />
+                      <button
+                        type="button"
+                        disabled={spaceWebhookSending || !spaceWebhookSummary.trim()}
+                        onClick={async () => {
+                          setSpaceWebhookSending(true);
+                          setSpaceWebhookStatus(null);
+                          try {
+                            const res = await fetch('/api/google-space-webhook', {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({
+                                title: 'CentralTok Site Updated',
+                                summary: spaceWebhookSummary.trim(),
+                                updatedBy: currentUser?.username || 'Owner',
+                                pageUrl: 'https://thegoogleclassroom.github.io/windows11tiktok/'
+                              })
+                            });
+                            const data = await res.json().catch(() => ({}));
+                            if (!res.ok) {
+                              setSpaceWebhookStatus({
+                                type: 'error',
+                                message: data?.error || `Request failed (${res.status}). On static GitHub Pages, automatic updates are dispatched by GitHub Actions using GOOGLE_CHAT_WEBHOOK_URL.`
+                              });
+                            } else {
+                              setSpaceWebhookStatus({
+                                type: 'success',
+                                message: 'Update sent to Google Space: CentralTok Developers.!'
+                              });
+                            }
+                          } catch {
+                            setSpaceWebhookStatus({
+                              type: 'error',
+                              message: 'Server webhook route unavailable in static hosting—GitHub Actions deploy.yml will send updates automatically on every push!'
+                            });
+                          } finally {
+                            setSpaceWebhookSending(false);
+                          }
+                        }}
+                        className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-black text-xs uppercase tracking-wider flex items-center justify-center gap-2 shrink-0 cursor-pointer transition-colors"
+                      >
+                        {spaceWebhookSending ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
+                        <span>{spaceWebhookSending ? 'Sending...' : 'Send Test to Space'}</span>
+                      </button>
+                    </div>
+                    {spaceWebhookStatus && (
+                      <p className={`text-xs font-semibold ${spaceWebhookStatus.type === 'success' ? 'text-emerald-400' : 'text-amber-400'}`}>
+                        {spaceWebhookStatus.message}
+                      </p>
+                    )}
                   </div>
                 </div>
               </div>

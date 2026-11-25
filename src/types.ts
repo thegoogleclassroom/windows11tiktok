@@ -16,6 +16,9 @@ export type User = {
   badges?: string[];
   currentGame?: string;
   showActivityStatus?: boolean;
+  createdAt?: number;
+  lastActive?: number;
+  lastAction?: string;
   password?: string;
   isGhostMode?: boolean;
   isVerified?: boolean;

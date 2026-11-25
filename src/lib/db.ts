@@ -726,7 +726,36 @@ export const subscribeToUserDoc = (userId: string, callback: (user: User | null)
 };
 
 export const updateUserGame = async (userId: string, gameTitle: string | null) => {
-  return updateUser(userId, { currentGame: gameTitle });
+  return updateUser(userId, {
+    currentGame: gameTitle,
+    lastActive: Date.now(),
+    lastAction: gameTitle ? `Playing ${gameTitle}` : 'Exited Games & Apps',
+  });
+};
+
+export const updateUserActivity = async (userId: string, lastActive: number = Date.now(), lastAction?: string) => {
+  if (!userId) return;
+  const patch: Partial<User> = { lastActive };
+  if (lastAction) patch.lastAction = lastAction;
+  try {
+    const cached = getCachedCollection<User>('users');
+    if (cached.length > 0) {
+      const nextUsers = cached.map(u => (u.id === userId ? { ...u, ...patch } : u));
+      const prevMem = readCache.get('users');
+      readCache.set('users', { data: nextUsers, fetchedAt: prevMem?.fetchedAt || 0 });
+      setTimeout(() => {
+        try {
+          localStorage.setItem('ct_cache_users', JSON.stringify(nextUsers));
+        } catch {}
+      }, 0);
+    }
+  } catch {}
+  if (isQuotaBlocked()) return;
+  try {
+    await setDoc(doc(db, 'users', userId), deepClean(patch), { merge: true });
+  } catch (err) {
+    handleWriteQuotaError(err);
+  }
 };
 
 export const wipeUserFromSystem = async (userId: string) => {

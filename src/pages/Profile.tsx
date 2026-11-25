@@ -8,13 +8,13 @@ import {
 } from '../lib/db';
 import { User, Video, Appeal } from '../types';
 import { useAppStore } from '../store';
-import { isFriend, playNotificationSound } from '../lib/utils';
+import { isFriend, playNotificationSound, formatJoinDate, formatLastActive, isUserOnline } from '../lib/utils';
 import { compressImage } from '../lib/imageUtils';
 import { 
   Settings, Play, Edit3, Grid, Heart, X, Upload, Bookmark, Flag, 
   Hammer, Wrench, Check, Trash2, HelpCircle, Users, Lock, Image as ImageIcon, LogOut,
   AlertTriangle, Send, ShieldCheck, Trophy, Phone, Video as VideoIcon, Eye, EyeOff, Key, User as UserIcon, Sparkles, FileX,
-  Disc, Music, Headphones, Bell, BellOff, Volume2
+  Disc, Music, Headphones, Bell, BellOff, Volume2, Calendar, Clock
 } from 'lucide-react';
 import { VideoItem } from './Home';
 import { HolographicBadge, CentralProBadge } from '../components/UIPolish';
@@ -334,8 +334,8 @@ export function Profile() {
                 <span className="text-zinc-500 font-bold text-2xl">{profileUser.username.charAt(0)}</span>
               </div>
             )}
-            {!profileUser.isSystemWiped && profileUser.currentGame && profileUser.showActivityStatus !== false && (
-              <div className="absolute -bottom-1 -right-1 bg-green-500 w-5 h-5 rounded-full border-4 border-white dark:border-zinc-950 animate-pulse" title={`Playing ${profileUser.currentGame}`} />
+            {!profileUser.isSystemWiped && (profileUser.currentGame || isUserOnline(profileUser)) && ((profileUser.showActivityStatus !== false && !profileUser.isGhostMode) || currentUser?.role === 'staff' || currentUser?.role === 'owner' || isOwnProfile) && (
+              <div className="absolute -bottom-1 -right-1 bg-green-500 w-5 h-5 rounded-full border-4 border-white dark:border-zinc-950 animate-pulse" title={profileUser.currentGame ? `Playing ${profileUser.currentGame}` : 'Online now'} />
             )}
           </div>
           
@@ -386,12 +386,51 @@ export function Profile() {
             </div>
             <div className="flex items-center justify-center md:justify-start gap-2 mb-3 flex-wrap">
               <p className="text-zinc-500 font-semibold">@{profileUser.handle}</p>
+              <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-zinc-500 dark:text-zinc-400 bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 px-2.5 py-0.5 rounded-full">
+                <Calendar size={11} />
+                Joined {formatJoinDate(profileUser)}
+              </span>
+              {((profileUser.showActivityStatus !== false && !profileUser.isGhostMode) || currentUser?.role === 'staff' || currentUser?.role === 'owner' || isOwnProfile) && (
+                isUserOnline(profileUser) ? (
+                  <span className="inline-flex items-center gap-1.5 text-[11px] font-bold text-emerald-500 bg-emerald-500/10 border border-emerald-500/25 px-2.5 py-0.5 rounded-full">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                    Online
+                  </span>
+                ) : profileUser.lastActive ? (
+                  <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-zinc-500 dark:text-zinc-400 bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 px-2.5 py-0.5 rounded-full" title={new Date(profileUser.lastActive).toLocaleString()}>
+                    <Clock size={11} />
+                    Last active {formatLastActive(profileUser.lastActive)}
+                  </span>
+                ) : null
+              )}
               {profileUser.currentGame && profileUser.showActivityStatus !== false && (
                 <span className="text-[10px] font-bold text-green-500 uppercase tracking-widest bg-green-500/10 px-2 py-0.5 rounded-full border border-green-500/20">
                   Playing {profileUser.currentGame}
                 </span>
               )}
             </div>
+
+            {(currentUser?.role === 'staff' || currentUser?.role === 'owner') && !profileUser.isSystemWiped && (
+              <div className="mb-3 inline-flex flex-wrap items-center justify-center md:justify-start gap-x-4 gap-y-1 px-3 py-1.5 rounded-xl bg-blue-500/10 border border-blue-500/25 text-[11px] text-blue-600 dark:text-blue-300">
+                <span className="font-black uppercase tracking-wider text-[10px]">Staff Activity Log:</span>
+                <span>
+                  Joined: <strong>{formatJoinDate(profileUser)}</strong>
+                </span>
+                <span>
+                  Last Active:{' '}
+                  <strong>
+                    {profileUser.lastActive
+                      ? `${formatLastActive(profileUser.lastActive)} (${new Date(profileUser.lastActive).toLocaleString()})`
+                      : 'Never recorded'}
+                  </strong>
+                </span>
+                {profileUser.lastAction && (
+                  <span>
+                    Area: <strong>{profileUser.lastAction}</strong>
+                  </span>
+                )}
+              </div>
+            )}
 
             {(() => {
               const ls = activeListeningState;
