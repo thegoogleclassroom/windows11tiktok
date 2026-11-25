@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useAppStore } from '../store';
-import { getUsers, saveUsers, updateUser, getUserByEmail, isReadQuotaBlocked, upsertUserInCache } from '../lib/db';
+import { getUsers, saveUsers, updateUser, getUserByEmail, getUserFresh, isReadQuotaBlocked, upsertUserInCache } from '../lib/db';
 import { User } from '../types';
 import { signInWithGoogle, signInAsGuest } from '../lib/firebase';
 import { Loader2 } from 'lucide-react';
@@ -17,9 +17,12 @@ export function AuthModal({ onClose }: { onClose: () => void }) {
   const syncUserToDb = async (email: string, displayName: string | null, photoURL: string | null) => {
     const normalizedEmail = email.trim().toLowerCase();
     const users = await getUsers();
-    const existingUser =
+    const matchedUser =
       users.find(u => u.email?.toLowerCase() === normalizedEmail) ||
       (await getUserByEmail(email));
+    const existingUser = matchedUser
+      ? ((await getUserFresh(matchedUser.id)) || matchedUser)
+      : null;
     const deviceId = getDeviceId();
     const isOwner = normalizedEmail === 'zaellacruze1@gmail.com';
     
@@ -104,12 +107,12 @@ export function AuthModal({ onClose }: { onClose: () => void }) {
       
       const users = await getUsers();
       const normalizedEmail = email.trim().toLowerCase();
-      const existingUser =
+      const matchedUser =
         users.find(u => u.email?.toLowerCase() === normalizedEmail) ||
         (await getUserByEmail(email));
 
       if (isSignUp) {
-        if (existingUser) {
+        if (matchedUser) {
           setError('User already exists. Please log in.');
           setLoading(false);
           return;
@@ -118,7 +121,7 @@ export function AuthModal({ onClose }: { onClose: () => void }) {
         setCurrentUser(newUser);
         onClose();
       } else {
-        if (!existingUser) {
+        if (!matchedUser) {
           if (isReadQuotaBlocked()) {
             setError('Unable to verify account right now. Please try again in a moment.');
           } else {
@@ -127,8 +130,9 @@ export function AuthModal({ onClose }: { onClose: () => void }) {
           setLoading(false);
           return;
         }
-        upsertUserInCache(existingUser);
-        setCurrentUser(existingUser);
+        const freshUser = (await getUserFresh(matchedUser.id)) || matchedUser;
+        upsertUserInCache(freshUser);
+        setCurrentUser(freshUser);
         onClose();
       }
     } catch (err: any) {

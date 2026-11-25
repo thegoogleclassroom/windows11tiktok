@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAppStore } from '../store';
-import { getAppeals, saveAppeals, getUsers, saveUsers } from '../lib/db';
+import { getAppeals, saveAppeals, unbanUserStrict } from '../lib/db';
 import { Appeal } from '../types';
 
 export function BanScreen() {
@@ -9,6 +9,12 @@ export function BanScreen() {
   const [submitted, setSubmitted] = useState(false);
   const [myAppeals, setMyAppeals] = useState<Appeal[]>([]);
 
+  const isTemp = currentUser?.banStatus?.type === 'temp';
+  const isHwid = currentUser?.banStatus?.type === 'hwid';
+  const isTempExpired = Boolean(
+    isTemp && currentUser?.banStatus?.until && Date.now() > currentUser.banStatus.until
+  );
+
   useEffect(() => {
     if (currentUser) {
       getAppeals().then(appeals => {
@@ -16,35 +22,26 @@ export function BanScreen() {
         if (appeals.some(a => a.userId === currentUser.id && a.status === 'pending')) {
           setSubmitted(true);
         }
-      });
+      }).catch(() => {});
     }
-  }, [currentUser]);
+  }, [currentUser?.id]);
 
-  if (!currentUser || !currentUser.banStatus) return null;
-
-  const isTemp = currentUser.banStatus.type === 'temp';
-  const isHwid = currentUser.banStatus.type === 'hwid';
-  
   // Checking if temp ban is expired
   useEffect(() => {
-    if (isTemp && currentUser.banStatus && currentUser.banStatus.until && Date.now() > currentUser.banStatus.until) {
-      // Unban them
+    if (currentUser && isTempExpired) {
       const unban = async () => {
-        const users = await getUsers();
-        const idx = users.findIndex(u => u.id === currentUser.id);
-        if (idx !== -1) {
-          delete users[idx].banStatus;
-          await saveUsers(users);
-          setCurrentUser(users[idx]);
-        }
+        try {
+          await unbanUserStrict(currentUser.id);
+        } catch {}
+        const updated = { ...currentUser };
+        delete updated.banStatus;
+        setCurrentUser(updated);
       };
-      unban();
+      void unban();
     }
-  }, [isTemp, currentUser, setCurrentUser]);
+  }, [isTempExpired, currentUser?.id, setCurrentUser]);
 
-  if (isTemp && currentUser.banStatus.until && Date.now() > currentUser.banStatus.until) {
-    return null;
-  }
+  if (!currentUser || !currentUser.banStatus || isTempExpired) return null;
 
   const handleAppeal = async () => {
     if (!appealReason.trim()) return;

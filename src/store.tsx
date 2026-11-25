@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { User, Video, AppNotification } from './types';
-import { getUsers, getVideos, initDb, handleWriteQuotaError, getCachedUserById, upsertUserInCache } from './lib/db';
+import { getUsers, getVideos, initDb, handleWriteQuotaError, getCachedUserById, upsertUserInCache, getUserFresh } from './lib/db';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { db } from './lib/firebase';
 
@@ -104,6 +104,23 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     let unsubscribe: (() => void) | undefined;
+    let cancelled = false;
+    let lastVerifyAt = 0;
+
+    const verifyUserFromServer = async (uid: string, minGapMs = 0) => {
+      if (!uid || cancelled) return;
+      const now = Date.now();
+      if (minGapMs > 0 && now - lastVerifyAt < minGapMs) return;
+      lastVerifyAt = now;
+      try {
+        const fresh = await getUserFresh(uid);
+        if (!cancelled && fresh) {
+          upsertUserInCache(fresh);
+          setCurrentUser(fresh);
+          setIsLoading(false);
+        }
+      } catch {}
+    };
 
     const loadData = async () => {
       await initDb();
@@ -115,15 +132,19 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           setCurrentUser(cachedUser);
           setIsLoading(false);
         }
+        // Immediately verify against server so bans/role updates are never masked by stale local cache on home WiFi
+        void verifyUserFromServer(currentUserId, 0);
+
         // Subscribe to user document in real-time
         try {
           const userDocRef = doc(db, 'users', currentUserId);
           unsubscribe = onSnapshot(userDocRef, (docSnap) => {
+            const isFromCache = docSnap.metadata?.fromCache;
             if (docSnap.exists()) {
               const userData = docSnap.data() as User;
               upsertUserInCache(userData);
               setCurrentUser(userData);
-            } else {
+            } else if (!isFromCache) {
               setCurrentUser(null);
             }
             setIsLoading(false);
@@ -148,7 +169,21 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     
     loadData();
 
+    const onReconnectOrFocus = () => {
+      const rawUserId = localStorage.getItem('currentUserId');
+      const uid = rawUserId && rawUserId !== 'undefined' && rawUserId !== 'null' ? rawUserId.trim() : '';
+      if (!uid) return;
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+      void verifyUserFromServer(uid, 30_000);
+    };
+
+    window.addEventListener('online', onReconnectOrFocus);
+    document.addEventListener('visibilitychange', onReconnectOrFocus);
+
     return () => {
+      cancelled = true;
+      window.removeEventListener('online', onReconnectOrFocus);
+      document.removeEventListener('visibilitychange', onReconnectOrFocus);
       if (unsubscribe) unsubscribe();
     };
   }, []);

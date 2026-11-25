@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAppStore } from '../store';
-import { getUsers, getReports, saveReports, resolveReport, getAppeals, saveAppeals, getAuditLogs, saveAuditLogs, addAuditLog, saveUsers, updateUser, getVideos, saveVideos, getAppSettings, saveAppSettings, subscribeToAppSettings, GlobalAppSettings, FirebaseFeatureKey, FIREBASE_FEATURE_PARTS, FIREBASE_OUTAGE_MESSAGE, saveNotifications, addNotifications, getNotifications, getAnnouncements, saveAnnouncement, deleteAnnouncement, subscribeToAnnouncements, subscribeToVerificationRequests, voteOnVerificationRequest, updateVerificationRequestStatus, updateUserVerificationStatus, subscribeToSuggestions, getVerificationRequests, updateDoc, doc, db, wipeUserFromSystem, getCentralProRequests, approveCentralProPayment, declineCentralProPayment, updateReportIntercom } from '../lib/db';
+import { getUsers, getReports, saveReports, resolveReport, getAppeals, saveAppeals, getAuditLogs, saveAuditLogs, addAuditLog, saveUsers, updateUser, banUserStrict, unbanUserStrict, getVideos, saveVideos, getAppSettings, saveAppSettings, subscribeToAppSettings, GlobalAppSettings, FirebaseFeatureKey, FIREBASE_FEATURE_PARTS, FIREBASE_OUTAGE_MESSAGE, saveNotifications, addNotifications, getNotifications, getAnnouncements, saveAnnouncement, deleteAnnouncement, subscribeToAnnouncements, subscribeToVerificationRequests, voteOnVerificationRequest, updateVerificationRequestStatus, updateUserVerificationStatus, subscribeToSuggestions, getVerificationRequests, updateDoc, doc, db, wipeUserFromSystem, getCentralProRequests, approveCentralProPayment, declineCentralProPayment, updateReportIntercom } from '../lib/db';
 import { setDoc } from 'firebase/firestore';
 import { User, Report, Appeal, AuditLog, Video, AppNotification, Announcement, VerificationRequest, AppSuggestion, CentralProRequest } from '../types';
 import { ShieldAlert, AlertTriangle, Users, FileText, CheckCircle, XCircle, Trash2, Ban, Search, Filter, RotateCcw, Loader2, Power, Gamepad2, Settings, Megaphone, Plus, Calendar, Palette, Maximize, Target, Layout as LayoutIcon, Ghost, X, Lightbulb, UserCheck, HelpCircle, Rocket, MessageCircle, Lock, Unlock, Volume2, VolumeX, Copy, Check, Eye, EyeOff, Database, Send, ExternalLink } from 'lucide-react';
@@ -130,26 +130,23 @@ export function Admin() {
       } else {
         const durationMs = calculateDurationMs(tempBanAmount, tempBanUnit);
         const until = Date.now() + durationMs;
-        const allUsers = await getUsers();
-        const idx = allUsers.findIndex(u => u.id === tempBanModal.user!.id);
-        if (idx !== -1) {
-          allUsers[idx].banStatus = {
-            type: 'temp',
-            until,
-            reason: tempBanReason.trim(),
-            bannedBy: currentUser!.id,
-            bannedAt: Date.now()
-          };
-          await saveUsers(allUsers);
-          setUsers(allUsers);
-          await logAction('ban_user', tempBanModal.user.id, `Banned user (temp) for ${tempBanAmount} ${tempBanUnit}. Reason: ${tempBanReason.trim()}`);
-        }
+        const banPayload: NonNullable<User['banStatus']> = {
+          type: 'temp',
+          until,
+          reason: tempBanReason.trim(),
+          bannedBy: currentUser!.id,
+          bannedAt: Date.now()
+        };
+        await banUserStrict(tempBanModal.user.id, banPayload);
+        setUsers(prev => prev.map(u => u.id === tempBanModal.user!.id ? { ...u, banStatus: banPayload } : u));
+        await logAction('ban_user', tempBanModal.user.id, `Banned user (temp) for ${tempBanAmount} ${tempBanUnit}. Reason: ${tempBanReason.trim()}`);
       }
       setTempBanModal({ isOpen: false, user: null });
       setTempBanReason('');
       setWipeSystemCheck(false);
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
+      setSiteShutdownError(err?.message || 'Failed to save ban to Firestore. Please check your connection.');
     } finally {
       setTempBanLoading(false);
     }
@@ -614,23 +611,18 @@ export function Admin() {
           return;
         }
 
-        const allUsers = await getUsers();
-        const idx = allUsers.findIndex(u => u.id === user.id);
-        if (idx !== -1) {
-          const until = type === 'temp' && days ? Date.now() + (days * 24 * 60 * 60 * 1000) : undefined;
-          allUsers[idx].banStatus = {
-            type,
-            until,
-            reason: reason.trim(),
-            bannedBy: currentUser!.id,
-            bannedAt: Date.now(),
-            linkedAccount: type === 'hwid' ? user.handle : undefined
-          };
-          if (type === 'hwid') allUsers[idx].deviceId = allUsers[idx].deviceId || getDeviceId();
-          await saveUsers(allUsers);
-          setUsers(allUsers);
-          await logAction('ban_user', user.id, `Banned user (${type})${days ? ` for ${days} days` : ''}. Reason: ${reason}`);
-        }
+        const until = type === 'temp' && days ? Date.now() + (days * 24 * 60 * 60 * 1000) : undefined;
+        const banPayload: NonNullable<User['banStatus']> = {
+          type,
+          until,
+          reason: reason.trim(),
+          bannedBy: currentUser!.id,
+          bannedAt: Date.now(),
+          linkedAccount: type === 'hwid' ? user.handle : undefined
+        };
+        await banUserStrict(user.id, banPayload);
+        setUsers(prev => prev.map(u => u.id === user.id ? { ...u, banStatus: banPayload } : u));
+        await logAction('ban_user', user.id, `Banned user (${type})${days ? ` for ${days} days` : ''}. Reason: ${reason}`);
       },
       true,
       'Reason for Ban (Mandatory for staff/owner)',
@@ -645,14 +637,14 @@ export function Admin() {
     executeWithConfirm(
       `Unban User: @${user.handle}`,
       async (reason) => {
-        const allUsers = await getUsers();
-        const idx = allUsers.findIndex(u => u.id === user.id);
-        if (idx !== -1) {
-          delete allUsers[idx].banStatus;
-          await saveUsers(allUsers);
-          setUsers(allUsers);
-          await logAction('unban_user', user.id, `Unbanned user @${user.handle}. Reason: ${reason}`);
-        }
+        await unbanUserStrict(user.id);
+        setUsers(prev => prev.map(u => {
+          if (u.id !== user.id) return u;
+          const next = { ...u };
+          delete next.banStatus;
+          return next;
+        }));
+        await logAction('unban_user', user.id, `Unbanned user @${user.handle}. Reason: ${reason}`);
       },
       true,
       'Reason for Unbanning (Mandatory)',
@@ -696,18 +688,20 @@ export function Admin() {
             }
           } else {
             // Ban appeal
-            const allUsers = await getUsers();
-            const uIdx = allUsers.findIndex(user => user.id === appeal.userId);
-            if (uIdx !== -1) {
-              if (status === 'accepted') {
-                delete allUsers[uIdx].banStatus;
-              } else {
-                if (allUsers[uIdx].banStatus) {
-                  allUsers[uIdx].banStatus!.stillBannedReason = reason;
-                }
-              }
-              await saveUsers(allUsers);
-              setUsers(allUsers);
+            if (status === 'accepted') {
+              await unbanUserStrict(appeal.userId);
+              setUsers(prev => prev.map(user => {
+                if (user.id !== appeal.userId) return user;
+                const next = { ...user };
+                delete next.banStatus;
+                return next;
+              }));
+            } else {
+              await unbanUserStrict(appeal.userId, reason);
+              setUsers(prev => prev.map(user => {
+                if (user.id !== appeal.userId || !user.banStatus) return user;
+                return { ...user, banStatus: { ...user.banStatus, stillBannedReason: reason } };
+              }));
             }
           }
           await logAction(`appeal_${status}`, appeal.id, `Appeal ${status}. Reason/Notes: ${reason}`);

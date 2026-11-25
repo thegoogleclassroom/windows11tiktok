@@ -24,11 +24,31 @@ import { CameraDeviceSelector } from '../components/CameraDeviceSelector';
 import { compressImage } from '../lib/imageUtils';
 
 const QUICK_REACTIONS = ['❤️', '😂', '👍', '🔥', '😮', '😢'];
-const VOICE_ICE_SERVERS = {
+const VOICE_ICE_SERVERS: RTCConfiguration = {
   iceServers: [
     { urls: 'stun:stun.l.google.com:19302' },
-    { urls: 'stun:stun1.l.google.com:19302' }
-  ]
+    { urls: 'stun:stun1.l.google.com:19302' },
+    { urls: 'stun:stun2.l.google.com:19302' },
+    { urls: 'stun:global.stun.twilio.com:3478' },
+    { urls: 'stun:stun.cloudflare.com:3478' },
+    { urls: 'stun:stun.relay.metered.ca:80' },
+    {
+      urls: 'turn:global.relay.metered.ca:80',
+      username: 'e8dd65c92f64151e7a04731c',
+      credential: 'L7/tY+K2mD4N8rQv'
+    },
+    {
+      urls: 'turn:global.relay.metered.ca:443',
+      username: 'e8dd65c92f64151e7a04731c',
+      credential: 'L7/tY+K2mD4N8rQv'
+    },
+    {
+      urls: 'turns:global.relay.metered.ca:443?transport=tcp',
+      username: 'e8dd65c92f64151e7a04731c',
+      credential: 'L7/tY+K2mD4N8rQv'
+    }
+  ],
+  iceCandidatePoolSize: 10,
 };
 
 function getSupportedAudioMimeType(): string {

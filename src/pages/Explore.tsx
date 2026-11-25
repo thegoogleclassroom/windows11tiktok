@@ -573,8 +573,28 @@ const LIVE_REACTIONS = ['❤️', '🔥', '😂', '👏', '🚀', '🎉'];
 const LIVE_ICE_SERVERS: RTCConfiguration = {
   iceServers: [
     { urls: 'stun:stun.l.google.com:19302' },
-    { urls: 'stun:stun1.l.google.com:19302' }
-  ]
+    { urls: 'stun:stun1.l.google.com:19302' },
+    { urls: 'stun:stun2.l.google.com:19302' },
+    { urls: 'stun:global.stun.twilio.com:3478' },
+    { urls: 'stun:stun.cloudflare.com:3478' },
+    { urls: 'stun:stun.relay.metered.ca:80' },
+    {
+      urls: 'turn:global.relay.metered.ca:80',
+      username: 'e8dd65c92f64151e7a04731c',
+      credential: 'L7/tY+K2mD4N8rQv'
+    },
+    {
+      urls: 'turn:global.relay.metered.ca:443',
+      username: 'e8dd65c92f64151e7a04731c',
+      credential: 'L7/tY+K2mD4N8rQv'
+    },
+    {
+      urls: 'turns:global.relay.metered.ca:443?transport=tcp',
+      username: 'e8dd65c92f64151e7a04731c',
+      credential: 'L7/tY+K2mD4N8rQv'
+    }
+  ],
+  iceCandidatePoolSize: 10,
 };
 
 // Module-level handoff stream so navigating from Setup Modal -> /live/:streamId preserves permissions cleanly
@@ -1357,6 +1377,8 @@ function LiveBroadcastRoom({ streamId }: { streamId: string }) {
   }, []);
 
   // 4. WebRTC Host 1-to-N Broadcast Signaling Loop
+  const [hostPeerRetryTick, setHostPeerRetryTick] = useState(0);
+
   useEffect(() => {
     if (!isHost || !stream || stream.status !== 'live' || !localStream) return;
 
@@ -1370,7 +1392,7 @@ function LiveBroadcastRoom({ streamId }: { streamId: string }) {
       }
     }
 
-    // Create offers for new viewers
+    // Create offers for new viewers (or retry failed cross-WiFi peers)
     activeViewers.forEach(async (vid) => {
       if (hostPeersRef.current.has(vid)) return;
 
@@ -1387,9 +1409,27 @@ function LiveBroadcastRoom({ streamId }: { streamId: string }) {
         }
       };
 
+      const recoverPeer = () => {
+        if (hostPeersRef.current.get(vid) === pc) {
+          try { pc.close(); } catch {}
+          hostPeersRef.current.delete(vid);
+          setTimeout(() => setHostPeerRetryTick(t => t + 1), 1500);
+        }
+      };
+
       pc.onconnectionstatechange = () => {
         if (pc.connectionState === 'failed' || pc.connectionState === 'closed') {
-          hostPeersRef.current.delete(vid);
+          recoverPeer();
+        }
+      };
+
+      pc.oniceconnectionstatechange = () => {
+        if (pc.iceConnectionState === 'failed') {
+          try {
+            pc.restartIce?.();
+          } catch {
+            recoverPeer();
+          }
         }
       };
 
@@ -1401,10 +1441,23 @@ function LiveBroadcastRoom({ streamId }: { streamId: string }) {
         console.warn('Error creating host offer for viewer:', vid, err);
       }
     });
-  }, [isHost, stream?.viewers, stream?.status, localStream, streamId]);
+  }, [isHost, stream?.viewers, stream?.status, localStream, streamId, hostPeerRetryTick]);
 
   useEffect(() => {
     if (!isHost || !stream || stream.status !== 'live') return;
+
+    const flushViewerCandidates = async (pc: RTCPeerConnection, sig: LiveRtcSignal) => {
+      if (!Array.isArray(sig.viewerCandidates) || !pc.remoteDescription) return;
+      for (const cand of sig.viewerCandidates) {
+        const key = `${sig.id}_v_${JSON.stringify(cand)}`;
+        if (!hostAppliedCandidatesRef.current.has(key)) {
+          hostAppliedCandidatesRef.current.add(key);
+          try {
+            await pc.addIceCandidate(new RTCIceCandidate(cand));
+          } catch {}
+        }
+      }
+    };
 
     const unsubSignals = subscribeToLiveRtcHost(streamId, async (signals: LiveRtcSignal[]) => {
       for (const sig of signals) {
@@ -1422,17 +1475,7 @@ function LiveBroadcastRoom({ streamId }: { streamId: string }) {
           }
         }
 
-        if (Array.isArray(sig.viewerCandidates) && pc.remoteDescription) {
-          for (const cand of sig.viewerCandidates) {
-            const key = `${sig.id}_v_${JSON.stringify(cand)}`;
-            if (!hostAppliedCandidatesRef.current.has(key)) {
-              hostAppliedCandidatesRef.current.add(key);
-              try {
-                await pc.addIceCandidate(new RTCIceCandidate(cand));
-              } catch {}
-            }
-          }
-        }
+        await flushViewerCandidates(pc, sig);
       }
     });
 
@@ -1442,6 +1485,19 @@ function LiveBroadcastRoom({ streamId }: { streamId: string }) {
   // 5. WebRTC Viewer Receive Signaling Loop
   useEffect(() => {
     if (isHost || !stream || stream.status !== 'live') return;
+
+    const flushHostCandidates = async (pc: RTCPeerConnection, sig: LiveRtcSignal) => {
+      if (!pc.remoteDescription || !Array.isArray(sig.hostCandidates)) return;
+      for (const cand of sig.hostCandidates) {
+        const key = `${sig.id}_h_${JSON.stringify(cand)}`;
+        if (!viewerAppliedCandidatesRef.current.has(key)) {
+          viewerAppliedCandidatesRef.current.add(key);
+          try {
+            await pc.addIceCandidate(new RTCIceCandidate(cand));
+          } catch {}
+        }
+      }
+    };
 
     const unsubViewer = subscribeToLiveRtcViewer(streamId, viewerId, async (sig) => {
       if (!sig || !sig.offer?.sdp) return;
@@ -1496,16 +1552,8 @@ function LiveBroadcastRoom({ streamId }: { streamId: string }) {
       }
 
       const pc = viewerPeerRef.current;
-      if (pc && pc.remoteDescription && Array.isArray(sig.hostCandidates)) {
-        for (const cand of sig.hostCandidates) {
-          const key = `${sig.id}_h_${JSON.stringify(cand)}`;
-          if (!viewerAppliedCandidatesRef.current.has(key)) {
-            viewerAppliedCandidatesRef.current.add(key);
-            try {
-              await pc.addIceCandidate(new RTCIceCandidate(cand));
-            } catch {}
-          }
-        }
+      if (pc) {
+        await flushHostCandidates(pc, sig);
       }
     });
 

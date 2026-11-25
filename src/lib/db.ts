@@ -1,4 +1,4 @@
-import { collection, doc, getDocs, setDoc, updateDoc, writeBatch, arrayUnion, arrayRemove, getDoc, onSnapshot, deleteDoc, increment, query, where } from 'firebase/firestore';
+import { collection, doc, getDocs, setDoc, updateDoc, writeBatch, arrayUnion, arrayRemove, getDoc, getDocFromServer, onSnapshot, deleteDoc, deleteField, increment, query, where } from 'firebase/firestore';
 import { db, auth } from './firebase';
 export { db, doc, updateDoc, getDoc };
 import { User, Video, Message, AppNotification, Report, Appeal, AuditLog, Comment, Story, FAQCategory, FAQPost, ForumEditRequest, GroupChat, UserStatus, GameData, WatchParty, Announcement, Call, VerificationRequest, AppSuggestion, SneakPeek, CentralProRequest, LiveStream, LiveRtcSignal } from '../types';
@@ -215,6 +215,19 @@ let readQuotaBlockedUntil = getStoredTimestamp(READ_QUOTA_KEY);
 let writeQuotaBlockedUntil = getStoredTimestamp(WRITE_QUOTA_KEY);
 let consecutiveReadQuotaHits = 0;
 
+if (typeof window !== 'undefined') {
+  window.addEventListener('online', () => {
+    // Switching networks (e.g. school WiFi -> home WiFi) should retry Firestore cleanly
+    readQuotaBlockedUntil = 0;
+    writeQuotaBlockedUntil = 0;
+    consecutiveReadQuotaHits = 0;
+    try {
+      localStorage.removeItem(READ_QUOTA_KEY);
+      localStorage.removeItem(WRITE_QUOTA_KEY);
+    } catch {}
+  });
+}
+
 const COLLECTION_TTL_MS: Record<string, number> = {
   users: 10 * 60_000,
   videos: 10 * 60_000,
@@ -272,13 +285,13 @@ export const handleWriteQuotaError = (err: any, operationKind: 'read' | 'write' 
       (operationKind === 'auto' && !isExplicitRead);
 
     if (blockRead) {
-      consecutiveReadQuotaHits = Math.min(consecutiveReadQuotaHits + 1, 4);
-      const backoffMs = consecutiveReadQuotaHits === 1 ? 5 * 60_000 : consecutiveReadQuotaHits === 2 ? 10 * 60_000 : 15 * 60_000;
+      consecutiveReadQuotaHits = Math.min(consecutiveReadQuotaHits + 1, 3);
+      const backoffMs = consecutiveReadQuotaHits === 1 ? 60_000 : consecutiveReadQuotaHits === 2 ? 2 * 60_000 : 4 * 60_000;
       readQuotaBlockedUntil = Math.max(readQuotaBlockedUntil, Date.now() + backoffMs);
       setStoredTimestamp(READ_QUOTA_KEY, readQuotaBlockedUntil);
     }
     if (blockWrite) {
-      writeQuotaBlockedUntil = Math.max(writeQuotaBlockedUntil, Date.now() + 10 * 60_000);
+      writeQuotaBlockedUntil = Math.max(writeQuotaBlockedUntil, Date.now() + 2 * 60_000);
       setStoredTimestamp(WRITE_QUOTA_KEY, writeQuotaBlockedUntil);
     }
 
@@ -597,7 +610,14 @@ export const getUserFresh = async (id: string): Promise<User | null> => {
     return getCachedCollection<User>('users').find(u => u.id === id) || null;
   }
   try {
-    const snap = await getDoc(doc(db, 'users', id));
+    const ref = doc(db, 'users', id);
+    let snap;
+    try {
+      snap = await withTimeout(getDocFromServer(ref), 6000);
+    } catch (serverErr: any) {
+      if (isQuotaError(serverErr)) throw serverErr;
+      snap = await getDoc(ref);
+    }
     if (snap.exists()) {
       const userData = snap.data() as User;
       upsertUserInCache(userData);
@@ -668,17 +688,57 @@ export const updateUser = async (userId: string, data: Partial<User>) => {
       setCachedCollection('users', cached.map(u => u.id === userId ? { ...u, ...data } : u), false);
     }
   } catch {}
-  if (isQuotaBlocked()) return;
+  if (isWriteQuotaBlocked()) return;
   try {
     const docRef = doc(db, 'users', userId);
     const updateData = deepClean(data);
-    await updateDoc(docRef, updateData);
+    await setDoc(docRef, updateData, { merge: true });
   } catch (err) {
-    if (!handleWriteQuotaError(err)) {
+    if (!handleWriteQuotaError(err, 'write')) {
       console.error("Error updating user:", userId, err);
       throw err;
     }
   }
+};
+
+export const banUserStrict = async (userId: string, banStatus: NonNullable<User['banStatus']>) => {
+  if (!userId) throw new Error('Invalid user ID.');
+  const cleanedBan = deepClean(banStatus);
+  await setDoc(doc(db, 'users', userId), { banStatus: cleanedBan }, { merge: true });
+  try {
+    const cached = getCachedCollection<User>('users');
+    if (cached.length > 0) {
+      const next = cached.map(u => (u.id === userId ? { ...u, banStatus: cleanedBan } : u));
+      setCachedCollection('users', next, false);
+      recordCollectionSnapshot('users', next);
+    }
+  } catch {}
+};
+
+export const unbanUserStrict = async (userId: string, stillBannedReason?: string) => {
+  if (!userId) throw new Error('Invalid user ID.');
+  const ref = doc(db, 'users', userId);
+  if (stillBannedReason !== undefined) {
+    await updateDoc(ref, { 'banStatus.stillBannedReason': stillBannedReason });
+  } else {
+    await updateDoc(ref, { banStatus: deleteField() });
+  }
+  try {
+    const cached = getCachedCollection<User>('users');
+    if (cached.length > 0) {
+      const next = cached.map(u => {
+        if (u.id !== userId) return u;
+        if (stillBannedReason !== undefined && u.banStatus) {
+          return { ...u, banStatus: { ...u.banStatus, stillBannedReason } };
+        }
+        const copy = { ...u };
+        delete copy.banStatus;
+        return copy;
+      });
+      setCachedCollection('users', next, false);
+      recordCollectionSnapshot('users', next);
+    }
+  } catch {}
 };
 
 export const updateUserListeningState = async (userId: string, listeningState: User['listeningState']) => {
@@ -2595,15 +2655,14 @@ export const getLiveRtcDocId = (streamId: string, viewerId: string) => {
 };
 
 export const subscribeToLiveStreams = (callback: (streams: LiveStream[]) => void) => {
-  if (isQuotaBlocked()) {
-    try {
-      const cached = JSON.parse(localStorage.getItem('ct_cache_live_streams') || '[]') as LiveStream[];
+  // Emit cached live streams immediately while Firestore connects cleanly across any WiFi/network
+  try {
+    const cached = JSON.parse(localStorage.getItem('ct_cache_live_streams') || '[]') as LiveStream[];
+    if (cached.length > 0) {
       callback(cached.filter(s => s.status === 'live'));
-    } catch {
-      callback([]);
     }
-    return () => {};
-  }
+  } catch {}
+
   const q = query(collection(db, 'watch_parties'), where('status', '==', 'live'));
   return onSnapshot(q, (snap) => {
     const now = Date.now();
@@ -2616,7 +2675,7 @@ export const subscribeToLiveStreams = (callback: (streams: LiveStream[]) => void
     } catch {}
     callback(streams);
   }, (err) => {
-    handleWriteQuotaError(err);
+    handleWriteQuotaError(err, 'read');
     try {
       const cached = JSON.parse(localStorage.getItem('ct_cache_live_streams') || '[]') as LiveStream[];
       callback(cached.filter(s => s.status === 'live'));
@@ -2637,57 +2696,61 @@ export const subscribeToLiveStream = (streamId: string, callback: (stream: LiveS
       }
     }
     callback(null);
-  }, () => {});
+  }, (err) => {
+    handleWriteQuotaError(err, 'read');
+  });
 };
 
 export const createLiveStream = async (stream: LiveStream) => {
-  if (isQuotaBlocked()) return;
+  if (isWriteQuotaBlocked()) {
+    throw new Error('Server write limit reached right now. Please try again in a minute.');
+  }
   try {
     const cleaned = deepClean(stream);
     await setDoc(doc(db, 'watch_parties', stream.id), cleaned);
   } catch (err) {
-    if (!handleWriteQuotaError(err)) {
+    if (!handleWriteQuotaError(err, 'write')) {
       console.error('Error creating live stream:', err);
-      throw err;
     }
+    throw err;
   }
 };
 
 export const updateLiveStream = async (streamId: string, updates: Partial<LiveStream>) => {
-  if (!streamId || isQuotaBlocked()) return;
+  if (!streamId || isWriteQuotaBlocked()) return;
   try {
     const cleaned = deepClean({ ...updates, updatedAt: Date.now() });
     await updateDoc(doc(db, 'watch_parties', streamId), cleaned);
   } catch (err) {
-    handleWriteQuotaError(err);
+    handleWriteQuotaError(err, 'write');
   }
 };
 
 export const joinLiveStream = async (streamId: string, viewerId: string) => {
-  if (!streamId || !viewerId || isQuotaBlocked()) return;
+  if (!streamId || !viewerId || isWriteQuotaBlocked()) return;
   try {
     await updateDoc(doc(db, 'watch_parties', streamId), {
       viewers: arrayUnion(viewerId),
       updatedAt: Date.now()
     });
   } catch (err) {
-    handleWriteQuotaError(err);
+    handleWriteQuotaError(err, 'write');
   }
 };
 
 export const leaveLiveStream = async (streamId: string, viewerId: string) => {
-  if (!streamId || !viewerId || isQuotaBlocked()) return;
+  if (!streamId || !viewerId || isWriteQuotaBlocked()) return;
   try {
     await updateDoc(doc(db, 'watch_parties', streamId), {
       viewers: arrayRemove(viewerId)
     });
   } catch (err) {
-    handleWriteQuotaError(err);
+    handleWriteQuotaError(err, 'write');
   }
 };
 
 export const sendLiveReaction = async (streamId: string, emoji: string, senderName: string) => {
-  if (!streamId || isQuotaBlocked()) return;
+  if (!streamId || isWriteQuotaBlocked()) return;
   try {
     await updateDoc(doc(db, 'watch_parties', streamId), {
       likes: increment(1),
@@ -2699,40 +2762,40 @@ export const sendLiveReaction = async (streamId: string, emoji: string, senderNa
       }
     });
   } catch (err) {
-    handleWriteQuotaError(err);
+    handleWriteQuotaError(err, 'write');
   }
 };
 
 export const voteLivePoll = async (streamId: string, userId: string, optionIndex: number) => {
-  if (!streamId || !userId || isQuotaBlocked()) return;
+  if (!streamId || !userId || isWriteQuotaBlocked()) return;
   try {
     await updateDoc(doc(db, 'watch_parties', streamId), {
       [`poll.votes.${userId}`]: optionIndex,
       updatedAt: Date.now()
     });
   } catch (err) {
-    handleWriteQuotaError(err);
+    handleWriteQuotaError(err, 'write');
   }
 };
 
 export const cleanupLiveRtcForViewer = async (streamId: string, viewerId: string) => {
-  if (!streamId || !viewerId || isQuotaBlocked()) return;
+  if (!streamId || !viewerId || isWriteQuotaBlocked()) return;
   try {
     await deleteDoc(doc(db, 'calls', getLiveRtcDocId(streamId, viewerId)));
   } catch (err) {
-    handleWriteQuotaError(err);
+    handleWriteQuotaError(err, 'write');
   }
 };
 
 export const endLiveStream = async (streamId: string) => {
-  if (!streamId || isQuotaBlocked()) return;
+  if (!streamId || isWriteQuotaBlocked()) return;
   try {
     await updateDoc(doc(db, 'watch_parties', streamId), {
       status: 'ended',
       updatedAt: Date.now()
     });
   } catch (err) {
-    handleWriteQuotaError(err);
+    handleWriteQuotaError(err, 'write');
   }
   try {
     const snap = await getDocs(query(collection(db, 'calls'), where('streamId', '==', streamId)));
@@ -2748,7 +2811,7 @@ export const endLiveStream = async (streamId: string) => {
 
 export const subscribeToLiveChat = (streamId: string, callback: (messages: Message[]) => void) => {
   const channelId = `live_chat_${streamId}`;
-  if (!streamId || isQuotaBlocked()) return () => {};
+  if (!streamId) return () => {};
   const q = query(collection(db, 'messages'), where('groupId', '==', channelId));
   return onSnapshot(q, (snapshot) => {
     const msgs = snapshot.docs
@@ -2756,7 +2819,7 @@ export const subscribeToLiveChat = (streamId: string, callback: (messages: Messa
       .sort((a, b) => a.timestamp - b.timestamp);
     callback(msgs);
   }, (err) => {
-    handleWriteQuotaError(err);
+    handleWriteQuotaError(err, 'read');
   });
 };
 
@@ -2768,7 +2831,7 @@ export const sendLiveChatMessage = async (streamId: string, msg: Message) => {
 };
 
 export const subscribeToLiveRtcHost = (streamId: string, callback: (signals: LiveRtcSignal[]) => void) => {
-  if (!streamId || isQuotaBlocked()) return () => {};
+  if (!streamId) return () => {};
   const q = query(collection(db, 'calls'), where('streamId', '==', streamId));
   return onSnapshot(q, (snap) => {
     const signals = snap.docs
@@ -2776,7 +2839,7 @@ export const subscribeToLiveRtcHost = (streamId: string, callback: (signals: Liv
       .filter((d): d is LiveRtcSignal => d?.status === 'live_rtc' && d.streamId === streamId);
     callback(signals);
   }, (err) => {
-    handleWriteQuotaError(err);
+    handleWriteQuotaError(err, 'read');
   });
 };
 
@@ -2788,11 +2851,13 @@ export const subscribeToLiveRtcViewer = (streamId: string, viewerId: string, cal
     } else {
       callback(null);
     }
-  }, () => {});
+  }, (err) => {
+    handleWriteQuotaError(err, 'read');
+  });
 };
 
 export const sendLiveRtcOffer = async (streamId: string, hostId: string, viewerId: string, offer: any) => {
-  if (isQuotaBlocked()) return;
+  if (isWriteQuotaBlocked()) return;
   try {
     const docId = getLiveRtcDocId(streamId, viewerId);
     await setDoc(doc(db, 'calls', docId), {
@@ -2808,12 +2873,12 @@ export const sendLiveRtcOffer = async (streamId: string, hostId: string, viewerI
       updatedAt: Date.now()
     });
   } catch (err) {
-    handleWriteQuotaError(err);
+    handleWriteQuotaError(err, 'write');
   }
 };
 
 export const sendLiveRtcAnswer = async (streamId: string, viewerId: string, answer: any) => {
-  if (isQuotaBlocked()) return;
+  if (isWriteQuotaBlocked()) return;
   try {
     const docId = getLiveRtcDocId(streamId, viewerId);
     await updateDoc(doc(db, 'calls', docId), {
@@ -2821,19 +2886,19 @@ export const sendLiveRtcAnswer = async (streamId: string, viewerId: string, answ
       updatedAt: Date.now()
     });
   } catch (err) {
-    handleWriteQuotaError(err);
+    handleWriteQuotaError(err, 'write');
   }
 };
 
 export const addLiveRtcCandidate = async (streamId: string, viewerId: string, side: 'host' | 'viewer', candidate: any) => {
-  if (isQuotaBlocked()) return;
+  if (isWriteQuotaBlocked()) return;
   try {
     const docId = getLiveRtcDocId(streamId, viewerId);
     await updateDoc(doc(db, 'calls', docId), {
       [`${side}Candidates`]: arrayUnion(candidate)
     });
   } catch (err) {
-    handleWriteQuotaError(err);
+    handleWriteQuotaError(err, 'write');
   }
 };
 

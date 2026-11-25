@@ -55,7 +55,7 @@ const getDbInstance = (appInstance: any) => {
   try {
     const settings = {
       localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
-      experimentalAutoDetectLongPolling: true,
+      experimentalForceLongPolling: true,
     };
     return dbId
       ? initializeFirestore(appInstance, settings, dbId)
@@ -64,7 +64,7 @@ const getDbInstance = (appInstance: any) => {
     try {
       const memSettings = {
         localCache: memoryLocalCache(),
-        experimentalAutoDetectLongPolling: true,
+        experimentalForceLongPolling: true,
       };
       return dbId
         ? initializeFirestore(appInstance, memSettings, dbId)
