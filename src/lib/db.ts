@@ -1,7 +1,8 @@
 import { collection, doc, getDocs, setDoc, updateDoc, writeBatch, arrayUnion, arrayRemove, getDoc, getDocFromServer, onSnapshot, deleteDoc, deleteField, increment, query, where } from 'firebase/firestore';
-import { db, auth } from './firebase';
+import { db, auth, firebaseRestConfig } from './firebase';
 export { db, doc, updateDoc, getDoc };
 import { User, Video, Message, AppNotification, Report, Appeal, AuditLog, Comment, Story, FAQCategory, FAQPost, ForumEditRequest, GroupChat, UserStatus, GameData, WatchParty, Announcement, Call, VerificationRequest, AppSuggestion, SneakPeek, CentralProRequest, LiveStream, LiveRtcSignal } from '../types';
+import { toFirestoreValue, toFirestoreFields, fromFirestoreFields } from './utils';
 
 export const submitSuggestion = async (suggestion: AppSuggestion) => {
   try {
@@ -316,6 +317,186 @@ const withTimeout = <T,>(promise: Promise<T>, ms = 8000): Promise<T> => {
   });
 };
 
+const getRestBaseUrl = () => {
+  const { projectId, databaseId } = firebaseRestConfig;
+  return `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(projectId)}/databases/${encodeURIComponent(databaseId)}/documents`;
+};
+
+const appendRestKey = (url: string) => {
+  const key = firebaseRestConfig.apiKey;
+  if (!key) return url;
+  return `${url}${url.includes('?') ? '&' : '?'}key=${encodeURIComponent(key)}`;
+};
+
+const restFetchWithRetry = async (url: string, init: RequestInit = {}, attempts = 2): Promise<Response> => {
+  let idToken = '';
+  try {
+    if (auth?.currentUser?.getIdToken) {
+      idToken = await auth.currentUser.getIdToken();
+    }
+  } catch {}
+
+  let lastErr: any;
+  for (let i = 0; i < attempts; i++) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 6000);
+    try {
+      const headers = new Headers(init.headers || {});
+      if (idToken && !headers.has('Authorization')) {
+        headers.set('Authorization', `Bearer ${idToken}`);
+      }
+      const res = await fetch(appendRestKey(url), {
+        ...init,
+        headers,
+        cache: 'no-store',
+        signal: controller.signal,
+      });
+      clearTimeout(timer);
+      return res;
+    } catch (err) {
+      clearTimeout(timer);
+      lastErr = err;
+      if (i + 1 < attempts) {
+        await new Promise((r) => setTimeout(r, 400));
+      }
+    }
+  }
+  throw lastErr || new Error('Firestore REST request failed');
+};
+
+const restGetDoc = async <T>(collName: string, docId: string): Promise<T | null> => {
+  const url = `${getRestBaseUrl()}/${encodeURIComponent(collName)}/${encodeURIComponent(docId)}`;
+  const res = await restFetchWithRetry(url, { method: 'GET' });
+  if (res.status === 404) return null;
+  if (!res.ok) {
+    const txt = await res.text().catch(() => '');
+    if (res.status === 429) handleWriteQuotaError({ code: 'resource-exhausted', message: txt }, 'read');
+    throw new Error(`REST GET ${collName}/${docId} failed (${res.status})`);
+  }
+  const body = await res.json();
+  if (!body?.fields) return null;
+  return fromFirestoreFields<T>(body.fields);
+};
+
+const restPatchDoc = async (
+  collName: string,
+  docId: string,
+  data: Record<string, any>,
+  updateMaskPaths?: string[]
+): Promise<void> => {
+  const params = new URLSearchParams();
+  if (updateMaskPaths && updateMaskPaths.length > 0) {
+    for (const p of updateMaskPaths) {
+      params.append('updateMask.fieldPaths', p);
+    }
+  }
+  const qs = params.toString();
+  const url = `${getRestBaseUrl()}/${encodeURIComponent(collName)}/${encodeURIComponent(docId)}${qs ? `?${qs}` : ''}`;
+  const res = await restFetchWithRetry(url, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ fields: toFirestoreFields(data) }),
+  });
+  if (!res.ok) {
+    const txt = await res.text().catch(() => '');
+    if (res.status === 429) handleWriteQuotaError({ code: 'resource-exhausted', message: txt }, 'write');
+    throw new Error(`REST PATCH ${collName}/${docId} failed (${res.status}): ${txt}`);
+  }
+};
+
+const restDeleteField = async (collName: string, docId: string, fieldPath: string): Promise<void> => {
+  const params = new URLSearchParams();
+  params.append('updateMask.fieldPaths', fieldPath);
+  const url = `${getRestBaseUrl()}/${encodeURIComponent(collName)}/${encodeURIComponent(docId)}?${params.toString()}`;
+  const res = await restFetchWithRetry(url, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ fields: {} }),
+  });
+  if (!res.ok) {
+    const txt = await res.text().catch(() => '');
+    if (res.status === 429) handleWriteQuotaError({ code: 'resource-exhausted', message: txt }, 'write');
+    throw new Error(`REST deleteField ${collName}/${docId}.${fieldPath} failed (${res.status})`);
+  }
+};
+
+const restArrayTransform = async (
+  collName: string,
+  docId: string,
+  fieldPath: string,
+  mode: 'union' | 'remove',
+  value: unknown,
+  extraSetFields?: Record<string, any>
+): Promise<void> => {
+  const { projectId, databaseId } = firebaseRestConfig;
+  const docName = `projects/${projectId}/databases/${databaseId}/documents/${collName}/${docId}`;
+  const writes: any[] = [];
+  if (extraSetFields && Object.keys(extraSetFields).length > 0) {
+    writes.push({
+      update: {
+        name: docName,
+        fields: toFirestoreFields(extraSetFields),
+      },
+      updateMask: { fieldPaths: Object.keys(extraSetFields) },
+    });
+  }
+  writes.push({
+    transform: {
+      document: docName,
+      fieldTransforms: [
+        mode === 'union'
+          ? { fieldPath, appendMissingElements: { values: [toFirestoreValue(value)] } }
+          : { fieldPath, removeAllFromArray: { values: [toFirestoreValue(value)] } },
+      ],
+    },
+  });
+  const url = `${getRestBaseUrl()}:commit`;
+  const res = await restFetchWithRetry(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ writes }),
+  });
+  if (!res.ok) {
+    const txt = await res.text().catch(() => '');
+    if (res.status === 429) handleWriteQuotaError({ code: 'resource-exhausted', message: txt }, 'write');
+    throw new Error(`REST transform ${collName}/${docId} failed (${res.status})`);
+  }
+};
+
+const restRunQueryEqual = async <T>(collName: string, fieldPath: string, value: string): Promise<T[]> => {
+  const url = `${getRestBaseUrl()}:runQuery`;
+  const res = await restFetchWithRetry(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      structuredQuery: {
+        from: [{ collectionId: collName }],
+        where: {
+          fieldFilter: {
+            field: { fieldPath },
+            op: 'EQUAL',
+            value: { stringValue: value },
+          },
+        },
+      },
+    }),
+  });
+  if (!res.ok) {
+    const txt = await res.text().catch(() => '');
+    if (res.status === 429) handleWriteQuotaError({ code: 'resource-exhausted', message: txt }, 'read');
+    throw new Error(`REST runQuery ${collName} failed (${res.status})`);
+  }
+  const rows = await res.json();
+  if (!Array.isArray(rows)) return [];
+  const items: T[] = [];
+  for (const row of rows) {
+    if (row?.document?.fields) {
+      items.push(fromFirestoreFields<T>(row.document.fields));
+    }
+  }
+  return items;
+};
+
 const getCachedCollection = <T>(collName: string): T[] => {
   const mem = readCache.get(collName);
   if (mem?.data) return mem.data as T[];
@@ -611,15 +792,20 @@ export const getUserFresh = async (id: string): Promise<User | null> => {
   }
   try {
     const ref = doc(db, 'users', id);
-    let snap;
+    let userData: User | null = null;
     try {
-      snap = await withTimeout(getDocFromServer(ref), 6000);
+      const snap = await withTimeout(getDocFromServer(ref), 5000);
+      if (snap.exists()) userData = snap.data() as User;
     } catch (serverErr: any) {
       if (isQuotaError(serverErr)) throw serverErr;
-      snap = await getDoc(ref);
+      try {
+        userData = await restGetDoc<User>('users', id);
+      } catch {
+        const snap = await withTimeout(getDoc(ref), 4000);
+        if (snap.exists()) userData = snap.data() as User;
+      }
     }
-    if (snap.exists()) {
-      const userData = snap.data() as User;
+    if (userData) {
       upsertUserInCache(userData);
       return userData;
     }
@@ -704,7 +890,12 @@ export const updateUser = async (userId: string, data: Partial<User>) => {
 export const banUserStrict = async (userId: string, banStatus: NonNullable<User['banStatus']>) => {
   if (!userId) throw new Error('Invalid user ID.');
   const cleanedBan = deepClean(banStatus);
-  await setDoc(doc(db, 'users', userId), { banStatus: cleanedBan }, { merge: true });
+  try {
+    await withTimeout(setDoc(doc(db, 'users', userId), { banStatus: cleanedBan }, { merge: true }), 5000);
+  } catch (err: any) {
+    if (isQuotaError(err)) throw err;
+    await restPatchDoc('users', userId, { banStatus: cleanedBan }, ['banStatus']);
+  }
   try {
     const cached = getCachedCollection<User>('users');
     if (cached.length > 0) {
@@ -719,9 +910,19 @@ export const unbanUserStrict = async (userId: string, stillBannedReason?: string
   if (!userId) throw new Error('Invalid user ID.');
   const ref = doc(db, 'users', userId);
   if (stillBannedReason !== undefined) {
-    await updateDoc(ref, { 'banStatus.stillBannedReason': stillBannedReason });
+    try {
+      await withTimeout(updateDoc(ref, { 'banStatus.stillBannedReason': stillBannedReason }), 5000);
+    } catch (err: any) {
+      if (isQuotaError(err)) throw err;
+      await restPatchDoc('users', userId, { banStatus: { stillBannedReason } }, ['banStatus.stillBannedReason']);
+    }
   } else {
-    await updateDoc(ref, { banStatus: deleteField() });
+    try {
+      await withTimeout(updateDoc(ref, { banStatus: deleteField() }), 5000);
+    } catch (err: any) {
+      if (isQuotaError(err)) throw err;
+      await restDeleteField('users', userId, 'banStatus');
+    }
   }
   try {
     const cached = getCachedCollection<User>('users');
@@ -2663,31 +2864,76 @@ export const subscribeToLiveStreams = (callback: (streams: LiveStream[]) => void
     }
   } catch {}
 
-  const q = query(collection(db, 'watch_parties'), where('status', '==', 'live'));
-  return onSnapshot(q, (snap) => {
+  let stopped = false;
+  let fallbackTimer: ReturnType<typeof setInterval> | undefined;
+
+  const filterAndEmit = (rawItems: any[]) => {
     const now = Date.now();
-    const streams = snap.docs
-      .map(d => d.data() as any)
+    const streams = rawItems
       .filter((d): d is LiveStream => Boolean(d?.isLiveStream) && d.status === 'live' && (now - (d.updatedAt || d.startedAt || now) < LIVE_STREAM_MAX_AGE_MS))
       .sort((a, b) => (b.startedAt || 0) - (a.startedAt || 0));
     try {
       localStorage.setItem('ct_cache_live_streams', JSON.stringify(streams));
     } catch {}
-    callback(streams);
+    if (!stopped) callback(streams);
+  };
+
+  const pollViaRest = async () => {
+    if (stopped || isReadQuotaBlocked()) return;
+    try {
+      const rows = await restRunQueryEqual<any>('watch_parties', 'status', 'live');
+      filterAndEmit(rows);
+    } catch {}
+  };
+
+  // Immediate REST check ensures streams appear immediately even if WebChannel stalls on home WiFi
+  void pollViaRest();
+
+  const q = query(collection(db, 'watch_parties'), where('status', '==', 'live'));
+  const unsub = onSnapshot(q, (snap) => {
+    if (fallbackTimer) {
+      clearInterval(fallbackTimer);
+      fallbackTimer = undefined;
+    }
+    filterAndEmit(snap.docs.map(d => d.data()));
   }, (err) => {
     handleWriteQuotaError(err, 'read');
-    try {
-      const cached = JSON.parse(localStorage.getItem('ct_cache_live_streams') || '[]') as LiveStream[];
-      callback(cached.filter(s => s.status === 'live'));
-    } catch {
-      callback([]);
+    if (!fallbackTimer && !stopped) {
+      void pollViaRest();
+      fallbackTimer = setInterval(() => {
+        if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+        void pollViaRest();
+      }, 10_000);
     }
   });
+
+  return () => {
+    stopped = true;
+    if (fallbackTimer) clearInterval(fallbackTimer);
+    unsub();
+  };
 };
 
 export const subscribeToLiveStream = (streamId: string, callback: (stream: LiveStream | null) => void) => {
   if (!streamId) return () => {};
-  return onSnapshot(doc(db, 'watch_parties', streamId), (snap) => {
+  let stopped = false;
+  let fallbackTimer: ReturnType<typeof setInterval> | undefined;
+
+  const pollViaRest = async () => {
+    if (stopped || isReadQuotaBlocked()) return;
+    try {
+      const data = await restGetDoc<any>('watch_parties', streamId);
+      if (!stopped) {
+        callback(data?.isLiveStream ? (data as LiveStream) : null);
+      }
+    } catch {}
+  };
+
+  const unsub = onSnapshot(doc(db, 'watch_parties', streamId), (snap) => {
+    if (fallbackTimer) {
+      clearInterval(fallbackTimer);
+      fallbackTimer = undefined;
+    }
     if (snap.exists()) {
       const data = snap.data() as any;
       if (data?.isLiveStream) {
@@ -2698,54 +2944,77 @@ export const subscribeToLiveStream = (streamId: string, callback: (stream: LiveS
     callback(null);
   }, (err) => {
     handleWriteQuotaError(err, 'read');
+    if (!fallbackTimer && !stopped) {
+      void pollViaRest();
+      fallbackTimer = setInterval(() => {
+        if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+        void pollViaRest();
+      }, 3000);
+    }
   });
+
+  return () => {
+    stopped = true;
+    if (fallbackTimer) clearInterval(fallbackTimer);
+    unsub();
+  };
 };
 
 export const createLiveStream = async (stream: LiveStream) => {
   if (isWriteQuotaBlocked()) {
     throw new Error('Server write limit reached right now. Please try again in a minute.');
   }
+  const cleaned = deepClean(stream);
   try {
-    const cleaned = deepClean(stream);
-    await setDoc(doc(db, 'watch_parties', stream.id), cleaned);
+    await withTimeout(setDoc(doc(db, 'watch_parties', stream.id), cleaned), 5000);
   } catch (err) {
-    if (!handleWriteQuotaError(err, 'write')) {
-      console.error('Error creating live stream:', err);
+    if (isQuotaError(err)) {
+      handleWriteQuotaError(err, 'write');
+      throw err;
     }
-    throw err;
+    await restPatchDoc('watch_parties', stream.id, cleaned);
   }
 };
 
 export const updateLiveStream = async (streamId: string, updates: Partial<LiveStream>) => {
   if (!streamId || isWriteQuotaBlocked()) return;
+  const cleaned = deepClean({ ...updates, updatedAt: Date.now() });
   try {
-    const cleaned = deepClean({ ...updates, updatedAt: Date.now() });
-    await updateDoc(doc(db, 'watch_parties', streamId), cleaned);
+    await withTimeout(updateDoc(doc(db, 'watch_parties', streamId), cleaned), 5000);
   } catch (err) {
-    handleWriteQuotaError(err, 'write');
+    if (handleWriteQuotaError(err, 'write')) return;
+    try {
+      await restPatchDoc('watch_parties', streamId, cleaned, Object.keys(cleaned));
+    } catch {}
   }
 };
 
 export const joinLiveStream = async (streamId: string, viewerId: string) => {
   if (!streamId || !viewerId || isWriteQuotaBlocked()) return;
   try {
-    await updateDoc(doc(db, 'watch_parties', streamId), {
+    await withTimeout(updateDoc(doc(db, 'watch_parties', streamId), {
       viewers: arrayUnion(viewerId),
       updatedAt: Date.now()
-    });
+    }), 5000);
   } catch (err) {
-    handleWriteQuotaError(err, 'write');
+    if (handleWriteQuotaError(err, 'write')) return;
+    try {
+      await restArrayTransform('watch_parties', streamId, 'viewers', 'union', viewerId, { updatedAt: Date.now() });
+    } catch {}
   }
 };
 
 export const leaveLiveStream = async (streamId: string, viewerId: string) => {
   if (!streamId || !viewerId || isWriteQuotaBlocked()) return;
   try {
-    await updateDoc(doc(db, 'watch_parties', streamId), {
+    await withTimeout(updateDoc(doc(db, 'watch_parties', streamId), {
       viewers: arrayRemove(viewerId)
-    });
+    }), 5000);
   } catch (err) {
-    handleWriteQuotaError(err, 'write');
+    if (handleWriteQuotaError(err, 'write')) return;
+    try {
+      await restArrayTransform('watch_parties', streamId, 'viewers', 'remove', viewerId);
+    } catch {}
   }
 };
 
@@ -2790,12 +3059,16 @@ export const cleanupLiveRtcForViewer = async (streamId: string, viewerId: string
 export const endLiveStream = async (streamId: string) => {
   if (!streamId || isWriteQuotaBlocked()) return;
   try {
-    await updateDoc(doc(db, 'watch_parties', streamId), {
+    await withTimeout(updateDoc(doc(db, 'watch_parties', streamId), {
       status: 'ended',
       updatedAt: Date.now()
-    });
+    }), 5000);
   } catch (err) {
-    handleWriteQuotaError(err, 'write');
+    if (!handleWriteQuotaError(err, 'write')) {
+      try {
+        await restPatchDoc('watch_parties', streamId, { status: 'ended', updatedAt: Date.now() }, ['status', 'updatedAt']);
+      } catch {}
+    }
   }
   try {
     const snap = await getDocs(query(collection(db, 'calls'), where('streamId', '==', streamId)));
@@ -2812,15 +3085,45 @@ export const endLiveStream = async (streamId: string) => {
 export const subscribeToLiveChat = (streamId: string, callback: (messages: Message[]) => void) => {
   const channelId = `live_chat_${streamId}`;
   if (!streamId) return () => {};
+  let stopped = false;
+  let fallbackTimer: ReturnType<typeof setInterval> | undefined;
+
+  const pollViaRest = async () => {
+    if (stopped || isReadQuotaBlocked()) return;
+    try {
+      const rows = await restRunQueryEqual<Message>('messages', 'groupId', channelId);
+      if (!stopped) {
+        callback(rows.sort((a, b) => a.timestamp - b.timestamp));
+      }
+    } catch {}
+  };
+
   const q = query(collection(db, 'messages'), where('groupId', '==', channelId));
-  return onSnapshot(q, (snapshot) => {
+  const unsub = onSnapshot(q, (snapshot) => {
+    if (fallbackTimer) {
+      clearInterval(fallbackTimer);
+      fallbackTimer = undefined;
+    }
     const msgs = snapshot.docs
       .map(d => d.data() as Message)
       .sort((a, b) => a.timestamp - b.timestamp);
     callback(msgs);
   }, (err) => {
     handleWriteQuotaError(err, 'read');
+    if (!fallbackTimer && !stopped) {
+      void pollViaRest();
+      fallbackTimer = setInterval(() => {
+        if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+        void pollViaRest();
+      }, 3000);
+    }
   });
+
+  return () => {
+    stopped = true;
+    if (fallbackTimer) clearInterval(fallbackTimer);
+    unsub();
+  };
 };
 
 export const sendLiveChatMessage = async (streamId: string, msg: Message) => {
@@ -2832,73 +3135,160 @@ export const sendLiveChatMessage = async (streamId: string, msg: Message) => {
 
 export const subscribeToLiveRtcHost = (streamId: string, callback: (signals: LiveRtcSignal[]) => void) => {
   if (!streamId) return () => {};
+  let stopped = false;
+  let fallbackTimer: ReturnType<typeof setInterval> | undefined;
+
+  const pollViaRest = async () => {
+    if (stopped || isReadQuotaBlocked()) return;
+    try {
+      const rows = await restRunQueryEqual<any>('calls', 'streamId', streamId);
+      const signals = rows.filter((d): d is LiveRtcSignal => d?.status === 'live_rtc' && d.streamId === streamId);
+      if (!stopped && signals.length > 0) callback(signals);
+    } catch {}
+  };
+
   const q = query(collection(db, 'calls'), where('streamId', '==', streamId));
-  return onSnapshot(q, (snap) => {
+  const unsub = onSnapshot(q, (snap) => {
+    if (fallbackTimer) {
+      clearInterval(fallbackTimer);
+      fallbackTimer = undefined;
+    }
     const signals = snap.docs
       .map(d => d.data() as any)
       .filter((d): d is LiveRtcSignal => d?.status === 'live_rtc' && d.streamId === streamId);
     callback(signals);
   }, (err) => {
     handleWriteQuotaError(err, 'read');
+    if (!fallbackTimer && !stopped) {
+      void pollViaRest();
+      fallbackTimer = setInterval(() => {
+        if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+        void pollViaRest();
+      }, 2500);
+    }
   });
+
+  return () => {
+    stopped = true;
+    if (fallbackTimer) clearInterval(fallbackTimer);
+    unsub();
+  };
 };
 
 export const subscribeToLiveRtcViewer = (streamId: string, viewerId: string, callback: (signal: LiveRtcSignal | null) => void) => {
   if (!streamId || !viewerId) return () => {};
-  return onSnapshot(doc(db, 'calls', getLiveRtcDocId(streamId, viewerId)), (snap) => {
+  const docId = getLiveRtcDocId(streamId, viewerId);
+  let stopped = false;
+  let receivedOffer = false;
+  let fallbackTimer: ReturnType<typeof setInterval> | undefined;
+
+  const pollViaRest = async () => {
+    if (stopped || isReadQuotaBlocked()) return;
+    try {
+      const sig = await restGetDoc<LiveRtcSignal>('calls', docId);
+      if (!stopped && sig) {
+        if (sig.offer?.sdp) receivedOffer = true;
+        callback(sig);
+      }
+    } catch {}
+  };
+
+  // Backup timer if WebChannel stalls silently before delivering the initial offer on home WiFi
+  const initialAssist = setTimeout(() => {
+    if (!stopped && !receivedOffer && !fallbackTimer) {
+      void pollViaRest();
+      fallbackTimer = setInterval(() => {
+        if (stopped) return;
+        void pollViaRest();
+      }, 2500);
+    }
+  }, 3000);
+
+  const unsub = onSnapshot(doc(db, 'calls', docId), (snap) => {
     if (snap.exists()) {
-      callback(snap.data() as LiveRtcSignal);
+      const sig = snap.data() as LiveRtcSignal;
+      if (sig?.offer?.sdp) {
+        receivedOffer = true;
+        if (fallbackTimer) {
+          clearInterval(fallbackTimer);
+          fallbackTimer = undefined;
+        }
+      }
+      callback(sig);
     } else {
       callback(null);
     }
   }, (err) => {
     handleWriteQuotaError(err, 'read');
+    if (!fallbackTimer && !stopped) {
+      void pollViaRest();
+      fallbackTimer = setInterval(() => {
+        if (stopped) return;
+        void pollViaRest();
+      }, 2500);
+    }
   });
+
+  return () => {
+    stopped = true;
+    clearTimeout(initialAssist);
+    if (fallbackTimer) clearInterval(fallbackTimer);
+    unsub();
+  };
 };
 
 export const sendLiveRtcOffer = async (streamId: string, hostId: string, viewerId: string, offer: any) => {
   if (isWriteQuotaBlocked()) return;
+  const docId = getLiveRtcDocId(streamId, viewerId);
+  const payload = deepClean({
+    id: docId,
+    status: 'live_rtc',
+    streamId,
+    hostId,
+    viewerId,
+    offer,
+    answer: null,
+    hostCandidates: [],
+    viewerCandidates: [],
+    updatedAt: Date.now()
+  });
   try {
-    const docId = getLiveRtcDocId(streamId, viewerId);
-    await setDoc(doc(db, 'calls', docId), {
-      id: docId,
-      status: 'live_rtc',
-      streamId,
-      hostId,
-      viewerId,
-      offer,
-      answer: null,
-      hostCandidates: [],
-      viewerCandidates: [],
-      updatedAt: Date.now()
-    });
+    await withTimeout(setDoc(doc(db, 'calls', docId), payload), 5000);
   } catch (err) {
-    handleWriteQuotaError(err, 'write');
+    if (handleWriteQuotaError(err, 'write')) return;
+    try {
+      await restPatchDoc('calls', docId, payload);
+    } catch {}
   }
 };
 
 export const sendLiveRtcAnswer = async (streamId: string, viewerId: string, answer: any) => {
   if (isWriteQuotaBlocked()) return;
+  const docId = getLiveRtcDocId(streamId, viewerId);
+  const payload = deepClean({ answer, updatedAt: Date.now() });
   try {
-    const docId = getLiveRtcDocId(streamId, viewerId);
-    await updateDoc(doc(db, 'calls', docId), {
-      answer,
-      updatedAt: Date.now()
-    });
+    await withTimeout(updateDoc(doc(db, 'calls', docId), payload), 5000);
   } catch (err) {
-    handleWriteQuotaError(err, 'write');
+    if (handleWriteQuotaError(err, 'write')) return;
+    try {
+      await restPatchDoc('calls', docId, payload, ['answer', 'updatedAt']);
+    } catch {}
   }
 };
 
 export const addLiveRtcCandidate = async (streamId: string, viewerId: string, side: 'host' | 'viewer', candidate: any) => {
   if (isWriteQuotaBlocked()) return;
+  const docId = getLiveRtcDocId(streamId, viewerId);
+  const cleanedCand = deepClean(candidate);
   try {
-    const docId = getLiveRtcDocId(streamId, viewerId);
-    await updateDoc(doc(db, 'calls', docId), {
-      [`${side}Candidates`]: arrayUnion(candidate)
-    });
+    await withTimeout(updateDoc(doc(db, 'calls', docId), {
+      [`${side}Candidates`]: arrayUnion(cleanedCand)
+    }), 5000);
   } catch (err) {
-    handleWriteQuotaError(err, 'write');
+    if (handleWriteQuotaError(err, 'write')) return;
+    try {
+      await restArrayTransform('calls', docId, `${side}Candidates`, 'union', cleanedCand);
+    } catch {}
   }
 };
 

@@ -46,11 +46,19 @@ let auth: any;
 let db: any;
 let analytics: any = null;
 
+const envDbId = (import.meta as any)?.env?.VITE_FIREBASE_DATABASE_ID;
+const resolvedDatabaseId = (envDbId === '(default)' || envDbId === 'default')
+  ? '(default)'
+  : (envDbId || "ai-studio-centraltok-20b3b741-dd0c-4874-8036-490f35162ac6");
+
+export const firebaseRestConfig = {
+  projectId: firebaseConfig.projectId,
+  databaseId: resolvedDatabaseId,
+  apiKey: firebaseConfig.apiKey,
+};
+
 const getDbInstance = (appInstance: any) => {
-  const envDbId = (import.meta as any)?.env?.VITE_FIREBASE_DATABASE_ID;
-  const dbId = (envDbId === '(default)' || envDbId === 'default')
-    ? undefined
-    : (envDbId || "ai-studio-centraltok-20b3b741-dd0c-4874-8036-490f35162ac6");
+  const dbId = resolvedDatabaseId === '(default)' ? undefined : resolvedDatabaseId;
 
   try {
     const settings = {

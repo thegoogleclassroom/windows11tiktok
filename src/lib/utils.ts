@@ -209,3 +209,75 @@ export function buildGoogleSpaceWebhookPayload(opts: {
     ],
   };
 }
+
+export function toFirestoreValue(val: unknown): Record<string, any> {
+  if (val === null || val === undefined) {
+    return { nullValue: null };
+  }
+  if (typeof val === 'boolean') {
+    return { booleanValue: val };
+  }
+  if (typeof val === 'number') {
+    if (!Number.isFinite(val)) return { nullValue: null };
+    return Number.isInteger(val)
+      ? { integerValue: String(val) }
+      : { doubleValue: val };
+  }
+  if (typeof val === 'string') {
+    return { stringValue: val };
+  }
+  if (Array.isArray(val)) {
+    return {
+      arrayValue: {
+        values: val.map((item) => toFirestoreValue(item)),
+      },
+    };
+  }
+  if (typeof val === 'object') {
+    return {
+      mapValue: {
+        fields: toFirestoreFields(val as Record<string, any>),
+      },
+    };
+  }
+  return { stringValue: String(val) };
+}
+
+export function toFirestoreFields(obj: Record<string, any>): Record<string, any> {
+  const fields: Record<string, any> = {};
+  for (const [k, v] of Object.entries(obj || {})) {
+    if (v === undefined || typeof v === 'function') continue;
+    fields[k] = toFirestoreValue(v);
+  }
+  return fields;
+}
+
+export function fromFirestoreValue(val: any): any {
+  if (!val || typeof val !== 'object') return null;
+  if ('nullValue' in val) return null;
+  if ('booleanValue' in val) return Boolean(val.booleanValue);
+  if ('integerValue' in val) return Number(val.integerValue);
+  if ('doubleValue' in val) return Number(val.doubleValue);
+  if ('stringValue' in val) return String(val.stringValue);
+  if ('timestampValue' in val) {
+    const parsed = Date.parse(val.timestampValue);
+    return Number.isFinite(parsed) ? parsed : val.timestampValue;
+  }
+  if ('arrayValue' in val) {
+    const values = val.arrayValue?.values;
+    return Array.isArray(values) ? values.map(fromFirestoreValue) : [];
+  }
+  if ('mapValue' in val) {
+    return fromFirestoreFields(val.mapValue?.fields);
+  }
+  return null;
+}
+
+export function fromFirestoreFields<T = Record<string, any>>(fields?: Record<string, any>): T {
+  const result: Record<string, any> = {};
+  if (!fields || typeof fields !== 'object') return result as T;
+  for (const [k, v] of Object.entries(fields)) {
+    result[k] = fromFirestoreValue(v);
+  }
+  return result as T;
+}

@@ -9,6 +9,8 @@ import {
   isUserOnline,
   formatLastActive,
   buildGoogleSpaceWebhookPayload,
+  toFirestoreFields,
+  fromFirestoreFields,
 } from '../src/lib/utils.ts';
 
 describe('normalizeYoutubeShorts', () => {
@@ -95,6 +97,32 @@ describe('Google Space Webhook Payload (CentralTok Developers.)', () => {
       summaryWidget.textParagraph.text,
       'Line 1 &amp; &lt;script&gt;alert(1)&lt;/script&gt;<br>Line 2'
     );
+  });
+});
+
+describe('Firestore REST Conversion Helpers', () => {
+  it('round-trips user ban status, live stream arrays, and numbers without loss', () => {
+    const sample = {
+      id: 'user_123',
+      isLiveStream: true,
+      likes: 42,
+      rating: 4.5,
+      viewers: ['u1', 'u2'],
+      banStatus: {
+        type: 'temp',
+        until: 1795640000000,
+        reason: 'Rule violation',
+      },
+      pinnedMessage: null,
+    };
+
+    const restFields = toFirestoreFields(sample);
+    assert.equal(restFields.id.stringValue, 'user_123');
+    assert.equal(restFields.likes.integerValue, '42');
+    assert.equal(restFields.rating.doubleValue, 4.5);
+
+    const decoded = fromFirestoreFields<typeof sample>(restFields);
+    assert.deepEqual(decoded, sample);
   });
 });
 

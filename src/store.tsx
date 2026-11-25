@@ -104,6 +104,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     let unsubscribe: (() => void) | undefined;
+    let fallbackPoll: ReturnType<typeof setInterval> | undefined;
     let cancelled = false;
     let lastVerifyAt = 0;
 
@@ -139,6 +140,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         try {
           const userDocRef = doc(db, 'users', currentUserId);
           unsubscribe = onSnapshot(userDocRef, (docSnap) => {
+            if (fallbackPoll) {
+              clearInterval(fallbackPoll);
+              fallbackPoll = undefined;
+            }
             const isFromCache = docSnap.metadata?.fromCache;
             if (docSnap.exists()) {
               const userData = docSnap.data() as User;
@@ -151,6 +156,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           }, (err) => {
             if (!handleWriteQuotaError(err, 'read')) {
               console.warn("User subscription warning:", err);
+            }
+            // If WebChannel Listen fails on home WiFi, fall back to lightweight HTTPS REST polling for ban/session sync
+            if (!fallbackPoll && !cancelled) {
+              fallbackPoll = setInterval(() => {
+                if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+                void verifyUserFromServer(currentUserId, 18_000);
+              }, 20_000);
             }
             const fallback = getCachedUserById(currentUserId);
             if (fallback) {
@@ -182,6 +194,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
     return () => {
       cancelled = true;
+      if (fallbackPoll) clearInterval(fallbackPoll);
       window.removeEventListener('online', onReconnectOrFocus);
       document.removeEventListener('visibilitychange', onReconnectOrFocus);
       if (unsubscribe) unsubscribe();
