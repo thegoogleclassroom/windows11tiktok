@@ -1,4 +1,4 @@
-import { collection, doc, getDocs, setDoc, updateDoc, writeBatch, arrayUnion, arrayRemove, getDoc, getDocFromServer, onSnapshot, deleteDoc, deleteField, increment, query, where } from 'firebase/firestore';
+import { collection, doc, getDocs, setDoc, updateDoc, writeBatch, arrayUnion, arrayRemove, getDoc, getDocFromServer, onSnapshot, deleteDoc, deleteField, increment, query, where, limit } from 'firebase/firestore';
 import { db, auth, firebaseRestConfig } from './firebase';
 export { db, doc, updateDoc, getDoc };
 import { User, Video, Message, AppNotification, Report, Appeal, AuditLog, Comment, Story, FAQCategory, FAQPost, ForumEditRequest, GroupChat, UserStatus, GameData, WatchParty, Announcement, Call, VerificationRequest, AppSuggestion, SneakPeek, CentralProRequest, LiveStream, LiveRtcSignal } from '../types';
@@ -762,6 +762,23 @@ export const getCachedUserById = (id: string): User | null => {
 
 export const getUsers = () => fetchCollection<User>('users');
 
+export const getSuggestedUsers = async (maxCount = 4): Promise<User[]> => {
+  const cached = getCachedCollection<User>('users');
+  if (cached.length > 0) {
+    return cached.slice(0, maxCount);
+  }
+  if (isReadQuotaBlocked()) return [];
+  try {
+    const snap = await getDocs(query(collection(db, 'users'), limit(maxCount)));
+    const items = snap.docs.map(d => d.data() as User);
+    if (items.length > 0) upsertCachedCollection('users', items);
+    return items.slice(0, maxCount);
+  } catch (err) {
+    handleWriteQuotaError(err, 'read');
+    return [];
+  }
+};
+
 export const getUser = async (id: string): Promise<User | null> => {
   const cachedMem = readCache.get('users');
   if (cachedMem && (isReadQuotaBlocked() || Date.now() - cachedMem.fetchedAt < getCollectionTtl('users'))) {
@@ -893,7 +910,10 @@ export const banUserStrict = async (userId: string, banStatus: NonNullable<User[
   try {
     await withTimeout(setDoc(doc(db, 'users', userId), { banStatus: cleanedBan }, { merge: true }), 5000);
   } catch (err: any) {
-    if (isQuotaError(err)) throw err;
+    if (isQuotaError(err)) {
+      handleWriteQuotaError(err, 'write');
+      throw new Error('Firestore daily quota exceeded. Wait for the daily reset or upgrade the Firebase plan before banning.');
+    }
     await restPatchDoc('users', userId, { banStatus: cleanedBan }, ['banStatus']);
   }
   try {
@@ -2865,6 +2885,8 @@ export const subscribeToLiveStreams = (callback: (streams: LiveStream[]) => void
   } catch {}
 
   let stopped = false;
+  let receivedServerSnap = false;
+  let hasRestData = false;
   let fallbackTimer: ReturnType<typeof setInterval> | undefined;
 
   const filterAndEmit = (rawItems: any[]) => {
@@ -2882,33 +2904,54 @@ export const subscribeToLiveStreams = (callback: (streams: LiveStream[]) => void
     if (stopped || isReadQuotaBlocked()) return;
     try {
       const rows = await restRunQueryEqual<any>('watch_parties', 'status', 'live');
+      hasRestData = true;
       filterAndEmit(rows);
     } catch {}
+  };
+
+  const startFallbackPolling = () => {
+    if (fallbackTimer || stopped) return;
+    fallbackTimer = setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+      void pollViaRest();
+    }, 12_000);
   };
 
   // Immediate REST check ensures streams appear immediately even if WebChannel stalls on home WiFi
   void pollViaRest();
 
+  // If onSnapshot stalls silently on home WiFi without calling error callback, start periodic REST polling
+  const stallAssist = setTimeout(() => {
+    if (!stopped && !receivedServerSnap) {
+      startFallbackPolling();
+    }
+  }, 3500);
+
   const q = query(collection(db, 'watch_parties'), where('status', '==', 'live'));
   const unsub = onSnapshot(q, (snap) => {
-    if (fallbackTimer) {
-      clearInterval(fallbackTimer);
-      fallbackTimer = undefined;
+    const isFromCache = Boolean(snap.metadata?.fromCache);
+    // Do not let an empty/stale IndexedDB cache snapshot wipe out fresher REST results or disable REST fallback
+    if (isFromCache && hasRestData) return;
+    if (isFromCache && snap.empty) return;
+    if (!isFromCache) {
+      receivedServerSnap = true;
+      if (fallbackTimer) {
+        clearInterval(fallbackTimer);
+        fallbackTimer = undefined;
+      }
     }
     filterAndEmit(snap.docs.map(d => d.data()));
   }, (err) => {
     handleWriteQuotaError(err, 'read');
-    if (!fallbackTimer && !stopped) {
+    if (!stopped) {
       void pollViaRest();
-      fallbackTimer = setInterval(() => {
-        if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
-        void pollViaRest();
-      }, 10_000);
+      startFallbackPolling();
     }
   });
 
   return () => {
     stopped = true;
+    clearTimeout(stallAssist);
     if (fallbackTimer) clearInterval(fallbackTimer);
     unsub();
   };
@@ -2917,22 +2960,46 @@ export const subscribeToLiveStreams = (callback: (streams: LiveStream[]) => void
 export const subscribeToLiveStream = (streamId: string, callback: (stream: LiveStream | null) => void) => {
   if (!streamId) return () => {};
   let stopped = false;
+  let receivedServerSnap = false;
+  let hasRestData = false;
   let fallbackTimer: ReturnType<typeof setInterval> | undefined;
 
   const pollViaRest = async () => {
     if (stopped || isReadQuotaBlocked()) return;
     try {
       const data = await restGetDoc<any>('watch_parties', streamId);
+      hasRestData = true;
       if (!stopped) {
         callback(data?.isLiveStream ? (data as LiveStream) : null);
       }
     } catch {}
   };
 
+  const startFallbackPolling = () => {
+    if (fallbackTimer || stopped) return;
+    fallbackTimer = setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+      void pollViaRest();
+    }, 3000);
+  };
+
+  void pollViaRest();
+  const stallAssist = setTimeout(() => {
+    if (!stopped && !receivedServerSnap) {
+      startFallbackPolling();
+    }
+  }, 3500);
+
   const unsub = onSnapshot(doc(db, 'watch_parties', streamId), (snap) => {
-    if (fallbackTimer) {
-      clearInterval(fallbackTimer);
-      fallbackTimer = undefined;
+    const isFromCache = Boolean(snap.metadata?.fromCache);
+    if (isFromCache && hasRestData) return;
+    if (isFromCache && !snap.exists()) return;
+    if (!isFromCache) {
+      receivedServerSnap = true;
+      if (fallbackTimer) {
+        clearInterval(fallbackTimer);
+        fallbackTimer = undefined;
+      }
     }
     if (snap.exists()) {
       const data = snap.data() as any;
@@ -2944,17 +3011,15 @@ export const subscribeToLiveStream = (streamId: string, callback: (stream: LiveS
     callback(null);
   }, (err) => {
     handleWriteQuotaError(err, 'read');
-    if (!fallbackTimer && !stopped) {
+    if (!stopped) {
       void pollViaRest();
-      fallbackTimer = setInterval(() => {
-        if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
-        void pollViaRest();
-      }, 3000);
+      startFallbackPolling();
     }
   });
 
   return () => {
     stopped = true;
+    clearTimeout(stallAssist);
     if (fallbackTimer) clearInterval(fallbackTimer);
     unsub();
   };
@@ -3086,23 +3151,47 @@ export const subscribeToLiveChat = (streamId: string, callback: (messages: Messa
   const channelId = `live_chat_${streamId}`;
   if (!streamId) return () => {};
   let stopped = false;
+  let receivedServerSnap = false;
+  let hasRestData = false;
   let fallbackTimer: ReturnType<typeof setInterval> | undefined;
 
   const pollViaRest = async () => {
     if (stopped || isReadQuotaBlocked()) return;
     try {
       const rows = await restRunQueryEqual<Message>('messages', 'groupId', channelId);
+      hasRestData = true;
       if (!stopped) {
         callback(rows.sort((a, b) => a.timestamp - b.timestamp));
       }
     } catch {}
   };
 
+  const startFallbackPolling = () => {
+    if (fallbackTimer || stopped) return;
+    fallbackTimer = setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+      void pollViaRest();
+    }, 3000);
+  };
+
+  const stallAssist = setTimeout(() => {
+    if (!stopped && !receivedServerSnap) {
+      void pollViaRest();
+      startFallbackPolling();
+    }
+  }, 3500);
+
   const q = query(collection(db, 'messages'), where('groupId', '==', channelId));
   const unsub = onSnapshot(q, (snapshot) => {
-    if (fallbackTimer) {
-      clearInterval(fallbackTimer);
-      fallbackTimer = undefined;
+    const isFromCache = Boolean(snapshot.metadata?.fromCache);
+    if (isFromCache && hasRestData) return;
+    if (isFromCache && snapshot.empty) return;
+    if (!isFromCache) {
+      receivedServerSnap = true;
+      if (fallbackTimer) {
+        clearInterval(fallbackTimer);
+        fallbackTimer = undefined;
+      }
     }
     const msgs = snapshot.docs
       .map(d => d.data() as Message)
@@ -3110,17 +3199,15 @@ export const subscribeToLiveChat = (streamId: string, callback: (messages: Messa
     callback(msgs);
   }, (err) => {
     handleWriteQuotaError(err, 'read');
-    if (!fallbackTimer && !stopped) {
+    if (!stopped) {
       void pollViaRest();
-      fallbackTimer = setInterval(() => {
-        if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
-        void pollViaRest();
-      }, 3000);
+      startFallbackPolling();
     }
   });
 
   return () => {
     stopped = true;
+    clearTimeout(stallAssist);
     if (fallbackTimer) clearInterval(fallbackTimer);
     unsub();
   };
@@ -3136,6 +3223,7 @@ export const sendLiveChatMessage = async (streamId: string, msg: Message) => {
 export const subscribeToLiveRtcHost = (streamId: string, callback: (signals: LiveRtcSignal[]) => void) => {
   if (!streamId) return () => {};
   let stopped = false;
+  let receivedServerSnap = false;
   let fallbackTimer: ReturnType<typeof setInterval> | undefined;
 
   const pollViaRest = async () => {
@@ -3147,29 +3235,48 @@ export const subscribeToLiveRtcHost = (streamId: string, callback: (signals: Liv
     } catch {}
   };
 
+  const startFallbackPolling = () => {
+    if (fallbackTimer || stopped) return;
+    fallbackTimer = setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+      void pollViaRest();
+    }, 2500);
+  };
+
+  const stallAssist = setTimeout(() => {
+    if (!stopped && !receivedServerSnap) {
+      void pollViaRest();
+      startFallbackPolling();
+    }
+  }, 3000);
+
   const q = query(collection(db, 'calls'), where('streamId', '==', streamId));
   const unsub = onSnapshot(q, (snap) => {
-    if (fallbackTimer) {
-      clearInterval(fallbackTimer);
-      fallbackTimer = undefined;
+    const isFromCache = Boolean(snap.metadata?.fromCache);
+    if (!isFromCache) {
+      receivedServerSnap = true;
+      if (fallbackTimer) {
+        clearInterval(fallbackTimer);
+        fallbackTimer = undefined;
+      }
     }
     const signals = snap.docs
       .map(d => d.data() as any)
       .filter((d): d is LiveRtcSignal => d?.status === 'live_rtc' && d.streamId === streamId);
-    callback(signals);
+    if (!isFromCache || signals.length > 0) {
+      callback(signals);
+    }
   }, (err) => {
     handleWriteQuotaError(err, 'read');
-    if (!fallbackTimer && !stopped) {
+    if (!stopped) {
       void pollViaRest();
-      fallbackTimer = setInterval(() => {
-        if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
-        void pollViaRest();
-      }, 2500);
+      startFallbackPolling();
     }
   });
 
   return () => {
     stopped = true;
+    clearTimeout(stallAssist);
     if (fallbackTimer) clearInterval(fallbackTimer);
     unsub();
   };
@@ -3179,7 +3286,7 @@ export const subscribeToLiveRtcViewer = (streamId: string, viewerId: string, cal
   if (!streamId || !viewerId) return () => {};
   const docId = getLiveRtcDocId(streamId, viewerId);
   let stopped = false;
-  let receivedOffer = false;
+  let receivedServerOffer = false;
   let fallbackTimer: ReturnType<typeof setInterval> | undefined;
 
   const pollViaRest = async () => {
@@ -3187,7 +3294,6 @@ export const subscribeToLiveRtcViewer = (streamId: string, viewerId: string, cal
     try {
       const sig = await restGetDoc<LiveRtcSignal>('calls', docId);
       if (!stopped && sig) {
-        if (sig.offer?.sdp) receivedOffer = true;
         callback(sig);
       }
     } catch {}
@@ -3195,7 +3301,7 @@ export const subscribeToLiveRtcViewer = (streamId: string, viewerId: string, cal
 
   // Backup timer if WebChannel stalls silently before delivering the initial offer on home WiFi
   const initialAssist = setTimeout(() => {
-    if (!stopped && !receivedOffer && !fallbackTimer) {
+    if (!stopped && !receivedServerOffer && !fallbackTimer) {
       void pollViaRest();
       fallbackTimer = setInterval(() => {
         if (stopped) return;
@@ -3205,17 +3311,18 @@ export const subscribeToLiveRtcViewer = (streamId: string, viewerId: string, cal
   }, 3000);
 
   const unsub = onSnapshot(doc(db, 'calls', docId), (snap) => {
+    const isFromCache = Boolean(snap.metadata?.fromCache);
     if (snap.exists()) {
       const sig = snap.data() as LiveRtcSignal;
-      if (sig?.offer?.sdp) {
-        receivedOffer = true;
+      if (!isFromCache && sig?.offer?.sdp) {
+        receivedServerOffer = true;
         if (fallbackTimer) {
           clearInterval(fallbackTimer);
           fallbackTimer = undefined;
         }
       }
       callback(sig);
-    } else {
+    } else if (!isFromCache) {
       callback(null);
     }
   }, (err) => {

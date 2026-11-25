@@ -105,8 +105,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     let unsubscribe: (() => void) | undefined;
     let fallbackPoll: ReturnType<typeof setInterval> | undefined;
+    let stallAssist: ReturnType<typeof setTimeout> | undefined;
     let cancelled = false;
     let lastVerifyAt = 0;
+    let lastServerApplyAt = 0;
+    let receivedServerSnap = false;
 
     const verifyUserFromServer = async (uid: string, minGapMs = 0) => {
       if (!uid || cancelled) return;
@@ -116,11 +119,20 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       try {
         const fresh = await getUserFresh(uid);
         if (!cancelled && fresh) {
+          lastServerApplyAt = Date.now();
           upsertUserInCache(fresh);
           setCurrentUser(fresh);
           setIsLoading(false);
         }
       } catch {}
+    };
+
+    const startFallbackPolling = (uid: string) => {
+      if (fallbackPoll || cancelled) return;
+      fallbackPoll = setInterval(() => {
+        if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+        void verifyUserFromServer(uid, 10_000);
+      }, 12_000);
     };
 
     const loadData = async () => {
@@ -136,15 +148,30 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         // Immediately verify against server so bans/role updates are never masked by stale local cache on home WiFi
         void verifyUserFromServer(currentUserId, 0);
 
+        // If onSnapshot stalls silently without firing err, start lightweight server ban polling
+        stallAssist = setTimeout(() => {
+          if (!cancelled && !receivedServerSnap) {
+            startFallbackPolling(currentUserId);
+          }
+        }, 3500);
+
         // Subscribe to user document in real-time
         try {
           const userDocRef = doc(db, 'users', currentUserId);
           unsubscribe = onSnapshot(userDocRef, (docSnap) => {
-            if (fallbackPoll) {
-              clearInterval(fallbackPoll);
-              fallbackPoll = undefined;
+            const isFromCache = Boolean(docSnap.metadata?.fromCache);
+            if (!isFromCache) {
+              receivedServerSnap = true;
+              lastServerApplyAt = Date.now();
+              if (fallbackPoll) {
+                clearInterval(fallbackPoll);
+                fallbackPoll = undefined;
+              }
+            } else if (lastServerApplyAt > 0) {
+              // Never overwrite newer server/REST ban state with an older IndexedDB cached snapshot
+              setIsLoading(false);
+              return;
             }
-            const isFromCache = docSnap.metadata?.fromCache;
             if (docSnap.exists()) {
               const userData = docSnap.data() as User;
               upsertUserInCache(userData);
@@ -157,13 +184,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             if (!handleWriteQuotaError(err, 'read')) {
               console.warn("User subscription warning:", err);
             }
-            // If WebChannel Listen fails on home WiFi, fall back to lightweight HTTPS REST polling for ban/session sync
-            if (!fallbackPoll && !cancelled) {
-              fallbackPoll = setInterval(() => {
-                if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
-                void verifyUserFromServer(currentUserId, 18_000);
-              }, 20_000);
-            }
+            startFallbackPolling(currentUserId);
             const fallback = getCachedUserById(currentUserId);
             if (fallback) {
               setCurrentUser(fallback);
@@ -172,6 +193,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           });
         } catch (e) {
           console.warn("Failed to subscribe to user doc:", e);
+          startFallbackPolling(currentUserId);
           setIsLoading(false);
         }
       } else {
@@ -186,7 +208,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const uid = rawUserId && rawUserId !== 'undefined' && rawUserId !== 'null' ? rawUserId.trim() : '';
       if (!uid) return;
       if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
-      void verifyUserFromServer(uid, 30_000);
+      void verifyUserFromServer(uid, 8_000);
     };
 
     window.addEventListener('online', onReconnectOrFocus);
@@ -194,6 +216,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
     return () => {
       cancelled = true;
+      if (stallAssist) clearTimeout(stallAssist);
       if (fallbackPoll) clearInterval(fallbackPoll);
       window.removeEventListener('online', onReconnectOrFocus);
       document.removeEventListener('visibilitychange', onReconnectOrFocus);

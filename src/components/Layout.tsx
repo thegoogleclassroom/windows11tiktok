@@ -5,7 +5,7 @@ import { motion, AnimatePresence, MotionConfig } from 'motion/react';
 import { useAppStore } from '../store';
 import { AuthModal } from './AuthModal';
 import { MiniPlayer } from './MiniPlayer';
-import { saveReports, getMessages, getUsers, getUser, getCachedUserById, getNotifications, markNotificationAsRead, getFAQPosts, subscribeToNotifications, saveGameData, getGameData, subscribeToIncomingCalls, subscribeToMessages, updateUser, updateUserActivity, requestCentralProVerification, updateUserListeningState, subscribeToUserDoc, isQuotaBlocked, subscribeToLiveStreams, subscribeToAppSettings, GlobalAppSettings, isFirebasePartShutDown, FIREBASE_OUTAGE_MESSAGE } from '../lib/db';
+import { saveReports, getMessages, getUsers, getSuggestedUsers, getUser, getCachedUserById, getNotifications, markNotificationAsRead, getFAQPosts, subscribeToNotifications, saveGameData, getGameData, subscribeToIncomingCalls, subscribeToMessages, updateUser, updateUserActivity, requestCentralProVerification, updateUserListeningState, subscribeToUserDoc, isQuotaBlocked, subscribeToLiveStreams, subscribeToAppSettings, GlobalAppSettings, isFirebasePartShutDown, FIREBASE_OUTAGE_MESSAGE } from '../lib/db';
 import { playNotificationSound, isUserOnline } from '../lib/utils';
 import { TradientInfoModal } from './TradientInfoModal';
 import { HolographicBadge, CentralProBadge } from './UIPolish';
@@ -142,8 +142,8 @@ export function Layout({ children }: { children: React.ReactNode }) {
   };
 
   useEffect(() => {
-    getUsers().then(users => {
-      setSuggestedUsers(users.slice(0, 4));
+    getSuggestedUsers(4).then(users => {
+      setSuggestedUsers(users);
     }).catch(() => {});
     const unsubLive = subscribeToLiveStreams(streams => {
       setLiveCount(streams.length);

@@ -14,7 +14,7 @@ import {
   sendLiveReaction, voteLivePoll, subscribeToLiveChat, sendLiveChatMessage,
   deleteMessage, subscribeToLiveRtcHost, subscribeToLiveRtcViewer,
   sendLiveRtcOffer, sendLiveRtcAnswer, addLiveRtcCandidate, cleanupLiveRtcForViewer,
-  isFirebasePartDisabledNow, FIREBASE_OUTAGE_MESSAGE
+  isFirebasePartDisabledNow, isReadQuotaBlocked, FIREBASE_OUTAGE_MESSAGE
 } from '../lib/db';
 import { Video, User, LiveStream, Message, LivePoll, LiveRtcSignal } from '../types';
 import { useAppStore } from '../store';
@@ -835,6 +835,12 @@ function LiveDirectory() {
         {(previewError || isFirebasePartDisabledNow('live_streams')) && !showSetupModal && (
           <div className="px-4 py-3 rounded-xl bg-red-500/15 border border-red-500/40 text-red-400 text-xs font-bold">
             {previewError || FIREBASE_OUTAGE_MESSAGE}
+          </div>
+        )}
+
+        {isReadQuotaBlocked() && (
+          <div className="px-4 py-3 rounded-xl bg-amber-500/15 border border-amber-500/40 text-amber-300 text-xs font-semibold">
+            Firestore daily read quota is currently exceeded on the database, so live stream updates are temporarily paused until the daily reset or plan upgrade.
           </div>
         )}
 

@@ -56,6 +56,7 @@ export function Admin() {
   const [tempBanUnit, setTempBanUnit] = useState<'secs' | 'hours' | 'days' | 'months' | 'years'>('days');
   const [tempBanReason, setTempBanReason] = useState<string>('');
   const [tempBanLoading, setTempBanLoading] = useState<boolean>(false);
+  const [tempBanError, setTempBanError] = useState<string | null>(null);
 
   // Rename Modal State
   const [renameModal, setRenameModal] = useState<{ isOpen: boolean; user: User | null }>({ isOpen: false, user: null });
@@ -121,6 +122,7 @@ export function Admin() {
   const handleApplyTempBan = async () => {
     if (!tempBanModal.user || !tempBanReason.trim()) return;
     setTempBanLoading(true);
+    setTempBanError(null);
     try {
       if (wipeSystemCheck) {
         await wipeUserFromSystem(tempBanModal.user.id);
@@ -146,7 +148,7 @@ export function Admin() {
       setWipeSystemCheck(false);
     } catch (err: any) {
       console.error(err);
-      setSiteShutdownError(err?.message || 'Failed to save ban to Firestore. Please check your connection.');
+      setTempBanError(err?.message || 'Failed to save ban to Firestore. Please check your connection.');
     } finally {
       setTempBanLoading(false);
     }
@@ -1263,7 +1265,7 @@ export function Admin() {
                           )}
                           {!u.banStatus && u.role !== 'owner' && (
                             <>
-                              <button onClick={() => { setTempBanModal({ isOpen: true, user: u }); setTempBanAmount(7); setTempBanUnit('days'); setTempBanReason(''); }} className="px-2 py-1 bg-yellow-500/20 text-yellow-600 dark:text-yellow-400 font-semibold rounded text-xs hover:bg-yellow-500/30">
+                              <button onClick={() => { setTempBanModal({ isOpen: true, user: u }); setTempBanAmount(7); setTempBanUnit('days'); setTempBanReason(''); setTempBanError(null); }} className="px-2 py-1 bg-yellow-500/20 text-yellow-600 dark:text-yellow-400 font-semibold rounded text-xs hover:bg-yellow-500/30">
                                 7d Ban
                               </button>
                               <button onClick={() => applyBan(u, 'perm')} className="px-2 py-1 bg-red-500/20 text-red-600 dark:text-red-400 font-semibold rounded text-xs hover:bg-red-500/30">
@@ -3178,9 +3180,15 @@ export function Admin() {
               </div>
             </div>
 
+            {tempBanError && (
+              <div className="mb-4 p-3 rounded-xl bg-red-500/15 border border-red-500/30 text-red-500 text-xs font-semibold">
+                {tempBanError}
+              </div>
+            )}
+
             <div className="flex gap-3">
               <button 
-                onClick={() => setTempBanModal({ isOpen: false, user: null })}
+                onClick={() => { setTempBanModal({ isOpen: false, user: null }); setTempBanError(null); }}
                 disabled={tempBanLoading}
                 className="flex-1 py-3 font-semibold bg-zinc-200 dark:bg-zinc-800 rounded-xl hover:bg-zinc-300 dark:hover:bg-zinc-700 transition-colors"
               >
